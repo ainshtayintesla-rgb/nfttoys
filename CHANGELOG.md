@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.3] - 2026-02-27
+
+### Added
+- Wallet operations history block on `/wallet` with lazy loading (cursor pagination).
+- Backend `wallet_transactions` storage and new endpoint `GET /wallet/operations`.
+
+### Changed
+- Wallet page layout: removed top title/subtitle and moved focus to cards.
+- Wallet history cards now match NFT transactions history visual style (date headers and card layout).
+- Profile wallet action card now hides wallet address subtitle.
+
 ## [0.2.2] - 2026-02-27
 
 ### Fixed

@@ -1,7 +1,17 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowDownToLine, ArrowUpFromLine, Check, Copy, Loader2, Wallet as WalletIcon, X } from 'lucide-react';
+import {
+    ArrowDownLeft,
+    ArrowDownToLine,
+    ArrowUpFromLine,
+    ArrowUpRight,
+    Check,
+    Copy,
+    Loader2,
+    Wallet as WalletIcon,
+    X,
+} from 'lucide-react';
 
 import { TelegramBackButton } from '@/components/ui/TelegramBackButton';
 import { api } from '@/lib/api';
@@ -19,9 +29,25 @@ interface WalletInfo {
     createdAt: string | null;
 }
 
+interface WalletHistoryItem {
+    id: string;
+    type: 'topup' | 'withdraw';
+    amount: number;
+    currency: string;
+    status: string;
+    createdAt: string;
+}
+
+interface WalletHistoryGroup {
+    key: string;
+    label: string;
+    items: WalletHistoryItem[];
+}
+
 type DrawerMode = 'topup' | 'withdraw' | null;
 
 const QUICK_AMOUNTS = [5000, 10000, 25000, 50000, 100000];
+const HISTORY_PAGE_SIZE = 20;
 
 function localeToIntlCode(locale: string): string {
     if (locale === 'ru') return 'ru-RU';
@@ -37,6 +63,70 @@ function safeErrorMessage(error: unknown): string {
     return 'Request failed';
 }
 
+function toInputDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function dateKeyFromTimestamp(timestamp: string): string {
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) {
+        return 'invalid-date';
+    }
+
+    return toInputDate(date);
+}
+
+function formatGroupDate(dateKey: string, locale: string): string {
+    const [yearRaw, monthRaw, dayRaw] = dateKey.split('-');
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    const day = Number(dayRaw);
+
+    if (!year || !month || !day) {
+        return dateKey;
+    }
+
+    const date = new Date(year, month - 1, day);
+    const currentYear = new Date().getFullYear();
+    const includeYear = year !== currentYear;
+
+    return new Intl.DateTimeFormat(localeToIntlCode(locale), {
+        day: 'numeric',
+        month: 'long',
+        ...(includeYear ? { year: 'numeric' } : {}),
+    }).format(date);
+}
+
+function formatDetailsDate(value: string, locale: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    const includeYear = date.getFullYear() !== new Date().getFullYear();
+
+    return new Intl.DateTimeFormat(localeToIntlCode(locale), {
+        day: 'numeric',
+        month: 'short',
+        ...(includeYear ? { year: 'numeric' } : {}),
+    }).format(date);
+}
+
+function formatTime(value: string, locale: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return '—';
+    }
+
+    return new Intl.DateTimeFormat(localeToIntlCode(locale), {
+        hour: '2-digit',
+        minute: '2-digit',
+    }).format(date);
+}
+
 export default function WalletPage() {
     const { t, locale } = useLanguage();
     const { user, authUser, isAuthenticated, haptic } = useTelegram();
@@ -44,6 +134,13 @@ export default function WalletPage() {
     const [wallet, setWallet] = useState<WalletInfo | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    const [historyItems, setHistoryItems] = useState<WalletHistoryItem[]>([]);
+    const [historyCursor, setHistoryCursor] = useState<string | null>(null);
+    const [historyHasMore, setHistoryHasMore] = useState(false);
+    const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+    const [isHistoryLoadingMore, setIsHistoryLoadingMore] = useState(false);
+    const [historyError, setHistoryError] = useState<string | null>(null);
 
     const [copied, setCopied] = useState(false);
 
@@ -97,9 +194,81 @@ export default function WalletPage() {
         }
     }, [authUser?.uid, isAuthenticated, t]);
 
+    const loadHistory = useCallback(async (
+        options: {
+            cursor?: string | null;
+            append?: boolean;
+        } = {},
+    ) => {
+        const { cursor = null, append = false } = options;
+
+        if (!isAuthenticated || !authUser?.uid) {
+            setHistoryItems([]);
+            setHistoryCursor(null);
+            setHistoryHasMore(false);
+            setHistoryError(t('login_required') || 'Login required');
+            setIsHistoryLoading(false);
+            setIsHistoryLoadingMore(false);
+            return;
+        }
+
+        if (append) {
+            setIsHistoryLoadingMore(true);
+        } else {
+            setIsHistoryLoading(true);
+        }
+
+        setHistoryError(null);
+
+        try {
+            const response = await api.wallet.operations({
+                limit: HISTORY_PAGE_SIZE,
+                ...(cursor ? { cursor } : {}),
+            });
+
+            const incoming = response.items || [];
+
+            if (append) {
+                setHistoryItems((prev) => {
+                    const seen = new Set(prev.map((item) => item.id));
+                    const merged = [...prev];
+
+                    incoming.forEach((item) => {
+                        if (!seen.has(item.id)) {
+                            seen.add(item.id);
+                            merged.push(item);
+                        }
+                    });
+
+                    return merged;
+                });
+            } else {
+                setHistoryItems(incoming);
+            }
+
+            setHistoryCursor(response.nextCursor || null);
+            setHistoryHasMore(Boolean(response.hasMore && response.nextCursor));
+        } catch (loadError) {
+            setHistoryError(safeErrorMessage(loadError));
+
+            if (!append) {
+                setHistoryItems([]);
+                setHistoryCursor(null);
+                setHistoryHasMore(false);
+            }
+        } finally {
+            if (append) {
+                setIsHistoryLoadingMore(false);
+            } else {
+                setIsHistoryLoading(false);
+            }
+        }
+    }, [authUser?.uid, isAuthenticated, t]);
+
     useEffect(() => {
         void loadWallet();
-    }, [loadWallet]);
+        void loadHistory();
+    }, [loadHistory, loadWallet]);
 
     const copyValue = useMemo(() => {
         const friendly = (wallet?.friendlyAddress || user?.walletFriendly || '').trim();
@@ -137,6 +306,29 @@ export default function WalletPage() {
         return parsed;
     }, [amountInput]);
 
+    const groupedHistory = useMemo<WalletHistoryGroup[]>(() => {
+        const groupsMap = new Map<string, WalletHistoryItem[]>();
+
+        historyItems.forEach((item) => {
+            const key = dateKeyFromTimestamp(item.createdAt);
+            const current = groupsMap.get(key);
+
+            if (current) {
+                current.push(item);
+            } else {
+                groupsMap.set(key, [item]);
+            }
+        });
+
+        return Array.from(groupsMap.entries()).map(([key, items]) => ({
+            key,
+            label: key === 'invalid-date'
+                ? (t('transactions_unknown_date') || 'Unknown date')
+                : formatGroupDate(key, locale),
+            items,
+        }));
+    }, [historyItems, locale, t]);
+
     const openDrawer = (mode: Exclude<DrawerMode, null>) => {
         haptic.impact('light');
         setDrawerMode(mode);
@@ -146,8 +338,8 @@ export default function WalletPage() {
         setAmountInput(String(defaultAmount));
     };
 
-    const closeDrawer = () => {
-        if (isSubmitting) {
+    const closeDrawer = (force = false) => {
+        if (isSubmitting && !force) {
             return;
         }
 
@@ -215,9 +407,13 @@ export default function WalletPage() {
                 await api.wallet.withdraw(parsedAmount);
             }
 
-            await loadWallet();
+            await Promise.all([
+                loadWallet(),
+                loadHistory({ cursor: null, append: false }),
+            ]);
+
             haptic.success();
-            closeDrawer();
+            closeDrawer(true);
         } catch (applyError) {
             setDrawerError(safeErrorMessage(applyError));
             haptic.error();
@@ -226,17 +422,41 @@ export default function WalletPage() {
         }
     };
 
+    const handleLoadMore = () => {
+        if (!historyHasMore || !historyCursor || isHistoryLoadingMore) {
+            return;
+        }
+
+        haptic.selection();
+        void loadHistory({ cursor: historyCursor, append: true });
+    };
+
+    const getOperationTitle = (type: WalletHistoryItem['type']) => {
+        return type === 'topup'
+            ? (t('wallet_history_operation_topup') || 'Top up')
+            : (t('wallet_history_operation_withdraw') || 'Withdraw');
+    };
+
+    const getStatusLabel = (status: string) => {
+        const normalized = status.trim().toLowerCase();
+
+        if (normalized === 'completed') {
+            return t('wallet_history_status_completed') || 'Completed';
+        }
+
+        if (!normalized) {
+            return t('wallet_history_status_completed') || 'Completed';
+        }
+
+        return status;
+    };
+
     return (
         <>
             <TelegramBackButton href="/profile" />
 
             <div className={styles.container}>
                 <main className={styles.main}>
-                    <header className={styles.header}>
-                        <h1>{t('wallet')}</h1>
-                        <p>{t('wallet_page_subtitle') || 'Manage your UZS balance and wallet address.'}</p>
-                    </header>
-
                     {isLoading && (
                         <section className={styles.card}>
                             <p className={styles.statusText}>{t('loading') || 'Loading...'}</p>
@@ -302,13 +522,91 @@ export default function WalletPage() {
                                     <span>{copied ? (t('wallet_copied') || 'Copied') : (t('wallet_copy') || 'Copy address')}</span>
                                 </button>
                             </section>
+
+                            <section className={`${styles.card} ${styles.historyCard}`}>
+                                <div className={styles.historyHead}>
+                                    <h2>{t('wallet_history_title') || 'History'}</h2>
+                                </div>
+
+                                {isHistoryLoading && (
+                                    <div className={styles.skeletonList}>
+                                        {[0, 1, 2, 3].map((index) => (
+                                            <div key={index} className={styles.skeletonItem}></div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {!isHistoryLoading && historyError && (
+                                    <div className={styles.errorState}>{historyError}</div>
+                                )}
+
+                                {!isHistoryLoading && !historyError && groupedHistory.length === 0 && (
+                                    <div className={styles.emptyState}>
+                                        {t('wallet_history_empty') || 'No wallet operations yet'}
+                                    </div>
+                                )}
+
+                                {!isHistoryLoading && !historyError && groupedHistory.length > 0 && (
+                                    <div className={styles.groupList}>
+                                        {groupedHistory.map((group) => (
+                                            <div key={group.key} className={styles.groupSection}>
+                                                <h3 className={styles.groupTitle}>{group.label}</h3>
+                                                <div className={styles.cards}>
+                                                    {group.items.map((item) => {
+                                                        const isTopup = item.type === 'topup';
+                                                        const kindClass = isTopup ? styles.kindReceived : styles.kindSent;
+                                                        const dateTimeLine = `${formatDetailsDate(item.createdAt, locale)}, ${formatTime(item.createdAt, locale)}`;
+                                                        const amountLine = `${isTopup ? '+' : '-'}${formatCurrency(item.amount)} ${item.currency || 'UZS'}`;
+
+                                                        return (
+                                                            <article key={item.id} className={styles.cardHistoryItem}>
+                                                                <div className={styles.cardRow}>
+                                                                    <div className={styles.summaryLeft}>
+                                                                        <span className={`${styles.kindIcon} ${kindClass}`}>
+                                                                            {isTopup ? <ArrowDownLeft size={22} /> : <ArrowUpRight size={22} />}
+                                                                        </span>
+                                                                        <div className={styles.summaryText}>
+                                                                            <span className={styles.summaryDirection}>{getOperationTitle(item.type)}</span>
+                                                                            <span className={styles.summaryAddress}>{amountLine}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className={styles.summaryRight}>
+                                                                        <span className={styles.summaryAsset}>{getStatusLabel(item.status)}</span>
+                                                                        <span className={styles.summaryDate}>{dateTimeLine}</span>
+                                                                    </div>
+                                                                </div>
+                                                            </article>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ))}
+
+                                        {historyHasMore && (
+                                            <button
+                                                type="button"
+                                                className={styles.loadMoreButton}
+                                                onClick={handleLoadMore}
+                                                disabled={isHistoryLoadingMore}
+                                            >
+                                                {isHistoryLoadingMore && <Loader2 size={16} className={styles.spinner} />}
+                                                <span>
+                                                    {isHistoryLoadingMore
+                                                        ? (t('wallet_history_loading_more') || 'Loading...')
+                                                        : (t('wallet_history_load_more') || 'Load more')}
+                                                </span>
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </section>
                         </>
                     )}
                 </main>
 
                 <div
                     className={`${styles.overlay} ${drawerMode ? styles.overlayVisible : ''}`}
-                    onClick={closeDrawer}
+                    onClick={() => closeDrawer()}
                     aria-hidden={!drawerMode}
                 >
                     <section
@@ -324,7 +622,7 @@ export default function WalletPage() {
                                     ? (t('wallet_withdraw_title') || 'Withdraw')
                                     : (t('wallet_topup_title') || 'Top up wallet')}
                             </h3>
-                            <button type="button" className={styles.closeButton} onClick={closeDrawer}>
+                            <button type="button" className={styles.closeButton} onClick={() => closeDrawer()}>
                                 <X size={16} />
                             </button>
                         </div>

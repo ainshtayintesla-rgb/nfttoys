@@ -39,14 +39,6 @@ export default function ProfilePage() {
 
     const telegramUserId = user?.id || webApp?.initDataUnsafe?.user?.id;
     const isAdmin = Boolean(telegramUserId && ADMIN_IDS.includes(String(telegramUserId)));
-    const normalizedWalletFriendly = (user?.walletFriendly || '').trim().toUpperCase();
-    const normalizedWalletAddress = (user?.walletAddress || '').trim().toUpperCase();
-    const walletTail = normalizedWalletFriendly.startsWith('LV-')
-        ? normalizedWalletFriendly.slice(-6)
-        : normalizedWalletAddress.slice(-6);
-    const walletLabelValue = walletTail
-        ? `LV-...${walletTail}`
-        : (t('wallet_page_open') || 'Open wallet');
 
     useEffect(() => {
         const backButton = webApp?.BackButton;
@@ -280,10 +272,7 @@ export default function ProfilePage() {
                             <div className={styles.socialIcon} style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
                                 <Wallet size={22} color="white" />
                             </div>
-                            <div className={styles.socialContent}>
-                                <span className={styles.socialText}>{t('wallet')}</span>
-                                <span className={styles.socialSubtext}>{walletLabelValue}</span>
-                            </div>
+                            <span className={styles.socialText}>{t('wallet')}</span>
                         </div>
                         <ChevronRight size={20} className={styles.socialArrow} />
                     </button>

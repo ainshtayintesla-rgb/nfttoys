@@ -8,43 +8,61 @@ datasource db {
 }
 
 model User {
-  id                   String         @id
-  telegramId           String?        @unique
+  id                   String              @id
+  telegramId           String?             @unique
   firstName            String?
   lastName             String?
   username             String?
-  usernameLower        String?        @unique
+  usernameLower        String?             @unique
   photoUrl             String?
   languageCode         String?
-  walletAddress        String?        @unique
+  walletAddress        String?             @unique
   walletFriendly       String?
   referrerId           String?
   referredAt           DateTime?
-  createdAt            DateTime       @default(now())
+  createdAt            DateTime            @default(now())
   lastLoginAt          DateTime?
-  referrer             User?          @relation("UserReferrals", fields: [referrerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  referrals            User[]         @relation("UserReferrals")
-  walletByUserId       Wallet?        @relation("WalletUser")
-  ownedNfts            Nft[]          @relation("UserOwnedNfts")
+  referrer             User?               @relation("UserReferrals", fields: [referrerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  referrals            User[]              @relation("UserReferrals")
+  walletByUserId       Wallet?             @relation("WalletUser")
+  ownedNfts            Nft[]               @relation("UserOwnedNfts")
   nftHistory           NftHistory[]
-  outgoingTransactions Transaction[]  @relation("TxFromUser")
-  incomingTransactions Transaction[]  @relation("TxToUser")
+  outgoingTransactions Transaction[]       @relation("TxFromUser")
+  incomingTransactions Transaction[]       @relation("TxToUser")
+  walletTransactions   WalletTransaction[]
 
   @@index([referrerId, referredAt])
 }
 
 model Wallet {
-  address              String         @id
-  friendlyAddress      String         @unique
-  userId               String?        @unique
+  address              String              @id
+  friendlyAddress      String              @unique
+  userId               String?             @unique
   addressHash          String
-  createdAt            DateTime       @default(now())
-  balance              Int            @default(0)
-  user                 User?          @relation("WalletUser", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  ownedNfts            Nft[]          @relation("WalletOwnedNfts")
-  outgoingTransactions Transaction[]  @relation("TxFromWallet")
-  incomingTransactions Transaction[]  @relation("TxToWallet")
+  createdAt            DateTime            @default(now())
+  balance              Int                 @default(0)
+  user                 User?               @relation("WalletUser", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  ownedNfts            Nft[]               @relation("WalletOwnedNfts")
+  outgoingTransactions Transaction[]       @relation("TxFromWallet")
+  incomingTransactions Transaction[]       @relation("TxToWallet")
   history              NftHistory[]
+  walletTransactions   WalletTransaction[]
+}
+
+model WalletTransaction {
+  id            String   @id @default(cuid())
+  walletAddress String
+  userId        String
+  type          String
+  amount        Int
+  currency      String   @default("UZS")
+  status        String   @default("completed")
+  createdAt     DateTime @default(now())
+  wallet        Wallet   @relation(fields: [walletAddress], references: [address], onDelete: Cascade, onUpdate: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([walletAddress, createdAt])
 }
 
 model QrCode {

@@ -241,5 +241,12 @@
     "wallet_withdraw_hint": "Balansdan yechish uchun summani tanlang.",
     "wallet_amount_label": "Summa",
     "wallet_topup_apply": "Hozir to'ldirish",
-    "wallet_withdraw_apply": "Hozir yechish"
+    "wallet_withdraw_apply": "Hozir yechish",
+    "wallet_history_title": "Tarix",
+    "wallet_history_empty": "Hozircha hamyon operatsiyalari yo'q",
+    "wallet_history_load_more": "Yana yuklash",
+    "wallet_history_loading_more": "Yuklanmoqda...",
+    "wallet_history_operation_topup": "To'ldirish",
+    "wallet_history_operation_withdraw": "Yechish",
+    "wallet_history_status_completed": "Bajarildi"
 }

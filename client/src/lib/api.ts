@@ -86,14 +86,26 @@ interface WalletSummary {
     createdAt: string | null;
 }
 
+interface WalletOperationItem {
+    id: string;
+    type: 'topup' | 'withdraw';
+    amount: number;
+    currency: string;
+    status: string;
+    createdAt: string;
+}
+
 interface WalletMutationResponse {
     success: boolean;
     wallet: WalletSummary;
-    operation: {
-        type: 'topup' | 'withdraw';
-        amount: number;
-        currency: 'UZS';
-    };
+    operation: WalletOperationItem;
+}
+
+interface WalletOperationsResponse {
+    success: boolean;
+    items: WalletOperationItem[];
+    nextCursor: string | null;
+    hasMore: boolean;
 }
 
 /**
@@ -386,6 +398,17 @@ export const api = {
                 method: 'POST',
                 body: JSON.stringify({ amount }),
             }),
+
+        operations: (params: { limit?: number; cursor?: string } = {}) => {
+            const query = new URLSearchParams();
+            if (typeof params.limit === 'number') query.set('limit', String(params.limit));
+            if (params.cursor) query.set('cursor', params.cursor);
+            const queryString = query.toString();
+
+            return apiFetch<WalletOperationsResponse>(
+                `/wallet/operations${queryString ? `?${queryString}` : ''}`,
+            );
+        },
     },
 
     // Telegram

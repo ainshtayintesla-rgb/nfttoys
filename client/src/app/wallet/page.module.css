@@ -12,25 +12,6 @@
     gap: 12px;
 }
 
-.header {
-    display: grid;
-    gap: 6px;
-}
-
-.header h1 {
-    margin: 0;
-    font-size: 24px;
-    font-weight: 700;
-    color: var(--text-primary);
-}
-
-.header p {
-    margin: 0;
-    font-size: 14px;
-    line-height: 1.45;
-    color: var(--text-secondary);
-}
-
 .card {
     background: var(--bg-secondary);
     border: 1px solid var(--surface-alpha-08);
@@ -189,6 +170,198 @@
 .copyButtonDone {
     background: rgba(34, 197, 94, 0.2);
     color: #22c55e;
+}
+
+.historyCard {
+    display: grid;
+    gap: 10px;
+}
+
+.historyHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.historyHead h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.skeletonList {
+    display: grid;
+    gap: 8px;
+}
+
+.skeletonItem {
+    height: 70px;
+    border-radius: 14px;
+    border: 1px solid var(--surface-alpha-08);
+    background:
+        linear-gradient(110deg, var(--surface-alpha-04) 8%, var(--surface-alpha-12) 18%, var(--surface-alpha-04) 33%),
+        var(--bg-secondary);
+    background-size: 240% 100%;
+    animation: shimmer 1.25s linear infinite;
+}
+
+.groupList {
+    display: grid;
+    gap: 16px;
+}
+
+.groupSection {
+    display: grid;
+    gap: 8px;
+}
+
+.groupTitle {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: capitalize;
+}
+
+.cards {
+    display: grid;
+    gap: 8px;
+}
+
+.cardHistoryItem {
+    width: 100%;
+    border: 1px solid var(--surface-alpha-05);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+    color: inherit;
+}
+
+.cardRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+}
+
+.summaryLeft {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    flex: 1;
+}
+
+.kindIcon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+
+.kindIcon svg {
+    width: 22px;
+    height: 22px;
+    stroke-width: 2.4;
+}
+
+.kindSent {
+    color: #ffffff;
+    background: linear-gradient(135deg, #64748b, #475569);
+}
+
+.kindReceived {
+    color: #ffffff;
+    background: linear-gradient(135deg, #3b82f6, #06b6d4);
+}
+
+.summaryText {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+.summaryDirection {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.summaryAddress {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.summaryRight {
+    display: grid;
+    gap: 2px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.summaryAsset {
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.summaryDate {
+    color: var(--text-secondary);
+    font-size: 11px;
+    margin-top: -1px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.emptyState,
+.errorState {
+    border-radius: 14px;
+    border: 1px solid var(--surface-alpha-08);
+    background: var(--bg-secondary);
+    padding: 20px 14px;
+    text-align: center;
+    font-size: 14px;
+}
+
+.emptyState {
+    color: var(--text-secondary);
+}
+
+.errorState {
+    color: #ef4444;
+}
+
+.loadMoreButton {
+    border: 1px solid var(--surface-alpha-12);
+    border-radius: 12px;
+    height: 44px;
+    background: var(--surface-alpha-06);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.loadMoreButton:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 .overlay {
@@ -392,6 +565,12 @@
     animation: spin 0.8s linear infinite;
 }
 
+@keyframes shimmer {
+    to {
+        background-position-x: -200%;
+    }
+}
+
 @keyframes spin {
     from {
         transform: rotate(0deg);
@@ -399,5 +578,11 @@
 
     to {
         transform: rotate(360deg);
+    }
+}
+
+@media (max-width: 520px) {
+    .quickGrid {
+        grid-template-columns: 1fr;
     }
 }

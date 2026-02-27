@@ -4,10 +4,12 @@ import { prisma } from '../lib/db/prisma';
 import { parseTelegramId } from '../lib/db/utils';
 import { generateWalletAddress, toFriendlyAddress } from '../lib/utils/crypto';
 import { requireAuth } from '../middleware/auth';
-import { standardLimit, authLimit } from '../middleware/rateLimit';
+import { authLimit, standardLimit } from '../middleware/rateLimit';
 
 const router = Router();
 const MAX_WALLET_OPERATION_AMOUNT = 10_000_000_000;
+const DEFAULT_HISTORY_LIMIT = 20;
+const MAX_HISTORY_LIMIT = 50;
 
 type WalletOperationKind = 'topup' | 'withdraw';
 
@@ -31,6 +33,19 @@ function parseAmount(rawAmount: unknown): number | null {
     return null;
 }
 
+function parseHistoryLimit(rawLimit: unknown): number {
+    if (typeof rawLimit !== 'string' || !rawLimit.trim()) {
+        return DEFAULT_HISTORY_LIMIT;
+    }
+
+    const parsed = Number.parseInt(rawLimit, 10);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+        return DEFAULT_HISTORY_LIMIT;
+    }
+
+    return Math.min(parsed, MAX_HISTORY_LIMIT);
+}
+
 function walletPayload(wallet: {
     address: string;
     friendlyAddress: string;
@@ -43,6 +58,24 @@ function walletPayload(wallet: {
         nftCount,
         balance: wallet.balance || 0,
         createdAt: wallet.createdAt ? wallet.createdAt.toISOString() : null,
+    };
+}
+
+function walletOperationPayload(operation: {
+    id: string;
+    type: string;
+    amount: number;
+    currency: string;
+    status: string;
+    createdAt: Date;
+}) {
+    return {
+        id: operation.id,
+        type: operation.type,
+        amount: operation.amount,
+        currency: operation.currency,
+        status: operation.status,
+        createdAt: operation.createdAt.toISOString(),
     };
 }
 
@@ -97,11 +130,31 @@ async function applyWalletBalanceOperation(userId: string, amount: number, opera
             },
         });
 
+        const operationRow = await tx.walletTransaction.create({
+            data: {
+                walletAddress: wallet.address,
+                userId,
+                type: operation,
+                amount,
+                currency: 'UZS',
+                status: 'completed',
+            },
+            select: {
+                id: true,
+                type: true,
+                amount: true,
+                currency: true,
+                status: true,
+                createdAt: true,
+            },
+        });
+
         const nftCount = await tx.nft.count({ where: { ownerWallet: updatedWallet.address } });
 
         return {
             wallet: updatedWallet,
             nftCount,
+            operation: operationRow,
         } as const;
     });
 }
@@ -214,6 +267,86 @@ router.get('/info', standardLimit, requireAuth, async (req, res) => {
     }
 });
 
+// GET /wallet/operations
+router.get('/operations', standardLimit, requireAuth, async (req, res) => {
+    try {
+        const userId = req.authUser!.uid;
+        const limit = parseHistoryLimit(req.query.limit);
+        const cursor = typeof req.query.cursor === 'string' && req.query.cursor.trim()
+            ? req.query.cursor.trim()
+            : null;
+
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { walletAddress: true },
+        });
+
+        if (!user?.walletAddress) {
+            return res.json({
+                success: true,
+                items: [],
+                nextCursor: null,
+                hasMore: false,
+            });
+        }
+
+        if (cursor) {
+            const cursorRow = await prisma.walletTransaction.findFirst({
+                where: {
+                    id: cursor,
+                    userId,
+                    walletAddress: user.walletAddress,
+                },
+                select: { id: true },
+            });
+
+            if (!cursorRow) {
+                return res.status(400).json({ error: 'Invalid cursor', code: 'INVALID_CURSOR' });
+            }
+        }
+
+        const rows = await prisma.walletTransaction.findMany({
+            where: {
+                userId,
+                walletAddress: user.walletAddress,
+            },
+            orderBy: [
+                { createdAt: 'desc' },
+                { id: 'desc' },
+            ],
+            take: limit + 1,
+            ...(cursor
+                ? {
+                    cursor: { id: cursor },
+                    skip: 1,
+                }
+                : {}),
+            select: {
+                id: true,
+                type: true,
+                amount: true,
+                currency: true,
+                status: true,
+                createdAt: true,
+            },
+        });
+
+        const hasMore = rows.length > limit;
+        const items = hasMore ? rows.slice(0, limit) : rows;
+        const nextCursor = hasMore && items.length > 0 ? items[items.length - 1].id : null;
+
+        return res.json({
+            success: true,
+            items: items.map(walletOperationPayload),
+            nextCursor,
+            hasMore,
+        });
+    } catch (error) {
+        console.error('Wallet operations fetch error:', error);
+        return res.status(500).json({ error: 'Failed to fetch wallet operations', code: 'FETCH_ERROR' });
+    }
+});
+
 // POST /wallet/topup
 router.post('/topup', authLimit, requireAuth, async (req, res) => {
     try {
@@ -248,11 +381,7 @@ router.post('/topup', authLimit, requireAuth, async (req, res) => {
         return res.json({
             success: true,
             wallet: walletPayload(result.wallet, result.nftCount),
-            operation: {
-                type: 'topup',
-                amount,
-                currency: 'UZS',
-            },
+            operation: walletOperationPayload(result.operation),
         });
     } catch (error) {
         console.error('Wallet topup error:', error);
@@ -302,11 +431,7 @@ router.post('/withdraw', authLimit, requireAuth, async (req, res) => {
         return res.json({
             success: true,
             wallet: walletPayload(result.wallet, result.nftCount),
-            operation: {
-                type: 'withdraw',
-                amount,
-                currency: 'UZS',
-            },
+            operation: walletOperationPayload(result.operation),
         });
     } catch (error) {
         console.error('Wallet withdraw error:', error);
