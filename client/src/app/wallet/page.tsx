@@ -9,9 +9,12 @@ import {
     Check,
     Copy,
     Loader2,
+    QrCode,
+    Share2,
     Wallet as WalletIcon,
     X,
 } from 'lucide-react';
+import QRCode from 'react-qr-code';
 
 import { TelegramBackButton } from '@/components/ui/TelegramBackButton';
 import { api } from '@/lib/api';
@@ -44,7 +47,7 @@ interface WalletHistoryGroup {
     items: WalletHistoryItem[];
 }
 
-type DrawerMode = 'topup' | 'withdraw' | null;
+type DrawerMode = 'topup' | 'withdraw' | 'receive' | null;
 
 const QUICK_AMOUNTS = [5000, 10000, 25000, 50000, 100000];
 const HISTORY_PAGE_SIZE = 20;
@@ -129,7 +132,7 @@ function formatTime(value: string, locale: string): string {
 
 export default function WalletPage() {
     const { t, locale } = useLanguage();
-    const { user, authUser, isAuthenticated, haptic } = useTelegram();
+    const { user, authUser, isAuthenticated, haptic, webApp } = useTelegram();
 
     const [wallet, setWallet] = useState<WalletInfo | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -143,6 +146,7 @@ export default function WalletPage() {
     const [historyError, setHistoryError] = useState<string | null>(null);
 
     const [copied, setCopied] = useState(false);
+    const [copiedInDrawer, setCopiedInDrawer] = useState(false);
 
     const [drawerMode, setDrawerMode] = useState<DrawerMode>(null);
     const [amountInput, setAmountInput] = useState('');
@@ -292,6 +296,16 @@ export default function WalletPage() {
         return `${raw.slice(0, 8)}...${raw.slice(-6)}`;
     }, [copyValue]);
 
+    const receiveWalletValue = useMemo(() => {
+        const raw = copyValue.toUpperCase();
+        if (!raw) {
+            return 'LV-......';
+        }
+
+        const suffix = raw.slice(-6).padStart(6, '.');
+        return `LV-...${suffix}`;
+    }, [copyValue]);
+
     const parsedAmount = useMemo(() => {
         const normalized = amountInput.trim();
         if (!normalized) {
@@ -333,6 +347,14 @@ export default function WalletPage() {
         haptic.impact('light');
         setDrawerMode(mode);
         setDrawerError('');
+        setCopiedInDrawer(false);
+
+        if (mode === 'receive') {
+            setSelectedQuick(null);
+            setAmountInput('');
+            return;
+        }
+
         const defaultAmount = QUICK_AMOUNTS[1];
         setSelectedQuick(defaultAmount);
         setAmountInput(String(defaultAmount));
@@ -349,7 +371,25 @@ export default function WalletPage() {
         setSelectedQuick(null);
     };
 
-    const handleCopyAddress = async () => {
+    const writeToClipboard = useCallback(async (value: string) => {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(value);
+            return;
+        }
+
+        const textarea = document.createElement('textarea');
+        textarea.value = value;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+    }, []);
+
+    const handleCopyAddress = useCallback(async () => {
         if (!copyValue) {
             return;
         }
@@ -357,31 +397,62 @@ export default function WalletPage() {
         haptic.impact('light');
 
         try {
-            if (navigator.clipboard?.writeText) {
-                await navigator.clipboard.writeText(copyValue);
-            } else {
-                const textarea = document.createElement('textarea');
-                textarea.value = copyValue;
-                textarea.style.position = 'fixed';
-                textarea.style.left = '-9999px';
-                textarea.style.top = '-9999px';
-                document.body.appendChild(textarea);
-                textarea.focus();
-                textarea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textarea);
-            }
-
+            await writeToClipboard(copyValue);
             setCopied(true);
             haptic.success();
             window.setTimeout(() => setCopied(false), 1500);
         } catch {
             haptic.error();
         }
-    };
+    }, [copyValue, haptic, writeToClipboard]);
+
+    const handleCopyAddressInDrawer = useCallback(async () => {
+        if (!copyValue) {
+            return;
+        }
+
+        haptic.impact('light');
+
+        try {
+            await writeToClipboard(copyValue);
+            setCopiedInDrawer(true);
+            haptic.success();
+            window.setTimeout(() => setCopiedInDrawer(false), 1500);
+        } catch {
+            haptic.error();
+        }
+    }, [copyValue, haptic, writeToClipboard]);
+
+    const handleShareAddress = useCallback(async () => {
+        if (!copyValue) {
+            return;
+        }
+
+        haptic.selection();
+        const shareText = `${t('wallet_receive_share_text') || 'My wallet address'}: ${copyValue}`;
+        const shareUrl = `https://t.me/share/url?url=&text=${encodeURIComponent(shareText)}`;
+
+        try {
+            if (webApp?.openTelegramLink) {
+                webApp.openTelegramLink(shareUrl);
+            } else if (navigator.share) {
+                await navigator.share({ text: shareText });
+            } else {
+                window.open(shareUrl, '_blank', 'noopener,noreferrer');
+            }
+
+            haptic.success();
+        } catch {
+            haptic.error();
+        }
+    }, [copyValue, haptic, t, webApp]);
 
     const handleApply = async () => {
-        if (!drawerMode || isSubmitting) {
+        if (drawerMode !== 'topup' && drawerMode !== 'withdraw') {
+            return;
+        }
+
+        if (isSubmitting) {
             return;
         }
 
@@ -501,6 +572,16 @@ export default function WalletPage() {
                                         <ArrowUpFromLine size={18} />
                                         <span>{t('wallet_withdraw') || 'Withdraw'}</span>
                                     </button>
+
+                                    <button
+                                        type="button"
+                                        className={`${styles.actionButton} ${styles.actionSecondary}`}
+                                        onClick={() => openDrawer('receive')}
+                                        disabled={!copyValue}
+                                    >
+                                        <QrCode size={18} />
+                                        <span>{t('wallet_receive') || 'Receive'}</span>
+                                    </button>
                                 </div>
                             </section>
 
@@ -523,11 +604,7 @@ export default function WalletPage() {
                                 </button>
                             </section>
 
-                            <section className={`${styles.card} ${styles.historyCard}`}>
-                                <div className={styles.historyHead}>
-                                    <h2>{t('wallet_history_title') || 'History'}</h2>
-                                </div>
-
+                            <section className={styles.historySection}>
                                 {isHistoryLoading && (
                                     <div className={styles.skeletonList}>
                                         {[0, 1, 2, 3].map((index) => (
@@ -620,72 +697,118 @@ export default function WalletPage() {
                             <h3>
                                 {drawerMode === 'withdraw'
                                     ? (t('wallet_withdraw_title') || 'Withdraw')
-                                    : (t('wallet_topup_title') || 'Top up wallet')}
+                                    : drawerMode === 'receive'
+                                        ? (t('wallet_receive_title') || 'Receive')
+                                        : (t('wallet_topup_title') || 'Top up wallet')}
                             </h3>
                             <button type="button" className={styles.closeButton} onClick={() => closeDrawer()}>
                                 <X size={16} />
                             </button>
                         </div>
 
-                        <div className={styles.drawerBody}>
-                            <p className={styles.drawerHint}>
-                                {drawerMode === 'withdraw'
-                                    ? (t('wallet_withdraw_hint') || 'Choose amount to withdraw from your wallet balance.')
-                                    : (t('wallet_topup_hint') || 'Choose amount to add to your wallet balance.')}
-                            </p>
+                        {drawerMode === 'receive' ? (
+                            <div className={`${styles.drawerBody} ${styles.receiveBody}`}>
+                                <p className={styles.drawerHint}>
+                                    {t('wallet_receive_hint') || 'Scan this QR code to receive assets on your wallet.'}
+                                </p>
 
-                            <div className={styles.quickGrid}>
-                                {QUICK_AMOUNTS.map((value) => (
-                                    <button
-                                        key={value}
-                                        type="button"
-                                        className={`${styles.quickButton} ${selectedQuick === value ? styles.quickButtonActive : ''}`}
-                                        onClick={() => {
-                                            setSelectedQuick(value);
-                                            setAmountInput(String(value));
-                                            haptic.selection();
-                                        }}
-                                    >
-                                        {formatCurrency(value)} UZS
-                                    </button>
-                                ))}
-                            </div>
-
-                            <label className={styles.amountField}>
-                                <span>{t('wallet_amount_label') || 'Amount'}</span>
-                                <div className={styles.amountInputWrap}>
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        inputMode="numeric"
-                                        pattern="[0-9]*"
-                                        value={amountInput}
-                                        onChange={(event) => {
-                                            setSelectedQuick(null);
-                                            setAmountInput(event.target.value.replace(/[^0-9]/g, ''));
-                                        }}
-                                        placeholder="10000"
-                                    />
-                                    <span>UZS</span>
+                                <div className={styles.receiveQrFrame}>
+                                    <div className={styles.receiveQrSurface}>
+                                        {copyValue ? (
+                                            <QRCode value={copyValue} size={188} bgColor="#ffffff" fgColor="#111111" />
+                                        ) : (
+                                            <div className={styles.receiveQrPlaceholder}>
+                                                {t('wallet_receive_qr_placeholder') || 'Wallet address unavailable'}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            </label>
 
-                            {drawerError && <p className={styles.drawerError}>{drawerError}</p>}
-
-                            <button
-                                type="button"
-                                className={styles.submitButton}
-                                onClick={handleApply}
-                                disabled={isSubmitting}
-                            >
-                                {isSubmitting && <Loader2 size={16} className={styles.spinner} />}
-                                <span>
+                                <div className={styles.receiveAddressRow}>
+                                    <span className={styles.receiveAddress}>{receiveWalletValue}</span>
+                                    <div className={styles.receiveActions}>
+                                        <button
+                                            type="button"
+                                            className={`${styles.iconButton} ${copiedInDrawer ? styles.iconButtonDone : ''}`}
+                                            onClick={handleCopyAddressInDrawer}
+                                            disabled={!copyValue}
+                                            aria-label={t('wallet_copy') || 'Copy address'}
+                                        >
+                                            {copiedInDrawer ? <Check size={16} /> : <Copy size={16} />}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={styles.iconButton}
+                                            onClick={handleShareAddress}
+                                            disabled={!copyValue}
+                                            aria-label={t('wallet_share') || 'Share address'}
+                                        >
+                                            <Share2 size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className={styles.drawerBody}>
+                                <p className={styles.drawerHint}>
                                     {drawerMode === 'withdraw'
-                                        ? (t('wallet_withdraw_apply') || 'Withdraw now')
-                                        : (t('wallet_topup_apply') || 'Top up now')}
-                                </span>
-                            </button>
-                        </div>
+                                        ? (t('wallet_withdraw_hint') || 'Choose amount to withdraw from your wallet balance.')
+                                        : (t('wallet_topup_hint') || 'Choose amount to add to your wallet balance.')}
+                                </p>
+
+                                <div className={styles.quickGrid}>
+                                    {QUICK_AMOUNTS.map((value) => (
+                                        <button
+                                            key={value}
+                                            type="button"
+                                            className={`${styles.quickButton} ${selectedQuick === value ? styles.quickButtonActive : ''}`}
+                                            onClick={() => {
+                                                setSelectedQuick(value);
+                                                setAmountInput(String(value));
+                                                haptic.selection();
+                                            }}
+                                        >
+                                            {formatCurrency(value)} UZS
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <label className={styles.amountField}>
+                                    <span>{t('wallet_amount_label') || 'Amount'}</span>
+                                    <div className={styles.amountInputWrap}>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            value={amountInput}
+                                            onChange={(event) => {
+                                                setSelectedQuick(null);
+                                                setAmountInput(event.target.value.replace(/[^0-9]/g, ''));
+                                            }}
+                                            placeholder="10000"
+                                        />
+                                        <span>UZS</span>
+                                    </div>
+                                </label>
+
+                                {drawerError && <p className={styles.drawerError}>{drawerError}</p>}
+
+                                <button
+                                    type="button"
+                                    className={styles.submitButton}
+                                    onClick={handleApply}
+                                    disabled={isSubmitting}
+                                >
+                                    {isSubmitting && <Loader2 size={16} className={styles.spinner} />}
+                                    <span>
+                                        {drawerMode === 'withdraw'
+                                            ? (t('wallet_withdraw_apply') || 'Withdraw now')
+                                            : (t('wallet_topup_apply') || 'Top up now')}
+                                    </span>
+                                </button>
+                            </div>
+                        )}
                     </section>
                 </div>
             </div>

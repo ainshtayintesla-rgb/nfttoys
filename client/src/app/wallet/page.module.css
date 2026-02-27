@@ -72,22 +72,30 @@
 
 .actionRow {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 10px;
 }
 
 .actionButton {
     border: 1px solid var(--surface-alpha-12);
     border-radius: 12px;
-    height: 44px;
+    height: 46px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
+    padding: 0 6px;
+    min-width: 0;
     cursor: pointer;
     transition: transform 0.15s ease, opacity 0.2s ease;
+}
+
+.actionButton span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .actionButton:active {
@@ -172,23 +180,9 @@
     color: #22c55e;
 }
 
-.historyCard {
+.historySection {
     display: grid;
     gap: 10px;
-}
-
-.historyHead {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-.historyHead h2 {
-    margin: 0;
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text-primary);
 }
 
 .skeletonList {
@@ -357,6 +351,7 @@
     justify-content: center;
     gap: 8px;
     cursor: pointer;
+    width: 100%;
 }
 
 .loadMoreButton:disabled {
@@ -460,6 +455,104 @@
     font-size: 13px;
     line-height: 1.45;
     color: var(--text-secondary);
+}
+
+.receiveBody {
+    gap: 14px;
+}
+
+.receiveQrFrame {
+    border-radius: 16px;
+    border: 1px solid var(--surface-alpha-10);
+    background: var(--surface-alpha-04);
+    padding: 12px;
+    display: flex;
+    justify-content: center;
+}
+
+.receiveQrSurface {
+    width: min(220px, 100%);
+    aspect-ratio: 1 / 1;
+    border-radius: 12px;
+    background: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    overflow: hidden;
+}
+
+.receiveQrPlaceholder {
+    width: 100%;
+    height: 100%;
+    border-radius: 10px;
+    border: 1px dashed var(--surface-alpha-15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    font-size: 12px;
+    text-align: center;
+    padding: 8px;
+    background: var(--surface-alpha-05);
+}
+
+.receiveAddressRow {
+    border: 1px solid var(--surface-alpha-10);
+    border-radius: 12px;
+    background: var(--surface-alpha-05);
+    padding: 10px 10px 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.receiveAddress {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 700;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    letter-spacing: 0.02em;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.receiveActions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.iconButton {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    border: 1px solid var(--surface-alpha-12);
+    background: var(--surface-alpha-08);
+    color: var(--text-primary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.2s ease;
+}
+
+.iconButton:active {
+    transform: scale(0.97);
+}
+
+.iconButton:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.iconButtonDone {
+    border-color: rgba(34, 197, 94, 0.45);
+    color: #22c55e;
 }
 
 .quickGrid {

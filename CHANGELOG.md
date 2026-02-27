@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.4] - 2026-02-27
+
+### Added
+- Wallet balance card now includes a new `Receive` action with a dedicated bottom drawer.
+- Receive drawer now includes QR rendering, short `LV-...XXXXXX` address preview, and icon-only copy/share controls.
+
+### Changed
+- Wallet transactions list is now rendered as standalone cards (no outer wrapper card), matching NFT history layout.
+- Wallet history section title was removed for a cleaner stream layout under the wallet address card.
+
 ## [0.2.3] - 2026-02-27
 
 ### Added
