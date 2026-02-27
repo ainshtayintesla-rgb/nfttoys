@@ -828,6 +828,24 @@
     max-width: 220px;
 }
 
+.continueButton {
+    margin-top: 4px;
+    min-height: 52px;
+    border-radius: 14px;
+    position: sticky;
+    bottom: max(0px, var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px)));
+    z-index: 3;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+.continueButton:disabled {
+    opacity: 1;
+    background: color-mix(in srgb, var(--accent-color) 62%, var(--bg-secondary));
+    color: var(--accent-text);
+    border-color: transparent;
+    box-shadow: none;
+}
+
 /* Animations */
 @keyframes fadeIn {
     from {

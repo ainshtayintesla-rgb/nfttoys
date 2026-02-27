@@ -902,6 +902,7 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                                     fullWidth
                                     disabled={!canContinue}
                                     onClick={handleContinue}
+                                    className={styles.continueButton}
                                 >
                                     {t('continue') || 'Continue'}
                                 </Button>
