@@ -12,7 +12,7 @@
 
 .tabHeader {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     background: var(--surface-alpha-03);
     border: 1px solid var(--surface-alpha-08);
@@ -168,6 +168,262 @@
 
 .dbActionDanger:hover {
     background: rgba(239, 68, 68, 0.18);
+}
+
+.updatesSection {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.updatesCard {
+    background: var(--bg-secondary);
+    border: 1px solid var(--surface-alpha-08);
+    border-radius: 20px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.updatesCard h3 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.updatesCard p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.updatesHeadline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.updatesPill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.updatesPillOk {
+    background: rgba(34, 197, 94, 0.16);
+    color: #22c55e;
+}
+
+.updatesPillWarn {
+    background: rgba(245, 158, 11, 0.18);
+    color: #f59e0b;
+}
+
+.updatesMetaGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.updatesMetaItem {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border: 1px solid var(--surface-alpha-08);
+    background: var(--surface-alpha-03);
+    border-radius: 12px;
+    padding: 10px 12px;
+    min-width: 0;
+}
+
+.updatesMetaItem span {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.updatesMetaItem strong {
+    font-size: 13px;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.updatesCommitBox {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--surface-alpha-08);
+    background: var(--surface-alpha-03);
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.updatesCommitBox svg {
+    flex: 0 0 auto;
+    margin-top: 2px;
+}
+
+.updatesTimeline {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.updatesTimelineItem {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.updatesActionsRow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.updatesBtnContent {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.updatesApplyBtn {
+    height: 46px;
+    border-radius: 12px;
+    border: none;
+    background: var(--accent-color);
+    color: var(--accent-text);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: filter 0.2s ease;
+}
+
+.updatesApplyBtn:hover {
+    filter: brightness(1.06);
+}
+
+.updatesApplyBtnDisabled,
+.updatesApplyBtn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    filter: none;
+}
+
+.updatesSettingRow {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.updatesSettingRow label {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.updatesInput {
+    height: 44px;
+    border-radius: 12px;
+    border: 1px solid var(--surface-alpha-10);
+    background: var(--surface-alpha-05);
+    color: var(--text-primary);
+    padding: 0 14px;
+    outline: none;
+    font-size: 14px;
+}
+
+.updatesInput:focus {
+    border-color: var(--accent-color);
+    background: var(--surface-alpha-08);
+}
+
+.updatesToggleRow {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.updatesToggleRow input {
+    width: 16px;
+    height: 16px;
+}
+
+.updatesHint {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.updatesChangelogBox {
+    border: 1px solid var(--surface-alpha-08);
+    border-radius: 12px;
+    background: var(--surface-alpha-03);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.updatesChangelogBox strong {
+    font-size: 14px;
+}
+
+.updatesChangelogMarkdown {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.updatesChangelogMarkdown h4 {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.updatesChangelogMarkdown p {
+    margin: 0;
+}
+
+.updatesChangelogMarkdown ul {
+    margin: 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.updatesChangelogMarkdown li {
+    margin: 0;
+}
+
+.updatesChangelogMarkdown code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: var(--surface-alpha-08);
+    color: var(--text-primary);
 }
 
 .drawerOverlay {
@@ -1095,6 +1351,18 @@
 
     .dbCard {
         padding: 14px;
+    }
+
+    .updatesCard {
+        padding: 14px;
+    }
+
+    .updatesMetaGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .updatesActionsRow {
+        grid-template-columns: 1fr;
     }
 
     .drawer {

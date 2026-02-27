@@ -12,13 +12,14 @@ import { AlertTriangle, CheckCircle, ChevronDown, Clock, Database, Eye, QrCode, 
 import { TelegramBackButton } from '@/components/ui/TelegramBackButton';
 import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import { api } from '@/lib/api';
+import { AdminUpdatesTab } from './components/UpdatesTab';
 import styles from './page.module.css';
 
 // Admin whitelist - Telegram IDs allowed to access admin
 const ADMIN_IDS = process.env.NEXT_PUBLIC_ADMIN_IDS?.split(',') || [];
 const MAX_BULK_GENERATION = 500;
 
-type AdminTab = 'nft' | 'db';
+type AdminTab = 'nft' | 'db' | 'updates';
 type DbActionType = 'purgeNfts' | 'purgeUsers';
 
 interface CustomSelectProps {
@@ -523,6 +524,13 @@ export default function AdminPage() {
                     >
                         {t('admin_tab_db')}
                     </button>
+                    <button
+                        type="button"
+                        className={`${styles.tabBtn} ${activeTab === 'updates' ? styles.tabBtnActive : ''}`}
+                        onClick={() => setActiveTab('updates')}
+                    >
+                        {t('admin_tab_updates')}
+                    </button>
                 </div>
 
                 {activeTab === 'nft' && (
@@ -860,6 +868,10 @@ export default function AdminPage() {
                             </div>
                         </div>
                     </div>
+                )}
+
+                {activeTab === 'updates' && (
+                    <AdminUpdatesTab />
                 )}
             </main>
 

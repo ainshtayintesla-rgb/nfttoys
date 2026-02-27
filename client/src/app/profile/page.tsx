@@ -9,7 +9,7 @@ import { TgsPlayer } from '@/components/ui/TgsPlayer';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
 import { api } from '@/lib/api';
-import { Lock, User, Wallet, QrCode, Plus, CheckCircle, Clock, Copy, Check, History, Settings, MessageCircle, Megaphone, ChevronRight, Gift } from 'lucide-react';
+import { Lock, User, Wallet, QrCode, Plus, CheckCircle, Clock, History, Settings, MessageCircle, Megaphone, ChevronRight, Gift } from 'lucide-react';
 import styles from './page.module.css';
 
 interface NFTItem {
@@ -34,20 +34,19 @@ export default function ProfilePage() {
     const [stats, setStats] = useState({ total: 0, used: 0, created: 0 });
     const [myNFTs, setMyNFTs] = useState<NFTItem[]>([]);
     const [isLoadingNFTs, setIsLoadingNFTs] = useState(true);
-    const [copied, setCopied] = useState(false);
     const nftAnimationStyle = useMemo(() => ({ width: 62.4, height: 62.4 }), []);
     const isNFTRequestInFlight = useRef(false);
 
     const telegramUserId = user?.id || webApp?.initDataUnsafe?.user?.id;
     const isAdmin = Boolean(telegramUserId && ADMIN_IDS.includes(String(telegramUserId)));
     const normalizedWalletFriendly = (user?.walletFriendly || '').trim().toUpperCase();
-    const walletCopyValue = normalizedWalletFriendly.startsWith('LV-')
-        ? normalizedWalletFriendly
-        : (user?.walletAddress || '');
+    const normalizedWalletAddress = (user?.walletAddress || '').trim().toUpperCase();
     const walletTail = normalizedWalletFriendly.startsWith('LV-')
         ? normalizedWalletFriendly.slice(-6)
-        : (user?.walletAddress || '').slice(-6).toUpperCase();
-    const walletLabelValue = walletTail ? `LV-...${walletTail}` : t('loading');
+        : normalizedWalletAddress.slice(-6);
+    const walletLabelValue = walletTail
+        ? `LV-...${walletTail}`
+        : (t('wallet_page_open') || 'Open wallet');
 
     useEffect(() => {
         const backButton = webApp?.BackButton;
@@ -138,37 +137,6 @@ export default function ProfilePage() {
         };
     }, [authUser?.uid, loadNFTs]);
 
-    // Copy to clipboard with fallback for Telegram WebApp
-    const copyToClipboard = (text: string) => {
-        // Try modern Clipboard API first
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).catch(() => {
-                // Fallback if Clipboard API fails
-                fallbackCopy(text);
-            });
-        } else {
-            fallbackCopy(text);
-        }
-    };
-
-    // Fallback copy using textarea
-    const fallbackCopy = (text: string) => {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.left = '-9999px';
-        textarea.style.top = '-9999px';
-        document.body.appendChild(textarea);
-        textarea.focus();
-        textarea.select();
-        try {
-            document.execCommand('copy');
-        } catch (err) {
-            console.error('Copy failed:', err);
-        }
-        document.body.removeChild(textarea);
-    };
-
     const handleTransfer = (nft: NFTItem) => {
         setSelectedNFT(nft);
     };
@@ -247,40 +215,10 @@ export default function ProfilePage() {
                         ) : (
                             user.first_name?.[0] || <User size={32} />
                         )}
-        </div>
+                    </div>
                     <span className={styles.username}>
                         {user.username ? `@${user.username}` : `${user.first_name} ${user.last_name || ''}`}
                     </span>
-                </div>
-
-                <div
-                    className={`${styles.walletSection} ${copied ? styles.walletCopied : ''}`}
-                    onClick={() => {
-                        if (walletCopyValue) {
-                            haptic.impact('light');
-                            copyToClipboard(walletCopyValue);
-                            haptic.success();
-                            setCopied(true);
-                            setTimeout(() => setCopied(false), 2000);
-                        }
-                    }}
-                >
-                    <div className={styles.walletLeft}>
-                        <div className={styles.socialIcon} style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
-                            <Wallet size={22} color="white" />
-                        </div>
-                        <div className={styles.walletInfo}>
-                            <span className={styles.walletLabel}>{t('wallet')}</span>
-                            <span className={styles.walletAddress}>
-                                {walletLabelValue}
-                            </span>
-                        </div>
-                    </div>
-                    {walletCopyValue && (
-                        <div className={`${styles.copyBtn} ${copied ? styles.copied : ''}`}>
-                            {copied ? <Check size={20} /> : <Copy size={20} />}
-                        </div>
-                    )}
                 </div>
 
                 {/* Social Links Card */}
@@ -330,65 +268,86 @@ export default function ProfilePage() {
                     </button>
                 </div>
 
-                <button
-                    className={styles.referralButton}
-                    onClick={() => {
-                        haptic.impact('light');
-                        router.push('/referrals');
-                    }}
-                >
-                    <div className={styles.socialLeft}>
-                        <div className={styles.socialIcon} style={{ background: 'linear-gradient(135deg, #14b8a6, #22c55e)' }}>
-                            <Gift size={22} color="white" />
+                <div className={styles.socialCard}>
+                    <button
+                        className={styles.socialLink}
+                        onClick={() => {
+                            haptic.impact('light');
+                            router.push('/wallet');
+                        }}
+                    >
+                        <div className={styles.socialLeft}>
+                            <div className={styles.socialIcon} style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
+                                <Wallet size={22} color="white" />
+                            </div>
+                            <div className={styles.socialContent}>
+                                <span className={styles.socialText}>{t('wallet')}</span>
+                                <span className={styles.socialSubtext}>{walletLabelValue}</span>
+                            </div>
                         </div>
-                        <span className={styles.socialText}>{t('referrals') || 'Referrals'}</span>
-                    </div>
-                    <ChevronRight size={20} className={styles.socialArrow} />
-                </button>
+                        <ChevronRight size={20} className={styles.socialArrow} />
+                    </button>
+                    <div className={styles.socialDivider}></div>
+                    <button
+                        className={styles.socialLink}
+                        onClick={() => {
+                            haptic.impact('light');
+                            router.push('/referrals');
+                        }}
+                    >
+                        <div className={styles.socialLeft}>
+                            <div className={styles.socialIcon} style={{ background: 'linear-gradient(135deg, #14b8a6, #22c55e)' }}>
+                                <Gift size={22} color="white" />
+                            </div>
+                            <span className={styles.socialText}>{t('referrals') || 'Referrals'}</span>
+                        </div>
+                        <ChevronRight size={20} className={styles.socialArrow} />
+                    </button>
+                </div>
 
                 {isAdmin && (
-                <section className={styles.adminSection}>
+                    <section className={styles.adminSection}>
 
-                    <div className={styles.statsGrid}>
-                        <div className={styles.statCard}>
-                            <div className={styles.statIcon} style={{ background: 'rgba(59, 130, 246, 0.2)' }}>
-                                <QrCode size={20} color="#3b82f6" />
+                        <div className={styles.statsGrid}>
+                            <div className={styles.statCard}>
+                                <div className={styles.statIcon} style={{ background: 'rgba(59, 130, 246, 0.2)' }}>
+                                    <QrCode size={20} color="#3b82f6" />
+                                </div>
+                                <div className={styles.statInfo}>
+                                    <span className={styles.statValue}>{stats.total}</span>
+                                    <span className={styles.statLabel}>{t('total_qr')}</span>
+                                </div>
                             </div>
-                            <div className={styles.statInfo}>
-                                <span className={styles.statValue}>{stats.total}</span>
-                                <span className={styles.statLabel}>{t('total_qr')}</span>
+                            <div className={styles.statCard}>
+                                <div className={styles.statIcon} style={{ background: 'rgba(251, 191, 36, 0.2)' }}>
+                                    <Clock size={20} color="#fbbf24" />
+                                </div>
+                                <div className={styles.statInfo}>
+                                    <span className={styles.statValue}>{stats.created}</span>
+                                    <span className={styles.statLabel}>{t('waiting')}</span>
+                                </div>
+                            </div>
+                            <div className={styles.statCard}>
+                                <div className={styles.statIcon} style={{ background: 'rgba(34, 197, 94, 0.2)' }}>
+                                    <CheckCircle size={20} color="#22c55e" />
+                                </div>
+                                <div className={styles.statInfo}>
+                                    <span className={styles.statValue}>{stats.used}</span>
+                                    <span className={styles.statLabel}>{t('used')}</span>
+                                </div>
                             </div>
                         </div>
-                        <div className={styles.statCard}>
-                            <div className={styles.statIcon} style={{ background: 'rgba(251, 191, 36, 0.2)' }}>
-                                <Clock size={20} color="#fbbf24" />
-                            </div>
-                            <div className={styles.statInfo}>
-                                <span className={styles.statValue}>{stats.created}</span>
-                                <span className={styles.statLabel}>{t('waiting')}</span>
-                            </div>
-                        </div>
-                        <div className={styles.statCard}>
-                            <div className={styles.statIcon} style={{ background: 'rgba(34, 197, 94, 0.2)' }}>
-                                <CheckCircle size={20} color="#22c55e" />
-                            </div>
-                            <div className={styles.statInfo}>
-                                <span className={styles.statValue}>{stats.used}</span>
-                                <span className={styles.statLabel}>{t('used')}</span>
-                            </div>
-                        </div>
-                    </div>
 
-                    <Button
-                        variant="primary"
-                        fullWidth
-                        onClick={() => window.location.href = '/admin'}
-                        className={styles.createBtn}
-                    >
-                        <Plus size={18} />
-                        {t('create_new_qr')}
-                    </Button>
-                </section>
+                        <Button
+                            variant="primary"
+                            fullWidth
+                            onClick={() => window.location.href = '/admin'}
+                            className={styles.createBtn}
+                        >
+                            <Plus size={18} />
+                            {t('create_new_qr')}
+                        </Button>
+                    </section>
                 )}
 
                 <section className={styles.collection}>

@@ -40,6 +40,62 @@ export async function apiFetch<T = any>(
     return response.json();
 }
 
+export interface AdminUpdateStatusResponse {
+    success: boolean;
+    runMode: 'development' | 'production';
+    branch: string;
+    settings: {
+        intervalMinutes: number;
+        autoUpdateEnabled: boolean;
+    };
+    autoUpdateActive: boolean;
+    state: {
+        isChecking: boolean;
+        isUpdating: boolean;
+        hasUpdate: boolean;
+        current: {
+            full: string | null;
+            short: string | null;
+            date: string | null;
+            subject: string | null;
+            version: string | null;
+        };
+        remote: {
+            full: string | null;
+            short: string | null;
+            date: string | null;
+            subject: string | null;
+            version: string | null;
+        };
+        changelog: {
+            latestTitle: string | null;
+            latestBody: string | null;
+        };
+        lastCheckedAt: string | null;
+        lastUpdatedAt: string | null;
+        lastAutoUpdatedAt: string | null;
+        lastError: string | null;
+    };
+}
+
+interface WalletSummary {
+    address: string;
+    friendlyAddress: string;
+    nftCount: number;
+    balance: number;
+    createdAt: string | null;
+}
+
+interface WalletMutationResponse {
+    success: boolean;
+    wallet: WalletSummary;
+    operation: {
+        type: 'topup' | 'withdraw';
+        amount: number;
+        currency: 'UZS';
+    };
+}
+
 /**
  * API methods
  */
@@ -275,18 +331,61 @@ export const api = {
                 method: 'POST',
                 body: JSON.stringify({ confirmation }),
             }),
+
+        updatesStatus: () =>
+            apiFetch<AdminUpdateStatusResponse>('/admin/updates/status'),
+
+        checkUpdates: () =>
+            apiFetch<AdminUpdateStatusResponse>('/admin/updates/check', {
+                method: 'POST',
+                body: JSON.stringify({}),
+            }),
+
+        applyUpdate: () =>
+            apiFetch<AdminUpdateStatusResponse>('/admin/updates/apply', {
+                method: 'POST',
+                body: JSON.stringify({}),
+            }),
+
+        saveUpdateSettings: (data: { intervalMinutes: number; autoUpdateEnabled: boolean }) =>
+            apiFetch<AdminUpdateStatusResponse>('/admin/updates/settings', {
+                method: 'POST',
+                body: JSON.stringify(data),
+            }),
     },
 
     // Wallet
     wallet: {
         create: (userId: string) =>
-            apiFetch('/wallet/create', {
+            apiFetch<{
+                success: boolean;
+                wallet: {
+                    address: string;
+                    friendlyAddress: string;
+                };
+                existing: boolean;
+            }>('/wallet/create', {
                 method: 'POST',
                 body: JSON.stringify({ userId }),
             }),
 
         info: (userId: string) =>
-            apiFetch(`/wallet/info?userId=${encodeURIComponent(userId)}`),
+            apiFetch<{
+                success: boolean;
+                wallet: WalletSummary;
+            }>(`/wallet/info?userId=${encodeURIComponent(userId)}`),
+
+        topup: (amount: number) =>
+            apiFetch<WalletMutationResponse>('/wallet/topup', {
+                method: 'POST',
+                body: JSON.stringify({ amount }),
+            }),
+
+        withdraw: (amount: number) =>
+            apiFetch<WalletMutationResponse>('/wallet/withdraw', {
+                method: 'POST',
+                body: JSON.stringify({ amount }),
+            }),
     },
 
     // Telegram
