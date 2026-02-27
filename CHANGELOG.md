@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.1] - 2026-02-27
+
+### Fixed
+- Update service now normalizes legacy local branch master to main, preventing git fetch origin master failures in the Updates tab.
+
 ## [0.2.0] - 2026-02-27
 
 ### Added

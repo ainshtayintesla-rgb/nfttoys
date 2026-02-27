@@ -451,7 +451,10 @@ class UpdateService {
         }
 
         const currentBranch = await runCommand('git', ['rev-parse', '--abbrev-ref', 'HEAD'], this.repoRoot);
-        this.branch = currentBranch || 'master';
+        const normalizedBranch = (currentBranch || '').trim();
+        this.branch = (!normalizedBranch || normalizedBranch === 'HEAD' || normalizedBranch === 'master')
+            ? 'main'
+            : normalizedBranch;
         return this.branch;
     }
 
