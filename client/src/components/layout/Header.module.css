@@ -1,0 +1,47 @@
+.header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    /* Slight increase for presence */
+    background: rgba(18, 18, 18, 0.85);
+    /* Darker, specific tint */
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--surface-alpha-08);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    z-index: 90;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 30px var(--ink-alpha-10);
+    /* Soft depth */
+}
+
+.logo {
+    font-size: 20px;
+    font-weight: 700;
+    background: linear-gradient(to right, #3390ec, #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin: 0;
+}
+
+.langBtn {
+    background: var(--surface-alpha-05);
+    border: 1px solid var(--surface-alpha-10);
+    color: var(--text-secondary);
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.langBtn:hover {
+    background: var(--surface-alpha-10);
+    color: var(--text-primary);
+}

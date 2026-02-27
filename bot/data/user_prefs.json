@@ -1,0 +1,38 @@
+{
+  "5320242541": {
+    "write_access_status": "allowed",
+    "bot_started": false,
+    "notifications_enabled": true,
+    "nft_received_enabled": true,
+    "preferences_touched": true,
+    "created_at": "2026-02-25T08:58:57.794491+00:00",
+    "updated_at": "2026-02-27T05:37:20.052295+00:00"
+  },
+  "909262082": {
+    "write_access_status": "allowed",
+    "bot_started": true,
+    "notifications_enabled": true,
+    "nft_received_enabled": true,
+    "preferences_touched": true,
+    "created_at": "2026-02-25T09:11:39.301974+00:00",
+    "updated_at": "2026-02-25T09:12:35.299961+00:00"
+  },
+  "6316063517": {
+    "write_access_status": "allowed",
+    "bot_started": false,
+    "notifications_enabled": true,
+    "nft_received_enabled": true,
+    "preferences_touched": true,
+    "created_at": "2026-02-25T09:28:00.530826+00:00",
+    "updated_at": "2026-02-25T10:08:04.531333+00:00"
+  },
+  "2124173116": {
+    "write_access_status": "allowed",
+    "bot_started": false,
+    "notifications_enabled": true,
+    "nft_received_enabled": true,
+    "preferences_touched": false,
+    "created_at": "2026-02-25T11:43:32.010915+00:00",
+    "updated_at": "2026-02-25T11:43:45.059711+00:00"
+  }
+}

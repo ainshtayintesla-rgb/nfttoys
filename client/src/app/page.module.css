@@ -1,0 +1,112 @@
+.container {
+    min-height: 100vh;
+    padding-bottom: calc(120px + var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px)));
+    /* Space for floating nav */
+    background: var(--bg-primary);
+}
+
+.main {
+    padding: 20px 16px;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.hero {
+    margin-bottom: 24px;
+    animation: fadeIn 0.4s ease-out;
+}
+
+.heroTitle {
+    font-size: clamp(24px, 8vw, 28px);
+    font-weight: 800;
+    margin-bottom: 8px;
+    background: linear-gradient(to right, var(--text-primary), var(--text-secondary));
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.heroSubtitle {
+    color: var(--text-secondary);
+    font-size: 15px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    animation: fadeIn 0.5s ease-out 0.1s backwards;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Model Cards */
+.modelCard {
+    background: var(--bg-secondary);
+    border: 1px solid var(--surface-alpha-05);
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    transition: all 0.2s ease;
+}
+
+.modelCard:hover {
+    transform: translateY(-2px);
+    border-color: var(--surface-alpha-10);
+}
+
+.modelImage {
+    width: 100px;
+    height: 100px;
+}
+
+.modelInfo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+}
+
+.modelName {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-align: center;
+}
+
+.modelRarity {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.legendary {
+    background: rgba(251, 191, 36, 0.2);
+    color: #fbbf24;
+}
+
+.rare {
+    background: rgba(59, 130, 246, 0.2);
+    color: #3b82f6;
+}
+
+.common {
+    background: rgba(156, 163, 175, 0.2);
+    color: #9ca3af;
+}

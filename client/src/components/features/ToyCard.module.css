@@ -1,0 +1,218 @@
+.toyCard {
+    width: 100%;
+    min-width: 160px;
+    /* Prevent squeezing */
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toyCard:hover {
+    transform: translateY(-4px);
+}
+
+.imageContainer {
+    width: 100%;
+    aspect-ratio: 1;
+    position: relative;
+    background: var(--ink-alpha-20);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.imagePlaceholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--surface-alpha-20);
+}
+
+.placeholderIcon {
+    opacity: 0.5;
+    transition: opacity 0.3s ease;
+}
+
+.toyCard:hover .placeholderIcon {
+    opacity: 0.8;
+}
+
+/* Rarity Backgrounds - More subtle/premium */
+.common {
+    background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+}
+
+.rare {
+    background: linear-gradient(135deg, #16222A 0%, #3A6073 100%);
+    position: relative;
+}
+
+.legendary {
+    background: linear-gradient(135deg, #1e130c 0%, #9a8478 100%);
+    position: relative;
+}
+
+/* Shine Base for all rarities */
+.common::after,
+.rare::after,
+.legendary::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 50%;
+    height: 100%;
+    transform: skewX(-25deg);
+    animation: shine 10s infinite ease-in-out;
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Specific Shine Colors */
+.common::after,
+.rare::after {
+    background: linear-gradient(to right,
+            transparent 0%,
+            var(--surface-alpha-05) 40%,
+            var(--surface-alpha-20) 50%,
+            var(--surface-alpha-05) 60%,
+            transparent 100%);
+    animation-duration: 6s;
+}
+
+.legendary::after {
+    /* RGB Shine for Legendary - Vertical Stack (Red Top, Green Mid, Blue Bot) */
+    background: linear-gradient(to bottom,
+            rgba(255, 0, 0, 0.6) 0%,
+            rgba(0, 255, 0, 0.6) 50%,
+            rgba(0, 0, 255, 0.6) 100%);
+
+    /* Shape the square background into a vertical beam using mask */
+    -webkit-mask-image: linear-gradient(to right,
+            transparent 0%,
+            black 45%,
+            black 55%,
+            transparent 100%);
+    mask-image: linear-gradient(to right,
+            transparent 0%,
+            black 45%,
+            black 55%,
+            transparent 100%);
+
+    width: 20%;
+    animation-duration: 6s;
+}
+
+@keyframes shine {
+    0% {
+        left: -100%;
+        opacity: 0;
+    }
+
+    20% {
+        opacity: 1;
+    }
+
+    50% {
+        left: 200%;
+        opacity: 0;
+    }
+
+    100% {
+        left: 200%;
+        opacity: 0;
+    }
+}
+
+
+
+.content {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.name {
+    font-size: 14px;
+    font-weight: 700;
+    margin: 0;
+    color: var(--text-primary);
+    line-height: 1.25;
+}
+
+.serialNumber {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--accent-color);
+    background: var(--surface-alpha-05);
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.footer {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: auto;
+    width: 100%;
+}
+
+.priceContainer {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+.priceLabel {
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-bottom: 2px;
+}
+
+.price {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent-color);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.currency {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.buyBtn {
+    font-size: 14px;
+    height: 40px !important;
+    width: 100%;
+}
+
+.statusBadge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    background: var(--surface-alpha-05);
+    padding: 10px;
+    border-radius: 8px;
+}

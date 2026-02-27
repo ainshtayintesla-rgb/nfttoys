@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   String         @id
+  telegramId           String?        @unique
+  firstName            String?
+  lastName             String?
+  username             String?
+  usernameLower        String?        @unique
+  photoUrl             String?
+  languageCode         String?
+  walletAddress        String?        @unique
+  walletFriendly       String?
+  referrerId           String?
+  referredAt           DateTime?
+  createdAt            DateTime       @default(now())
+  lastLoginAt          DateTime?
+  referrer             User?          @relation("UserReferrals", fields: [referrerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  referrals            User[]         @relation("UserReferrals")
+  walletByUserId       Wallet?        @relation("WalletUser")
+  ownedNfts            Nft[]          @relation("UserOwnedNfts")
+  nftHistory           NftHistory[]
+  outgoingTransactions Transaction[]  @relation("TxFromUser")
+  incomingTransactions Transaction[]  @relation("TxToUser")
+
+  @@index([referrerId, referredAt])
+}
+
+model Wallet {
+  address              String         @id
+  friendlyAddress      String         @unique
+  userId               String?        @unique
+  addressHash          String
+  createdAt            DateTime       @default(now())
+  balance              Int            @default(0)
+  user                 User?          @relation("WalletUser", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  ownedNfts            Nft[]          @relation("WalletOwnedNfts")
+  outgoingTransactions Transaction[]  @relation("TxFromWallet")
+  incomingTransactions Transaction[]  @relation("TxToWallet")
+  history              NftHistory[]
+}
+
+model QrCode {
+  nfcId            String   @id
+  modelName        String
+  serialNumber     String   @unique
+  rarity           String
+  tgsFile          String
+  token            String   @unique
+  status           String
+  createdAt        DateTime @default(now())
+  usedAt           DateTime?
+  usedBy           String?
+  usedByName       String?
+  usedByPhoto      String?
+  usedByFirstName  String?
+  nft              Nft?
+
+  @@index([createdAt])
+}
+
+model Nft {
+  tokenId         String       @id
+  contractAddress String       @unique
+  ownerWallet     String?
+  ownerId         String?
+  modelName       String
+  serialNumber    String
+  rarity          String
+  tgsFile         String
+  qrCodeId        String?      @unique
+  mintedAt        DateTime     @default(now())
+  status          String
+  metadata        Json?
+  lastTransferAt  DateTime?
+  qrCode          QrCode?      @relation(fields: [qrCodeId], references: [nfcId], onDelete: SetNull, onUpdate: Cascade)
+  ownerWalletRel  Wallet?      @relation("WalletOwnedNfts", fields: [ownerWallet], references: [address], onDelete: SetNull, onUpdate: Cascade)
+  ownerUserRel    User?        @relation("UserOwnedNfts", fields: [ownerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  history         NftHistory[]
+  transactions    Transaction[]
+
+  @@index([ownerId])
+  @@index([ownerWallet])
+}
+
+model NftHistory {
+  id         String   @id @default(cuid())
+  tokenId    String
+  wallet     String?
+  userId     String?
+  type       String
+  fromWallet String?
+  timestamp  DateTime @default(now())
+  nft        Nft      @relation(fields: [tokenId], references: [tokenId], onDelete: Cascade)
+  walletRel  Wallet?  @relation(fields: [wallet], references: [address], onDelete: SetNull, onUpdate: Cascade)
+  userRel    User?    @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([tokenId, timestamp])
+}
+
+model Transaction {
+  id             String   @id @default(cuid())
+  txHash         String   @unique
+  type           String
+  from           String?
+  fromUserId     String?
+  to             String?
+  toUserId       String?
+  tokenId        String?
+  modelName      String?
+  serialNumber   String?
+  memo           String?
+  feeAmount      Int?
+  feeCurrency    String?
+  signature      String
+  timestamp      DateTime @default(now())
+  status         String
+  fromWalletRel  Wallet?  @relation("TxFromWallet", fields: [from], references: [address], onDelete: SetNull, onUpdate: Cascade)
+  toWalletRel    Wallet?  @relation("TxToWallet", fields: [to], references: [address], onDelete: SetNull, onUpdate: Cascade)
+  fromUserRel    User?    @relation("TxFromUser", fields: [fromUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  toUserRel      User?    @relation("TxToUser", fields: [toUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  nft            Nft?     @relation(fields: [tokenId], references: [tokenId], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([tokenId, timestamp])
+  @@index([fromUserId, timestamp])
+  @@index([toUserId, timestamp])
+}

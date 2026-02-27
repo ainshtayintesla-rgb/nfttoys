@@ -1,0 +1,481 @@
+.container {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-primary);
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-bottom: calc(120px + var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px)));
+}
+
+.main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+    max-width: 600px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.loading {
+    font-size: 18px;
+    color: var(--text-secondary);
+    animation: pulse 1s infinite alternate;
+}
+
+@keyframes pulse {
+    from {
+        opacity: 0.5;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.error {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.resultContainer {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+/* New Activation Layout */
+.activationContainer {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    padding: 0;
+}
+
+.animationSection {
+    width: 260px;
+    height: 260px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.infoRow {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    max-width: 340px;
+}
+
+.infoCard {
+    flex: 1;
+    background: var(--surface-alpha-03);
+    border: 1px solid var(--surface-alpha-05);
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.infoLabel {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.infoValue {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+/* Legacy styles */
+.dataCard {
+    background: var(--bg-secondary);
+    border: 1px solid var(--surface-alpha-05);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+}
+
+.toyName {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 8px;
+}
+
+.serialNumber {
+    font-size: 16px;
+    color: var(--text-secondary);
+    font-family: monospace;
+}
+
+.activateBtn {
+    max-width: 340px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.infoCard {
+    background: var(--bg-secondary);
+    border: 1px solid var(--surface-alpha-05);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    text-align: center;
+    animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.successTitle {
+    color: #4ade80;
+    /* Green */
+    margin-bottom: 8px;
+}
+
+.warningTitle {
+    color: #fbbf24;
+    /* Amber */
+    margin-bottom: 8px;
+}
+
+.mt4 {
+    margin-top: 16px;
+}
+
+/* Success View */
+.successContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 32px 20px;
+    background: var(--bg-secondary);
+    border-radius: 20px;
+    width: 100%;
+    animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.successIcon {
+    font-size: 64px;
+    margin-bottom: 24px;
+    animation: popIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
+}
+
+.successTitle {
+    font-size: 24px;
+    font-weight: 700;
+    color: #4ade80;
+    margin-bottom: 8px;
+    animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+}
+
+.successDesc {
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+    animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both;
+}
+
+.timeBadge {
+    background: var(--surface-alpha-10);
+    padding: 8px 16px;
+    border-radius: 12px;
+    font-family: monospace;
+    font-size: 14px;
+    color: var(--accent-color);
+    margin-bottom: 16px;
+    animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.5s both;
+}
+
+.activatedByBadge {
+    background: rgba(59, 130, 246, 0.15);
+    padding: 8px 16px;
+    border-radius: 12px;
+    font-size: 14px;
+    color: #3b82f6;
+    margin-bottom: 8px;
+    animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both;
+}
+
+/* Custom Fade Up Animation */
+@keyframes fadeUp {
+    0% {
+        opacity: 0;
+        transform: translateY(40px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Pop In Animation for Icon */
+@keyframes popIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.3);
+    }
+
+    50% {
+        transform: scale(1.1);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes bounce {
+    0% {
+        transform: scale(0);
+        opacity: 0;
+    }
+
+    50% {
+        transform: scale(1.2);
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* Error/Warning States */
+.errorContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px 16px;
+    background: var(--bg-secondary);
+    border-radius: 20px;
+    width: 100%;
+    animation: slideUp 0.3s ease-out;
+}
+
+.errorIcon {
+    color: #ef4444;
+    margin-bottom: 16px;
+}
+
+.warningIcon {
+    color: #fbbf24;
+    margin-bottom: 16px;
+}
+
+.errorTitle {
+    font-size: 22px;
+    font-weight: 700;
+    color: #ef4444;
+    margin-bottom: 8px;
+}
+
+.errorDesc {
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+    font-size: 14px;
+}
+
+.homeBtn {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: rgba(51, 144, 236, 0.15) !important;
+    border: 1px solid rgba(51, 144, 236, 0.3) !important;
+    color: var(--accent-color) !important;
+}
+
+.errorIcon {
+    color: #ef4444;
+    margin-bottom: 24px;
+}
+
+.warningIcon {
+    color: #fbbf24;
+    margin-bottom: 24px;
+}
+
+.errorTitle {
+    font-size: 24px;
+    font-weight: 700;
+    color: #ef4444;
+    margin-bottom: 8px;
+}
+
+.errorDesc {
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+    font-size: 14px;
+}
+
+/* Already Used / Owner Styles */
+.alreadyUsedContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 40px 24px 32px;
+    background: linear-gradient(180deg, rgba(251, 191, 36, 0.08) 0%, var(--bg-secondary) 40%);
+    border: 1px solid rgba(251, 191, 36, 0.15);
+    border-radius: 28px;
+    width: 100%;
+    animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.alreadyUsedIcon {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.25), rgba(245, 158, 11, 0.15));
+    border: 2px solid rgba(251, 191, 36, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+    color: #fbbf24;
+    box-shadow: 0 8px 32px rgba(251, 191, 36, 0.15);
+}
+
+.alreadyUsedTitle {
+    font-size: 20px;
+    font-weight: 700;
+    color: #fbbf24;
+    margin-bottom: 6px;
+}
+
+.alreadyUsedDesc {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-bottom: 28px;
+    opacity: 0.8;
+}
+
+/* Owner Card - Centered Design */
+.ownerCard {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 24px 32px;
+    background: var(--surface-alpha-04);
+    border: 1px solid var(--surface-alpha-06);
+    border-radius: 20px;
+    width: 100%;
+    max-width: 260px;
+    margin-bottom: 20px;
+    backdrop-filter: blur(8px);
+}
+
+.ownerAvatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    border: 3px solid var(--surface-alpha-10);
+    box-shadow: 0 4px 16px var(--ink-alpha-30);
+}
+
+.ownerAvatarImg {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.ownerAvatarPlaceholder {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: 700;
+    color: white;
+    text-transform: uppercase;
+}
+
+.ownerInfo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.ownerName {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.ownerUsername {
+    font-size: 14px;
+    color: var(--accent-color);
+    opacity: 0.9;
+}
+
+/* Activation Time - Inline Badge */
+.activationTimeBadge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    background: rgba(51, 144, 236, 0.1);
+    border: 1px solid rgba(51, 144, 236, 0.15);
+    border-radius: 100px;
+    margin-bottom: 24px;
+}
+
+.activationTimeLabel {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.activationTimeValue {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-color);
+}

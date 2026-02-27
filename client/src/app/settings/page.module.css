@@ -1,0 +1,346 @@
+.container {
+    min-height: var(--app-viewport-stable-height, var(--app-viewport-height, 100dvh));
+    background: var(--bg-primary);
+    padding-bottom: calc(24px + var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px)));
+}
+
+.main {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 18px 16px 12px;
+}
+
+.header {
+    margin-bottom: 16px;
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--surface-alpha-08);
+    border-radius: 16px;
+    padding: 14px;
+    margin-bottom: 12px;
+}
+
+.sectionHeader {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+}
+
+.selectWrapper {
+    position: relative;
+}
+
+.select {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--surface-alpha-05);
+    border: 1px solid var(--surface-alpha-10);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: var(--text-primary);
+}
+
+.select:hover {
+    background: var(--surface-alpha-08);
+    border-color: var(--surface-alpha-15);
+}
+
+.selectValue {
+    flex: 1;
+    text-align: left;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.chevron {
+    color: var(--text-secondary);
+    transition: transform 0.2s ease;
+}
+
+.chevron.rotated {
+    transform: rotate(180deg);
+}
+
+.flag {
+    font-size: 20px;
+}
+
+.dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--surface-alpha-10);
+    border-radius: 12px;
+    padding: 6px;
+    box-shadow: 0 10px 40px var(--overlay-soft, var(--ink-alpha-40));
+    z-index: 50;
+    animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.dropdownItem {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.15s ease;
+    text-align: left;
+}
+
+.dropdownItem:hover {
+    background: var(--surface-alpha-08);
+}
+
+.dropdownItem.active {
+    background: rgba(59, 130, 246, 0.15);
+    color: #3b82f6;
+}
+
+.toggleRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--surface-alpha-05);
+    border-radius: 12px;
+}
+
+.rowDivider {
+    height: 1px;
+    margin: 10px 4px;
+    background: var(--surface-alpha-08);
+}
+
+.toggleLeft {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.toggleIconBox {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: rgba(250, 204, 21, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #facc15;
+    flex-shrink: 0;
+}
+
+.themeIconBox {
+    background: var(--theme-icon-bg, rgba(59, 130, 246, 0.15));
+    color: var(--theme-icon-color, #60a5fa);
+}
+
+.notificationsIconBox {
+    background: rgba(34, 197, 94, 0.16);
+    color: #22c55e;
+}
+
+.toggleLabel {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.toggle {
+    width: 52px;
+    height: 28px;
+    border-radius: 14px;
+    background: var(--surface-alpha-15);
+    border: none;
+    padding: 2px;
+    cursor: pointer;
+    transition: background 0.2s ease, opacity 0.2s ease;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.toggle.toggleOn {
+    background: var(--accent-color);
+}
+
+.toggleDisabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.toggleThumb {
+    width: 24px;
+    height: 24px;
+    border-radius: 12px;
+    background: var(--accent-text);
+    transition: transform 0.2s ease;
+    box-shadow: 0 2px 4px var(--surface-alpha-20);
+}
+
+.toggle.toggleOn .toggleThumb {
+    transform: translateX(24px);
+}
+
+.notificationHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+}
+
+.notificationCard {
+    width: 100%;
+    border: 1px solid var(--surface-alpha-08);
+    border-radius: 14px;
+    background: var(--surface-alpha-04);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.notificationControls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.expandButton {
+    width: auto;
+    height: auto;
+    padding: 4px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.18s ease, color 0.2s ease;
+}
+
+.expandButton:hover {
+    color: var(--text-primary);
+}
+
+.expandButton.expanded {
+    transform: rotate(180deg);
+}
+
+.notificationBody {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--surface-alpha-08);
+}
+
+.subToggleRow {
+    margin-top: 2px;
+}
+
+.subNotificationIconBox {
+    background: rgba(56, 189, 248, 0.16);
+    color: #38bdf8;
+}
+
+.subHint {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.permissionBox {
+    padding: 12px;
+    border: 1px solid var(--surface-alpha-10);
+    border-radius: 12px;
+    background: var(--surface-alpha-05);
+}
+
+.permissionText {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+.permissionActions {
+    margin-top: 10px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+}
+
+.permissionPrimary,
+.permissionGhost {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.permissionPrimary {
+    background: var(--accent-color);
+    color: var(--accent-text);
+}
+
+.permissionPrimary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.permissionGhost {
+    background: var(--surface-alpha-08);
+    color: var(--text-primary);
+    border: 1px solid var(--surface-alpha-10);
+}
+
+.errorText {
+    margin: 10px 0 0;
+    font-size: 12px;
+    color: #ef4444;
+}

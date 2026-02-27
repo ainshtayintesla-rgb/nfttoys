@@ -1,0 +1,134 @@
+.nav {
+    position: fixed;
+    bottom: calc(24px + var(--app-safe-bottom-nav, var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px))));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    width: calc(100% - 48px);
+    max-width: 360px;
+    background: var(--bg-secondary);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--surface-alpha-08);
+    border-radius: 28px;
+    padding: 6px 8px;
+    box-shadow:
+        0 20px 50px var(--ink-alpha-40),
+        0 0 0 1px var(--surface-alpha-05) inset;
+}
+
+.container {
+    display: flex;
+    justify-content: space-evenly;
+    align-items: center;
+    height: 60px;
+    width: 100%;
+}
+
+.item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    color: var(--surface-alpha-45);
+    font-size: 11px;
+    transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    width: 72px;
+    height: 52px;
+    border-radius: 18px;
+    position: relative;
+    overflow: visible;
+    text-decoration: none;
+}
+
+.item:hover {
+    color: var(--surface-alpha-70);
+}
+
+.item:active {
+    transform: scale(0.92);
+}
+
+/* Active state - just text color, no background */
+.active {
+    color: var(--text-primary);
+}
+
+/* Active blue dot indicator */
+.active::after {
+    content: '';
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 5px;
+    height: 5px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--accent-color), 0 0 20px rgba(51, 144, 236, 0.4);
+}
+
+.icon {
+    font-size: 22px;
+    transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.active .icon {
+    color: var(--accent-color);
+}
+
+.label {
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    opacity: 0.7;
+    transition: all 0.2s ease;
+}
+
+.active .label {
+    opacity: 1;
+    font-weight: 600;
+}
+
+/* ============================================
+   CENTER BUTTON (SCAN) - Special Styling
+   ============================================ */
+.item:nth-child(2) {
+    width: 64px;
+    height: 64px;
+    margin-top: -20px;
+    background: linear-gradient(135deg, var(--accent-color) 0%, #22d3ee 100%);
+    border-radius: 50%;
+    box-shadow:
+        0 8px 24px rgba(51, 144, 236, 0.4),
+        0 0 0 4px var(--bg-secondary),
+        0 0 0 5px var(--surface-alpha-15);
+    color: var(--accent-text);
+}
+
+.item:nth-child(2):hover {
+    transform: scale(1.08);
+    box-shadow:
+        0 12px 32px rgba(51, 144, 236, 0.5),
+        0 0 0 4px var(--bg-secondary),
+        0 0 0 5px var(--surface-alpha-20);
+}
+
+.item:nth-child(2):active {
+    transform: scale(0.95);
+}
+
+.item:nth-child(2) .icon {
+    color: var(--accent-text);
+    filter: drop-shadow(0 2px 4px var(--ink-alpha-20));
+}
+
+.item:nth-child(2) .label {
+    display: none;
+    /* Hide label for center button */
+}
+
+/* Remove blue dot from center button when active */
+.item:nth-child(2).active::after {
+    display: none;
+}

@@ -1,0 +1,102 @@
+.container {
+    position: relative;
+    z-index: 50;
+}
+
+.trigger {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface-alpha-05);
+    border: 1px solid var(--surface-alpha-10);
+    padding: 6px 10px;
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.trigger:hover,
+.trigger.active {
+    background: var(--surface-alpha-10);
+    border-color: var(--surface-alpha-20);
+}
+
+.flag {
+    font-size: 16px;
+    line-height: 1;
+}
+
+.chevron {
+    opacity: 0.5;
+    transition: transform 0.2s ease;
+}
+
+.rotate {
+    transform: rotate(180deg);
+}
+
+.dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 140px;
+    background: rgba(30, 30, 40, 0.95);
+    /* Solid dark background for readability */
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--surface-alpha-10);
+    border-radius: 12px;
+    padding: 6px;
+    box-shadow: 0 10px 40px var(--ink-alpha-40);
+
+    /* Animation */
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+    pointer-events: none;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    transform-origin: top right;
+}
+
+.open {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: all;
+}
+
+.option {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.1s ease;
+    position: relative;
+}
+
+.option:hover {
+    background: var(--surface-alpha-05);
+    color: var(--text-primary);
+}
+
+.selected {
+    background: transparent;
+    color: var(--text-primary);
+}
+
+.dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    margin-left: auto;
+}

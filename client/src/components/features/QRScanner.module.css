@@ -1,0 +1,128 @@
+.scannerWrapper {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+.statusContainer {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    text-align: center;
+    gap: 12px;
+    background: var(--ink-alpha-30);
+    backdrop-filter: blur(8px);
+}
+
+.statusText {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-text-primary, #fff);
+    margin: 0;
+}
+
+.statusHint {
+    font-size: 13px;
+    color: var(--color-text-secondary, var(--surface-alpha-70));
+    margin: 0;
+    max-width: 240px;
+    line-height: 1.4;
+}
+
+.icon {
+    color: var(--color-primary, #00ffab);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.iconError {
+    color: #ff4757;
+}
+
+.iconWarning {
+    color: #ffa502;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--surface-alpha-20);
+    border-top-color: var(--color-primary, #00ffab);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.buttonGroup {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.retryButton {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    background: var(--color-primary, #00ffab);
+    color: #000;
+    border: none;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: 8px;
+}
+
+.retryButton:hover {
+    transform: scale(1.02);
+    filter: brightness(1.1);
+}
+
+.retryButton:active {
+    transform: scale(0.98);
+}
+
+.settingsButton {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    background: var(--surface-alpha-10);
+    color: var(--text-primary);
+    border: 1px solid var(--surface-alpha-20);
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: 8px;
+}
+
+.settingsButton:hover {
+    background: var(--surface-alpha-15);
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}

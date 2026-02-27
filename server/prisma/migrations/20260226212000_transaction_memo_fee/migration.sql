@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "Transaction"
+ADD COLUMN IF NOT EXISTS "memo" TEXT,
+ADD COLUMN IF NOT EXISTS "feeAmount" INTEGER,
+ADD COLUMN IF NOT EXISTS "feeCurrency" TEXT;
