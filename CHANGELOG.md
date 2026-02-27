@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.2] - 2026-02-27
+
+### Fixed
+- Transfer NFT drawer: removed redundant "Comment" label above the input.
+- Transfer NFT drawer: moved live character counter inside the comment field to the bottom-right corner.
+
 ## [0.2.1] - 2026-02-27
 
 ### Fixed

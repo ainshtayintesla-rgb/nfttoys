@@ -224,14 +224,11 @@
 }
 
 .memoField {
-    display: grid;
-    gap: 6px;
+    display: block;
 }
 
-.memoLabel {
-    color: var(--text-secondary);
-    font-size: 12px;
-    font-weight: 600;
+.memoInputWrap {
+    position: relative;
 }
 
 .memoInput {
@@ -241,7 +238,7 @@
     border: 1px solid var(--surface-alpha-08);
     background: var(--ink-alpha-30);
     color: var(--text-primary);
-    padding: 10px 12px;
+    padding: 10px 68px 28px 12px;
     font-size: 14px;
     line-height: 1.4;
     resize: none;
@@ -258,10 +255,13 @@
 }
 
 .memoCounter {
-    justify-self: end;
+    position: absolute;
+    right: 12px;
+    bottom: 10px;
     color: var(--text-secondary);
     font-size: 11px;
     line-height: 1;
+    pointer-events: none;
 }
 
 .error {

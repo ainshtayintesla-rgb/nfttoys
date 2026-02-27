@@ -879,20 +879,19 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                                     </div>
 
                                     <div className={styles.memoField}>
-                                        <span className={styles.memoLabel}>
-                                            {t('transactions_comment') || 'Comment'}
-                                        </span>
-                                        <textarea
-                                            className={styles.memoInput}
-                                            value={memoInput}
-                                            onChange={(event) => setMemoInput(sanitizeMemoInput(event.target.value))}
-                                            placeholder={t('transfer_memo_placeholder') || 'Optional comment'}
-                                            maxLength={TRANSFER_MEMO_MAX_LENGTH}
-                                            rows={3}
-                                        />
-                                        <span className={styles.memoCounter}>
-                                            {memoLength}/{TRANSFER_MEMO_MAX_LENGTH}
-                                        </span>
+                                        <div className={styles.memoInputWrap}>
+                                            <textarea
+                                                className={styles.memoInput}
+                                                value={memoInput}
+                                                onChange={(event) => setMemoInput(sanitizeMemoInput(event.target.value))}
+                                                placeholder={t('transfer_memo_placeholder') || 'Optional comment'}
+                                                maxLength={TRANSFER_MEMO_MAX_LENGTH}
+                                                rows={3}
+                                            />
+                                            <span className={styles.memoCounter}>
+                                                {memoLength}/{TRANSFER_MEMO_MAX_LENGTH}
+                                            </span>
+                                        </div>
                                     </div>
 
                                     {error && <p className={styles.error}>{error}</p>}
