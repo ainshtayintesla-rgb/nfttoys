@@ -828,19 +828,28 @@
     max-width: 220px;
 }
 
-.continueButton {
+.continueBar {
+    position: sticky;
+    bottom: 0;
+    z-index: 4;
     margin-top: 4px;
+    padding-top: 10px;
+    padding-bottom: 2px;
+    background: linear-gradient(180deg, var(--ink-alpha-00) 0%, var(--bg-secondary) 42%);
+}
+
+.continueButton {
     min-height: 52px;
     border-radius: 14px;
-    position: sticky;
-    bottom: max(0px, var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px)));
-    z-index: 3;
+    background: var(--accent-color);
+    color: var(--accent-text);
+    border: 1px solid transparent;
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
 
 .continueButton:disabled {
-    opacity: 1;
-    background: color-mix(in srgb, var(--accent-color) 62%, var(--bg-secondary));
+    opacity: 0.68;
+    background: var(--accent-color);
     color: var(--accent-text);
     border-color: transparent;
     box-shadow: none;

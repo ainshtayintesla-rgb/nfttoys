@@ -898,14 +898,16 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                                     {error && <p className={styles.error}>{error}</p>}
                                 </div>
 
-                                <Button
-                                    fullWidth
-                                    disabled={!canContinue}
-                                    onClick={handleContinue}
-                                    className={styles.continueButton}
-                                >
-                                    {t('continue') || 'Continue'}
-                                </Button>
+                                <div className={styles.continueBar}>
+                                    <Button
+                                        fullWidth
+                                        disabled={!canContinue}
+                                        onClick={handleContinue}
+                                        className={styles.continueButton}
+                                    >
+                                        {t('continue') || 'Continue'}
+                                    </Button>
+                                </div>
                             </>
                         )}
                     </>
