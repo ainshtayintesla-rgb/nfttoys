@@ -812,9 +812,6 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
                 recipientUserId = recipientWallet.userId;
             }
 
-            if (recipientWalletAddress === senderWallet.address) {
-                throw new WalletValidationError('Cannot transfer to yourself', 'SELF_TRANSFER', 400);
-            }
 
             const debitResult = await tx.wallet.updateMany({
                 where: {

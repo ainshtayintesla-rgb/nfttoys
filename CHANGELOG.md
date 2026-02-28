@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.13] - 2026-02-28
+
+### Changed
+- Allowed sending UZS to your own wallet in POST /wallet/send; transfer now succeeds and only fixed fee is net-debited from sender balance.
+- Allowed transferring NFT to your own wallet in POST /nft/transfer; transfer is processed and fee logic remains applied for system revenue.
+
 ## [0.2.12] - 2026-02-28
 
 ### Changed

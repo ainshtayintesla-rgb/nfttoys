@@ -439,9 +439,6 @@ router.post('/transfer', strictLimit, requireAuth, csrfProtection, async (req, r
             return res.status(404).json({ error: 'Could not find recipient wallet', code: 'RECIPIENT_NOT_FOUND' });
         }
 
-        if (recipientWallet === nft.ownerWallet) {
-            return res.status(400).json({ error: 'Cannot transfer to yourself', code: 'SELF_TRANSFER' });
-        }
 
         const transferTimestamp = Date.now();
         const transactionType: 'transfer' | 'burn' = recipientWallet === ZERO_ADDRESS ? 'burn' : 'transfer';
