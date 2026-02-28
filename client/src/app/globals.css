@@ -228,6 +228,12 @@ a {
   text-decoration: none;
 }
 
+input,
+textarea,
+select {
+  font-size: 16px !important;
+}
+
 /* Utility Animations */
 @keyframes fadeIn {
   from {

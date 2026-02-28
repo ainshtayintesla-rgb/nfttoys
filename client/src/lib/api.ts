@@ -108,6 +108,17 @@ interface WalletOperationsResponse {
     hasMore: boolean;
 }
 
+interface WalletRecipientLookupResponse {
+    success: boolean;
+    recipient: {
+        id: string;
+        username: string | null;
+        firstName: string | null;
+        photoUrl: string | null;
+        walletFriendly: string | null;
+    } | null;
+}
+
 /**
  * API methods
  */
@@ -413,6 +424,19 @@ export const api = {
 
             return apiFetch<WalletOperationsResponse>(
                 `/wallet/operations${queryString ? `?${queryString}` : ''}`,
+            );
+        },
+
+        findRecipient: (params: { username?: string; wallet?: string }, initData?: string) => {
+            const query = new URLSearchParams();
+            if (params.username) query.set('username', params.username);
+            if (params.wallet) query.set('wallet', params.wallet);
+            const queryString = query.toString();
+            const headers = initData ? { 'X-Telegram-Init-Data': initData } : undefined;
+
+            return apiFetch<WalletRecipientLookupResponse>(
+                `/wallet/recipient/search${queryString ? `?${queryString}` : ''}`,
+                { headers },
             );
         },
     },

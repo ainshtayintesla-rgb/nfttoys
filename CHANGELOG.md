@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.6] - 2026-02-28
+
+### Added
+- Wallet send drawer now resolves recipient profile for `@username` and `LV-...` wallet lookups, including avatar preview.
+- New backend endpoint `GET /wallet/recipient/search` and client API method `api.wallet.findRecipient(...)`.
+
+### Changed
+- Wallet send drawer UI cleanup: removed helper subtitle, removed recipient/amount labels, and removed quick amount chips.
+- Amount input formatting now uses spaced thousands (`1000 -> 1 000`) in wallet drawers.
+- Username send field now swaps `@` prefix to recipient avatar when an exact user is found.
+- Global input zoom fix: all `input/textarea/select` fields enforce `16px` to prevent focus zoom in mobile webview.
+
 ## [0.2.5] - 2026-02-28
 
 ### Added

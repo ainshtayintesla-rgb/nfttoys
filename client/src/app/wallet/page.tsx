@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ArrowDownLeft,
     ArrowDownToLine,
@@ -48,6 +48,14 @@ interface WalletHistoryGroup {
     items: WalletHistoryItem[];
 }
 
+interface RecipientLookupResult {
+    id: string;
+    username: string | null;
+    firstName: string | null;
+    photoUrl: string | null;
+    walletFriendly: string | null;
+}
+
 type DrawerMode = 'topup' | 'withdraw' | 'receive' | 'send' | null;
 type SendRecipientType = 'username' | 'wallet';
 
@@ -56,6 +64,8 @@ const HISTORY_PAGE_SIZE = 20;
 const WALLET_SEND_FEE = 71;
 const WALLET_FRIENDLY_BODY_LENGTH = 12;
 const TELEGRAM_USERNAME_MAX_LENGTH = 32;
+const SEND_LOOKUP_DEBOUNCE_MS = 420;
+const MAX_AMOUNT_INPUT_DIGITS = 11;
 
 function localeToIntlCode(locale: string): string {
     if (locale === 'ru') return 'ru-RU';
@@ -150,6 +160,38 @@ function sanitizeFriendlyBody(value: string): string {
         .slice(0, WALLET_FRIENDLY_BODY_LENGTH);
 }
 
+function normalizeAmountDigits(value: string): string {
+    const digitsOnly = value.replace(/[^0-9]/g, '').slice(0, MAX_AMOUNT_INPUT_DIGITS);
+    return digitsOnly.replace(/^0+(?=\d)/, '');
+}
+
+function formatAmountInput(value: string): string {
+    const digits = normalizeAmountDigits(value);
+    if (!digits) {
+        return '';
+    }
+
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+function getRecipientFallbackLetter(recipient: RecipientLookupResult | null): string {
+    if (!recipient) {
+        return 'U';
+    }
+
+    const firstName = (recipient.firstName || '').trim();
+    if (firstName) {
+        return firstName.slice(0, 1).toUpperCase();
+    }
+
+    const username = sanitizeUsernameInput(recipient.username || '');
+    if (username) {
+        return username.slice(0, 1).toUpperCase();
+    }
+
+    return 'U';
+}
+
 export default function WalletPage() {
     const { t, locale } = useLanguage();
     const { user, authUser, isAuthenticated, haptic, webApp } = useTelegram();
@@ -176,6 +218,9 @@ export default function WalletPage() {
     const [recipientType, setRecipientType] = useState<SendRecipientType>('username');
     const [usernameInput, setUsernameInput] = useState('');
     const [walletBodyInput, setWalletBodyInput] = useState('');
+    const [recipientLookup, setRecipientLookup] = useState<RecipientLookupResult | null>(null);
+    const [isRecipientLookupLoading, setIsRecipientLookupLoading] = useState(false);
+    const lookupSeqRef = useRef(0);
 
     useBodyScrollLock(Boolean(drawerMode));
 
@@ -317,7 +362,7 @@ export default function WalletPage() {
     }, [copyValue]);
 
     const parsedAmount = useMemo(() => {
-        const normalized = amountInput.trim();
+        const normalized = normalizeAmountDigits(amountInput);
         if (!normalized) {
             return null;
         }
@@ -332,6 +377,156 @@ export default function WalletPage() {
 
     const normalizedUsername = useMemo(() => sanitizeUsernameInput(usernameInput), [usernameInput]);
     const normalizedWalletBody = useMemo(() => sanitizeFriendlyBody(walletBodyInput), [walletBodyInput]);
+    const resolvedLookupUsername = useMemo(
+        () => sanitizeUsernameInput(recipientLookup?.username || ''),
+        [recipientLookup?.username],
+    );
+    const resolvedLookupWalletBody = useMemo(
+        () => sanitizeFriendlyBody(recipientLookup?.walletFriendly || ''),
+        [recipientLookup?.walletFriendly],
+    );
+    const hasExactUsernameMatch = useMemo(() => {
+        if (!normalizedUsername || !resolvedLookupUsername) {
+            return false;
+        }
+
+        return normalizedUsername.toLowerCase() === resolvedLookupUsername.toLowerCase();
+    }, [normalizedUsername, resolvedLookupUsername]);
+    const hasExactWalletMatch = useMemo(() => {
+        if (!normalizedWalletBody || !resolvedLookupWalletBody) {
+            return false;
+        }
+
+        return normalizedWalletBody === resolvedLookupWalletBody;
+    }, [normalizedWalletBody, resolvedLookupWalletBody]);
+    const recipientPreviewName = useMemo(() => {
+        if (hasExactUsernameMatch && resolvedLookupUsername) {
+            return `@${resolvedLookupUsername}`;
+        }
+
+        const firstName = (recipientLookup?.firstName || '').trim();
+        if (firstName) {
+            return firstName;
+        }
+
+        if (resolvedLookupUsername) {
+            return `@${resolvedLookupUsername}`;
+        }
+
+        return t('wallet_send_to_label') || 'Recipient';
+    }, [hasExactUsernameMatch, recipientLookup?.firstName, resolvedLookupUsername, t]);
+    const recipientPreviewWallet = useMemo(() => {
+        if (resolvedLookupWalletBody) {
+            return `LV-${resolvedLookupWalletBody}`;
+        }
+
+        return '';
+    }, [resolvedLookupWalletBody]);
+    const recipientFallbackLetter = useMemo(
+        () => getRecipientFallbackLetter(recipientLookup),
+        [recipientLookup],
+    );
+
+    useEffect(() => {
+        if (drawerMode !== 'send') {
+            lookupSeqRef.current += 1;
+            setRecipientLookup(null);
+            setIsRecipientLookupLoading(false);
+            return;
+        }
+
+        if (recipientType === 'username') {
+            const usernameLookup = normalizedUsername.toLowerCase();
+
+            if (usernameLookup.length < 2) {
+                lookupSeqRef.current += 1;
+                setRecipientLookup(null);
+                setIsRecipientLookupLoading(false);
+                return;
+            }
+
+            const lookupSeq = ++lookupSeqRef.current;
+            const timeoutId = window.setTimeout(async () => {
+                setIsRecipientLookupLoading(true);
+
+                try {
+                    const response = await api.nft.findRecipientByUsername(
+                        usernameLookup,
+                        webApp?.initData || undefined,
+                    );
+
+                    if (lookupSeqRef.current !== lookupSeq) {
+                        return;
+                    }
+
+                    const nextRecipient = response?.recipient || null;
+                    const nextUsername = sanitizeUsernameInput(nextRecipient?.username || '');
+
+                    if (nextRecipient && nextUsername && nextUsername.toLowerCase() === usernameLookup) {
+                        setRecipientLookup(nextRecipient);
+                    } else {
+                        setRecipientLookup(null);
+                    }
+                } catch {
+                    if (lookupSeqRef.current === lookupSeq) {
+                        setRecipientLookup(null);
+                    }
+                } finally {
+                    if (lookupSeqRef.current === lookupSeq) {
+                        setIsRecipientLookupLoading(false);
+                    }
+                }
+            }, SEND_LOOKUP_DEBOUNCE_MS);
+
+            return () => {
+                window.clearTimeout(timeoutId);
+            };
+        }
+
+        if (normalizedWalletBody.length < 3) {
+            lookupSeqRef.current += 1;
+            setRecipientLookup(null);
+            setIsRecipientLookupLoading(false);
+            return;
+        }
+
+        const lookupSeq = ++lookupSeqRef.current;
+        const timeoutId = window.setTimeout(async () => {
+            setIsRecipientLookupLoading(true);
+
+            try {
+                const response = await api.wallet.findRecipient(
+                    { wallet: `LV-${normalizedWalletBody}` },
+                    webApp?.initData || undefined,
+                );
+
+                if (lookupSeqRef.current !== lookupSeq) {
+                    return;
+                }
+
+                const nextRecipient = response?.recipient || null;
+                const nextWalletBody = sanitizeFriendlyBody(nextRecipient?.walletFriendly || '');
+
+                if (nextRecipient && nextWalletBody === normalizedWalletBody) {
+                    setRecipientLookup(nextRecipient);
+                } else {
+                    setRecipientLookup(null);
+                }
+            } catch {
+                if (lookupSeqRef.current === lookupSeq) {
+                    setRecipientLookup(null);
+                }
+            } finally {
+                if (lookupSeqRef.current === lookupSeq) {
+                    setIsRecipientLookupLoading(false);
+                }
+            }
+        }, SEND_LOOKUP_DEBOUNCE_MS);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [drawerMode, normalizedUsername, normalizedWalletBody, recipientType, webApp?.initData]);
 
     const sendTotalDebit = useMemo(() => {
         if (!parsedAmount) {
@@ -369,6 +564,8 @@ export default function WalletPage() {
         setDrawerMode(mode);
         setDrawerError('');
         setCopiedInDrawer(false);
+        setRecipientLookup(null);
+        setIsRecipientLookupLoading(false);
 
         if (mode === 'receive') {
             setSelectedQuick(null);
@@ -376,15 +573,18 @@ export default function WalletPage() {
             return;
         }
 
-        const defaultAmount = QUICK_AMOUNTS[1];
-        setSelectedQuick(defaultAmount);
-        setAmountInput(String(defaultAmount));
-
         if (mode === 'send') {
+            setSelectedQuick(null);
+            setAmountInput('');
             setRecipientType('username');
             setUsernameInput('');
             setWalletBodyInput('');
+            return;
         }
+
+        const defaultAmount = QUICK_AMOUNTS[1];
+        setSelectedQuick(defaultAmount);
+        setAmountInput(formatAmountInput(String(defaultAmount)));
     };
 
     const closeDrawer = (force = false) => {
@@ -399,6 +599,8 @@ export default function WalletPage() {
         setRecipientType('username');
         setUsernameInput('');
         setWalletBodyInput('');
+        setRecipientLookup(null);
+        setIsRecipientLookupLoading(false);
     };
 
     const writeToClipboard = useCallback(async (value: string) => {
@@ -836,16 +1038,13 @@ export default function WalletPage() {
                             </div>
                         ) : drawerMode === 'send' ? (
                             <div className={styles.drawerBody}>
-                                <p className={styles.drawerHint}>
-                                    {t('wallet_send_hint') || 'Send UZS to another wallet by username or wallet address.'}
-                                </p>
-
                                 <div className={styles.sendTabs}>
                                     <button
                                         type="button"
                                         className={`${styles.sendTab} ${recipientType === 'username' ? styles.sendTabActive : ''}`}
                                         onClick={() => {
                                             setRecipientType('username');
+                                            setRecipientLookup(null);
                                             setDrawerError('');
                                             haptic.selection();
                                         }}
@@ -857,6 +1056,7 @@ export default function WalletPage() {
                                         className={`${styles.sendTab} ${recipientType === 'wallet' ? styles.sendTabActive : ''}`}
                                         onClick={() => {
                                             setRecipientType('wallet');
+                                            setRecipientLookup(null);
                                             setDrawerError('');
                                             haptic.selection();
                                         }}
@@ -865,10 +1065,34 @@ export default function WalletPage() {
                                     </button>
                                 </div>
 
-                                <label className={styles.sendField}>
-                                    <span>{t('wallet_send_to_label') || 'Recipient'}</span>
+                                <div className={styles.sendField}>
                                     <div className={styles.sendInputWrap}>
-                                        <span className={styles.sendPrefix}>{recipientType === 'username' ? '@' : 'LV-'}</span>
+                                        {recipientType === 'username' ? (
+                                            <span className={styles.sendPrefixSlot}>
+                                                {hasExactUsernameMatch ? (
+                                                    recipientLookup?.photoUrl ? (
+                                                        <img
+                                                            src={recipientLookup.photoUrl}
+                                                            alt=""
+                                                            className={styles.sendPrefixAvatar}
+                                                            loading="lazy"
+                                                            referrerPolicy="no-referrer"
+                                                        />
+                                                    ) : (
+                                                        <span className={styles.sendPrefixAvatarFallback}>
+                                                            {recipientFallbackLetter}
+                                                        </span>
+                                                    )
+                                                ) : (
+                                                    <span className={styles.sendPrefix}>@</span>
+                                                )}
+                                                {isRecipientLookupLoading && (
+                                                    <Loader2 size={10} className={styles.sendPrefixSpinner} />
+                                                )}
+                                            </span>
+                                        ) : (
+                                            <span className={styles.sendPrefix}>LV-</span>
+                                        )}
                                         <input
                                             type="text"
                                             className={styles.sendInput}
@@ -880,51 +1104,86 @@ export default function WalletPage() {
                                             }
                                             onChange={(event) => {
                                                 if (recipientType === 'username') {
-                                                    setUsernameInput(sanitizeUsernameInput(event.target.value));
+                                                    const nextUsername = sanitizeUsernameInput(event.target.value);
+                                                    setUsernameInput(nextUsername);
+                                                    setRecipientLookup((current) => {
+                                                        if (!current) {
+                                                            return null;
+                                                        }
+
+                                                        const currentUsername = sanitizeUsernameInput(current.username || '');
+                                                        if (!currentUsername || !nextUsername) {
+                                                            return null;
+                                                        }
+
+                                                        return currentUsername.toLowerCase() === nextUsername.toLowerCase()
+                                                            ? current
+                                                            : null;
+                                                    });
                                                 } else {
-                                                    setWalletBodyInput(sanitizeFriendlyBody(event.target.value));
+                                                    const nextWalletBody = sanitizeFriendlyBody(event.target.value);
+                                                    setWalletBodyInput(nextWalletBody);
+                                                    setRecipientLookup((current) => {
+                                                        if (!current) {
+                                                            return null;
+                                                        }
+
+                                                        const currentWalletBody = sanitizeFriendlyBody(current.walletFriendly || '');
+                                                        if (!currentWalletBody || !nextWalletBody) {
+                                                            return null;
+                                                        }
+
+                                                        return currentWalletBody === nextWalletBody
+                                                            ? current
+                                                            : null;
+                                                    });
                                                 }
                                                 setDrawerError('');
                                             }}
                                         />
                                     </div>
-                                </label>
-
-                                <div className={styles.quickGrid}>
-                                    {QUICK_AMOUNTS.map((value) => (
-                                        <button
-                                            key={value}
-                                            type="button"
-                                            className={`${styles.quickButton} ${selectedQuick === value ? styles.quickButtonActive : ''}`}
-                                            onClick={() => {
-                                                setSelectedQuick(value);
-                                                setAmountInput(String(value));
-                                                haptic.selection();
-                                            }}
-                                        >
-                                            {formatCurrency(value)} UZS
-                                        </button>
-                                    ))}
                                 </div>
 
-                                <label className={styles.amountField}>
-                                    <span>{t('wallet_amount_label') || 'Amount'}</span>
+                                {recipientLookup && (recipientType === 'username' ? hasExactUsernameMatch : hasExactWalletMatch) && (
+                                    <div className={styles.sendRecipientPreview}>
+                                        <span className={styles.sendRecipientAvatarWrap}>
+                                            {recipientLookup.photoUrl ? (
+                                                <img
+                                                    src={recipientLookup.photoUrl}
+                                                    alt=""
+                                                    className={styles.sendRecipientAvatar}
+                                                    loading="lazy"
+                                                    referrerPolicy="no-referrer"
+                                                />
+                                            ) : (
+                                                <span className={styles.sendRecipientAvatarFallback}>{recipientFallbackLetter}</span>
+                                            )}
+                                        </span>
+                                        <span className={styles.sendRecipientMeta}>
+                                            <span className={styles.sendRecipientName}>{recipientPreviewName}</span>
+                                            <span className={styles.sendRecipientWallet}>
+                                                {recipientPreviewWallet || `ID: ${recipientLookup.id}`}
+                                            </span>
+                                        </span>
+                                    </div>
+                                )}
+
+                                <div className={styles.amountField}>
                                     <div className={styles.amountInputWrap}>
                                         <input
-                                            type="number"
-                                            min={1}
+                                            type="text"
                                             inputMode="numeric"
-                                            pattern="[0-9]*"
+                                            pattern="[0-9 ]*"
                                             value={amountInput}
                                             onChange={(event) => {
                                                 setSelectedQuick(null);
-                                                setAmountInput(event.target.value.replace(/[^0-9]/g, ''));
+                                                setAmountInput(formatAmountInput(event.target.value));
                                             }}
-                                            placeholder="10000"
+                                            placeholder="10 000"
                                         />
                                         <span>UZS</span>
                                     </div>
-                                </label>
+                                </div>
 
                                 <div className={styles.sendMeta}>
                                     <div className={styles.sendMetaRow}>
@@ -965,7 +1224,7 @@ export default function WalletPage() {
                                             className={`${styles.quickButton} ${selectedQuick === value ? styles.quickButtonActive : ''}`}
                                             onClick={() => {
                                                 setSelectedQuick(value);
-                                                setAmountInput(String(value));
+                                                setAmountInput(formatAmountInput(String(value)));
                                                 haptic.selection();
                                             }}
                                         >
@@ -978,16 +1237,15 @@ export default function WalletPage() {
                                     <span>{t('wallet_amount_label') || 'Amount'}</span>
                                     <div className={styles.amountInputWrap}>
                                         <input
-                                            type="number"
-                                            min={1}
+                                            type="text"
                                             inputMode="numeric"
-                                            pattern="[0-9]*"
+                                            pattern="[0-9 ]*"
                                             value={amountInput}
                                             onChange={(event) => {
                                                 setSelectedQuick(null);
-                                                setAmountInput(event.target.value.replace(/[^0-9]/g, ''));
+                                                setAmountInput(formatAmountInput(event.target.value));
                                             }}
-                                            placeholder="10000"
+                                            placeholder="10 000"
                                         />
                                         <span>UZS</span>
                                     </div>

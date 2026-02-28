@@ -19,6 +19,7 @@ const MAX_WALLET_OPERATION_AMOUNT = 10_000_000_000;
 const DEFAULT_HISTORY_LIMIT = 20;
 const MAX_HISTORY_LIMIT = 50;
 const TELEGRAM_USERNAME_MAX_LENGTH = 32;
+const WALLET_FRIENDLY_BODY_LENGTH = 12;
 const WALLET_SEND_FEE_AMOUNT = 71;
 const WALLET_SEND_FEE_CURRENCY = 'UZS';
 const TREASURY_ADDRESS_HASH = TREASURY_ADDRESS.slice(3);
@@ -87,6 +88,37 @@ function normalizeUsernameLookupInput(value: unknown): string {
     const candidate = value.trim().replace(/^@+/, '');
     const normalized = candidate.replace(/[^a-zA-Z0-9_]/g, '');
     return normalized.slice(0, TELEGRAM_USERNAME_MAX_LENGTH);
+}
+
+function normalizeWalletLookupInput(value: unknown): string {
+    if (typeof value !== 'string') {
+        return '';
+    }
+
+    const candidate = value.trim();
+    if (!candidate) {
+        return '';
+    }
+
+    if (/^(LV-|UZ-)/i.test(candidate)) {
+        const friendlyBody = candidate
+            .replace(/^(LV-|UZ-)/i, '')
+            .replace(/[^a-zA-Z0-9_]/g, '')
+            .toUpperCase()
+            .slice(0, WALLET_FRIENDLY_BODY_LENGTH);
+        return friendlyBody ? `LV-${friendlyBody}` : '';
+    }
+
+    if (isValidAddress(candidate)) {
+        return candidate;
+    }
+
+    const friendlyBody = candidate
+        .replace(/[^a-zA-Z0-9_]/g, '')
+        .toUpperCase()
+        .slice(0, WALLET_FRIENDLY_BODY_LENGTH);
+
+    return friendlyBody ? `LV-${friendlyBody}` : '';
 }
 
 function walletPayload(wallet: {
@@ -433,6 +465,115 @@ router.get('/operations', standardLimit, requireAuth, async (req, res) => {
     } catch (error) {
         console.error('Wallet operations fetch error:', error);
         return res.status(500).json({ error: 'Failed to fetch wallet operations', code: 'FETCH_ERROR' });
+    }
+});
+
+// GET /wallet/recipient/search
+router.get('/recipient/search', standardLimit, requireAuth, async (req, res) => {
+    try {
+        const usernameInput = normalizeUsernameLookupInput(req.query.username);
+        const walletInput = normalizeWalletLookupInput(req.query.wallet);
+        const hasUsername = Boolean(usernameInput);
+        const hasWallet = Boolean(walletInput);
+
+        if (hasUsername === hasWallet) {
+            return res.status(400).json({
+                error: 'Provide exactly one lookup target: username or wallet',
+                code: 'LOOKUP_TARGET_REQUIRED',
+            });
+        }
+
+        if (hasUsername) {
+            if (usernameInput.length < 2) {
+                return res.json({ success: true, recipient: null });
+            }
+
+            const usernameLower = normalizedUsername(usernameInput);
+            if (!usernameLower) {
+                return res.json({ success: true, recipient: null });
+            }
+
+            const recipient = await prisma.user.findFirst({
+                where: {
+                    walletAddress: { not: null },
+                    OR: [
+                        { usernameLower },
+                        { username: { equals: usernameInput, mode: 'insensitive' } },
+                    ],
+                },
+                select: {
+                    id: true,
+                    username: true,
+                    firstName: true,
+                    photoUrl: true,
+                    walletFriendly: true,
+                },
+            });
+
+            return res.json({
+                success: true,
+                recipient: recipient
+                    ? {
+                        id: recipient.id,
+                        username: recipient.username,
+                        firstName: recipient.firstName,
+                        photoUrl: recipient.photoUrl,
+                        walletFriendly: recipient.walletFriendly,
+                    }
+                    : null,
+            });
+        }
+
+        if (!walletInput) {
+            return res.json({ success: true, recipient: null });
+        }
+
+        const wallet = /^(LV-|UZ-)/i.test(walletInput)
+            ? await prisma.wallet.findUnique({
+                where: { friendlyAddress: walletInput.toUpperCase() },
+                select: {
+                    userId: true,
+                    friendlyAddress: true,
+                },
+            })
+            : await prisma.wallet.findUnique({
+                where: { address: walletInput },
+                select: {
+                    userId: true,
+                    friendlyAddress: true,
+                },
+            });
+
+        if (!wallet?.userId) {
+            return res.json({ success: true, recipient: null });
+        }
+
+        const recipient = await prisma.user.findUnique({
+            where: { id: wallet.userId },
+            select: {
+                id: true,
+                username: true,
+                firstName: true,
+                photoUrl: true,
+                walletFriendly: true,
+            },
+        });
+
+        return res.json({
+            success: true,
+            recipient: recipient
+                ? {
+                    id: recipient.id,
+                    username: recipient.username,
+                    firstName: recipient.firstName,
+                    photoUrl: recipient.photoUrl,
+                    walletFriendly: recipient.walletFriendly || wallet.friendlyAddress || null,
+                }
+                : null,
+        });
+    } catch (error) {
+        console.error('Wallet recipient lookup error:', error);
+        return res.status(500).json({ error: 'Failed to find recipient', code: 'LOOKUP_ERROR' });
     }
 });
 
