@@ -10,16 +10,19 @@ import {
     Check,
     ChevronLeft,
     Copy,
+    Flame,
     Loader2,
     QrCode,
     Send,
     Share2,
+    Sparkles,
     Wallet as WalletIcon,
     X,
 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 
 import { TelegramBackButton } from '@/components/ui/TelegramBackButton';
+import { TgsPlayer } from '@/components/ui/TgsPlayer';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
@@ -58,9 +61,48 @@ interface RecipientLookupResult {
     walletFriendly: string | null;
 }
 
+interface NftPartyInfo {
+    id: string;
+    username: string | null;
+    firstName: string | null;
+    photoUrl: string | null;
+}
+
+interface NftTransactionItem {
+    id: string;
+    txHash: string;
+    type: string;
+    direction: 'in' | 'out';
+    amount: number;
+    asset: string;
+    from: string | null;
+    fromFriendly: string | null;
+    fromUser: NftPartyInfo | null;
+    to: string | null;
+    toFriendly: string | null;
+    toUser: NftPartyInfo | null;
+    tokenId: string | null;
+    modelName: string | null;
+    serialNumber: string | null;
+    collectionName: string | null;
+    tgsUrl: string | null;
+    status: string;
+    timestamp: string;
+    fee: string | null;
+    memo: string | null;
+}
+
+interface NftHistoryGroup {
+    key: string;
+    label: string;
+    items: NftTransactionItem[];
+}
+
 type DrawerMode = 'topup' | 'withdraw' | 'receive' | 'send' | null;
 type SendRecipientType = 'username' | 'wallet';
 type SendStep = 'input' | 'confirm';
+type WalletHistoryTab = 'feed' | 'nft';
+type NftTxDisplayKind = 'received' | 'sent' | 'minted' | 'burn';
 
 const QUICK_AMOUNTS = [5000, 10000, 25000, 50000, 100000];
 const HISTORY_PAGE_SIZE = 20;
@@ -185,6 +227,46 @@ function sanitizeSendMemo(value: string): string {
     return value.slice(0, SEND_MEMO_MAX_LENGTH);
 }
 
+function isMintLikeType(type: string): boolean {
+    const normalized = type.trim().toLowerCase();
+    return normalized === 'mint' || normalized === 'minted' || normalized === 'activated';
+}
+
+function isBurnType(type: string): boolean {
+    const normalized = type.trim().toLowerCase();
+    return normalized === 'burn' || normalized === 'burned';
+}
+
+function resolveNftDisplayKind(item: Pick<NftTransactionItem, 'type' | 'direction'>): NftTxDisplayKind {
+    if (isBurnType(item.type)) {
+        return 'burn';
+    }
+
+    if (isMintLikeType(item.type)) {
+        return 'minted';
+    }
+
+    return item.direction === 'in' ? 'received' : 'sent';
+}
+
+function formatWalletLabel(address: string | null): string {
+    if (!address) {
+        return '—';
+    }
+
+    const normalized = address.trim();
+    if (!normalized) {
+        return '—';
+    }
+
+    const tail = normalized.toUpperCase().slice(-6);
+    if (!tail) {
+        return '—';
+    }
+
+    return `LV-...${tail}`;
+}
+
 export default function WalletPage() {
     const { t, locale } = useLanguage();
     const { user, authUser, isAuthenticated, haptic, webApp } = useTelegram();
@@ -199,6 +281,11 @@ export default function WalletPage() {
     const [isHistoryLoading, setIsHistoryLoading] = useState(true);
     const [isHistoryLoadingMore, setIsHistoryLoadingMore] = useState(false);
     const [historyError, setHistoryError] = useState<string | null>(null);
+    const [activeHistoryTab, setActiveHistoryTab] = useState<WalletHistoryTab>('feed');
+    const [nftTransactions, setNftTransactions] = useState<NftTransactionItem[]>([]);
+    const [isNftLoading, setIsNftLoading] = useState(true);
+    const [nftError, setNftError] = useState<string | null>(null);
+    const [selectedNftTransaction, setSelectedNftTransaction] = useState<NftTransactionItem | null>(null);
 
     const [copiedInDrawer, setCopiedInDrawer] = useState(false);
 
@@ -222,8 +309,10 @@ export default function WalletPage() {
     const [sendSwipeOffset, setSendSwipeOffset] = useState(0);
     const [sendSwipeMaxOffset, setSendSwipeMaxOffset] = useState(0);
     const [isSendSwiping, setIsSendSwiping] = useState(false);
+    const nftDetailsTouchStartY = useRef<number | null>(null);
+    const nftDetailsTouchCurrentY = useRef<number | null>(null);
 
-    useBodyScrollLock(Boolean(drawerMode));
+    useBodyScrollLock(Boolean(drawerMode) || Boolean(selectedNftTransaction));
 
     const formatCurrency = useCallback((amount: number) => {
         return new Intl.NumberFormat(localeToIntlCode(locale), {
@@ -338,10 +427,33 @@ export default function WalletPage() {
         }
     }, [authUser?.uid, isAuthenticated, t]);
 
+    const loadNftTransactions = useCallback(async () => {
+        if (!isAuthenticated || !authUser?.uid) {
+            setNftTransactions([]);
+            setNftError(t('login_required') || 'Login required');
+            setIsNftLoading(false);
+            return;
+        }
+
+        setIsNftLoading(true);
+        setNftError(null);
+
+        try {
+            const response = await api.transactions.list({ limit: 200 });
+            setNftTransactions(response.transactions || []);
+        } catch (loadError) {
+            setNftTransactions([]);
+            setNftError(safeErrorMessage(loadError));
+        } finally {
+            setIsNftLoading(false);
+        }
+    }, [authUser?.uid, isAuthenticated, t]);
+
     useEffect(() => {
         void loadWallet();
         void loadHistory();
-    }, [loadHistory, loadWallet]);
+        void loadNftTransactions();
+    }, [loadHistory, loadNftTransactions, loadWallet]);
 
     const copyValue = useMemo(() => {
         const friendly = (wallet?.friendlyAddress || user?.walletFriendly || '').trim();
@@ -543,8 +655,174 @@ export default function WalletPage() {
         }));
     }, [historyItems, locale, t]);
 
+    const groupedNftTransactions = useMemo<NftHistoryGroup[]>(() => {
+        const grouped = new Map<string, NftTransactionItem[]>();
+
+        nftTransactions.forEach((item) => {
+            const key = dateKeyFromTimestamp(item.timestamp);
+            const existing = grouped.get(key);
+            if (existing) {
+                existing.push(item);
+            } else {
+                grouped.set(key, [item]);
+            }
+        });
+
+        return Array.from(grouped.entries())
+            .sort((a, b) => b[0].localeCompare(a[0]))
+            .map(([key, items]) => ({
+                key,
+                label: key === 'invalid-date'
+                    ? (t('transactions_unknown_date') || 'Unknown date')
+                    : formatGroupDate(key, locale),
+                items,
+            }));
+    }, [locale, nftTransactions, t]);
+
+    const getNftDirectionLabel = useCallback((kind: NftTxDisplayKind) => {
+        if (kind === 'burn') {
+            return t('transactions_direction_burn') || 'BURN';
+        }
+
+        if (kind === 'minted') {
+            return t('transactions_direction_minted') || t('minted') || 'MINTED';
+        }
+
+        return kind === 'received'
+            ? (t('transactions_direction_in') || 'RECEIVE')
+            : (t('transactions_direction_out') || 'SEND');
+    }, [t]);
+
+    const getNftKindClassName = useCallback((kind: NftTxDisplayKind) => {
+        if (kind === 'burn') {
+            return styles.nftKindBurn;
+        }
+
+        if (kind === 'minted') {
+            return styles.nftKindMinted;
+        }
+
+        if (kind === 'received') {
+            return styles.nftKindReceived;
+        }
+
+        return styles.nftKindSent;
+    }, []);
+
+    const getNftKindIcon = useCallback((kind: NftTxDisplayKind, size = 18) => {
+        if (kind === 'burn') {
+            return <Flame size={size} />;
+        }
+
+        if (kind === 'minted') {
+            return <Sparkles size={size} />;
+        }
+
+        if (kind === 'received') {
+            return <ArrowDownLeft size={size} />;
+        }
+
+        return <ArrowUpRight size={size} />;
+    }, []);
+
+    const closeNftDetails = useCallback(() => {
+        setSelectedNftTransaction(null);
+    }, []);
+
+    const handleNftCardClick = useCallback((item: NftTransactionItem) => {
+        haptic.impact('light');
+        setSelectedNftTransaction(item);
+    }, [haptic]);
+
+    const nftDetailsSwipeHandlers = {
+        onTouchStart: (event: React.TouchEvent<HTMLDivElement>) => {
+            nftDetailsTouchStartY.current = event.touches[0]?.clientY ?? null;
+            nftDetailsTouchCurrentY.current = nftDetailsTouchStartY.current;
+        },
+        onTouchMove: (event: React.TouchEvent<HTMLDivElement>) => {
+            nftDetailsTouchCurrentY.current = event.touches[0]?.clientY ?? null;
+        },
+        onTouchEnd: () => {
+            const startY = nftDetailsTouchStartY.current;
+            const currentY = nftDetailsTouchCurrentY.current;
+
+            nftDetailsTouchStartY.current = null;
+            nftDetailsTouchCurrentY.current = null;
+
+            if (startY === null || currentY === null) {
+                return;
+            }
+
+            if (currentY - startY > 72) {
+                closeNftDetails();
+            }
+        },
+    };
+
+    useEffect(() => {
+        if (activeHistoryTab !== 'nft') {
+            setSelectedNftTransaction(null);
+        }
+    }, [activeHistoryTab]);
+
+    const selectedNftKind = selectedNftTransaction ? resolveNftDisplayKind(selectedNftTransaction) : null;
+    const selectedNftTitle = selectedNftTransaction?.collectionName
+        || selectedNftTransaction?.modelName
+        || (t('transactions_asset_nft') || 'NFT');
+    const selectedNftSerial = selectedNftTransaction?.serialNumber ? `#${selectedNftTransaction.serialNumber}` : '';
+    const selectedNftDateLabel = selectedNftTransaction ? formatDetailsDate(selectedNftTransaction.timestamp, locale) : '—';
+    const selectedNftTimeLabel = selectedNftTransaction ? formatTime(selectedNftTransaction.timestamp, locale) : '—';
+    const selectedNftAddress = useMemo(() => {
+        if (!selectedNftTransaction || !selectedNftKind) {
+            return null;
+        }
+
+        if (selectedNftKind === 'sent') {
+            return selectedNftTransaction.toFriendly || selectedNftTransaction.to;
+        }
+
+        if (selectedNftKind === 'received') {
+            return selectedNftTransaction.fromFriendly || selectedNftTransaction.from;
+        }
+
+        if (selectedNftKind === 'burn') {
+            return selectedNftTransaction.toFriendly || selectedNftTransaction.to;
+        }
+
+        return selectedNftTransaction.fromFriendly || selectedNftTransaction.from;
+    }, [selectedNftKind, selectedNftTransaction]);
+    const selectedNftLowerTableLabel = useMemo(() => {
+        if (!selectedNftKind) {
+            return '';
+        }
+
+        if (selectedNftKind === 'sent') {
+            return t('transactions_recipient') || 'Recipient';
+        }
+
+        if (selectedNftKind === 'received') {
+            return t('transactions_sender') || 'Sender';
+        }
+
+        if (selectedNftKind === 'burn') {
+            return t('transactions_burn_address') || 'Burn address';
+        }
+
+        return t('transactions_source') || 'Source';
+    }, [selectedNftKind, t]);
+    const selectedNftAddressValue = selectedNftAddress
+        ? formatWalletLabel(selectedNftAddress)
+        : (t('system') || 'System');
+    const selectedNftMemo = (selectedNftTransaction?.memo || '').trim();
+    const shouldShowNftMemoDetails = selectedNftMemo.length > 0;
+    const selectedNftFeeValue = selectedNftTransaction?.fee || '741 UZS';
+    const selectedNftNameLine = `${selectedNftTitle}${selectedNftSerial ? ` ${selectedNftSerial}` : ''}`;
+    const selectedNftDateTimeLine = `${selectedNftDateLabel}, ${selectedNftTimeLabel}`;
+    const selectedNftIcon = selectedNftKind ? getNftKindIcon(selectedNftKind) : <ArrowUpRight size={18} />;
+
     const openDrawer = (mode: Exclude<DrawerMode, null>) => {
         haptic.impact('light');
+        setSelectedNftTransaction(null);
         setDrawerMode(mode);
         setDrawerError('');
         setCopiedInDrawer(false);
@@ -1002,7 +1280,7 @@ export default function WalletPage() {
                                         onClick={() => openDrawer('topup')}
                                     >
                                         <span className={`${styles.actionIcon} ${styles.actionIconTopup}`}>
-                                            <ArrowDownToLine size={18} />
+                                            <ArrowDownToLine size={20} />
                                         </span>
                                         <span className={styles.actionLabel}>{t('wallet_topup') || 'Top up'}</span>
                                     </button>
@@ -1014,7 +1292,7 @@ export default function WalletPage() {
                                         disabled={wallet.balance <= 0}
                                     >
                                         <span className={`${styles.actionIcon} ${styles.actionIconWithdraw}`}>
-                                            <ArrowUpFromLine size={18} />
+                                            <ArrowUpFromLine size={20} />
                                         </span>
                                         <span className={styles.actionLabel}>{t('wallet_withdraw') || 'Withdraw'}</span>
                                     </button>
@@ -1026,7 +1304,7 @@ export default function WalletPage() {
                                         disabled={!copyValue}
                                     >
                                         <span className={`${styles.actionIcon} ${styles.actionIconReceive}`}>
-                                            <QrCode size={18} />
+                                            <QrCode size={20} />
                                         </span>
                                         <span className={styles.actionLabel}>{t('wallet_receive') || 'Receive'}</span>
                                     </button>
@@ -1038,89 +1316,273 @@ export default function WalletPage() {
                                         disabled={wallet.balance <= WALLET_SEND_FEE}
                                     >
                                         <span className={`${styles.actionIcon} ${styles.actionIconSend}`}>
-                                            <Send size={18} />
+                                            <Send size={20} />
                                         </span>
                                         <span className={styles.actionLabel}>{t('wallet_send') || t('send') || 'Send'}</span>
                                     </button>
                                 </div>
                             </section>
 
+                            <section className={styles.historyTabs} role="tablist" aria-label={t('wallet_history_title') || 'History'}>
+                                <button
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={activeHistoryTab === 'feed'}
+                                    className={`${styles.historyTab} ${activeHistoryTab === 'feed' ? styles.historyTabActive : ''}`}
+                                    onClick={() => {
+                                        setActiveHistoryTab('feed');
+                                        haptic.selection();
+                                    }}
+                                >
+                                    {t('wallet_feed_tab') || 'Feed'}
+                                </button>
+                                <button
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={activeHistoryTab === 'nft'}
+                                    className={`${styles.historyTab} ${activeHistoryTab === 'nft' ? styles.historyTabActive : ''}`}
+                                    onClick={() => {
+                                        setActiveHistoryTab('nft');
+                                        haptic.selection();
+                                    }}
+                                >
+                                    {t('wallet_nft_tab') || 'NFT'}
+                                </button>
+                            </section>
+
                             <section className={styles.historySection}>
-                                {isHistoryLoading && (
-                                    <div className={styles.skeletonList}>
-                                        {[0, 1, 2, 3].map((index) => (
-                                            <div key={index} className={styles.skeletonItem}></div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {!isHistoryLoading && historyError && (
-                                    <div className={styles.errorState}>{historyError}</div>
-                                )}
-
-                                {!isHistoryLoading && !historyError && groupedHistory.length === 0 && (
-                                    <div className={styles.emptyState}>
-                                        {t('wallet_history_empty') || 'No wallet operations yet'}
-                                    </div>
-                                )}
-
-                                {!isHistoryLoading && !historyError && groupedHistory.length > 0 && (
-                                    <div className={styles.groupList}>
-                                        {groupedHistory.map((group) => (
-                                            <div key={group.key} className={styles.groupSection}>
-                                                <h3 className={styles.groupTitle}>{group.label}</h3>
-                                                <div className={styles.cards}>
-                                                    {group.items.map((item) => {
-                                                        const isIncoming = item.type === 'topup' || item.type === 'receive';
-                                                        const kindClass = isIncoming ? styles.kindReceived : styles.kindSent;
-                                                        const dateTimeLine = `${formatDetailsDate(item.createdAt, locale)}, ${formatTime(item.createdAt, locale)}`;
-                                                        const amountLine = `${isIncoming ? '+' : '-'}${formatCurrency(item.amount)} ${item.currency || 'UZS'}`;
-
-                                                        return (
-                                                            <article key={item.id} className={styles.cardHistoryItem}>
-                                                                <div className={styles.cardRow}>
-                                                                    <div className={styles.summaryLeft}>
-                                                                        <span className={`${styles.kindIcon} ${kindClass}`}>
-                                                                            {isIncoming ? <ArrowDownLeft size={22} /> : <ArrowUpRight size={22} />}
-                                                                        </span>
-                                                                        <div className={styles.summaryText}>
-                                                                            <span className={styles.summaryDirection}>{getOperationTitle(item.type)}</span>
-                                                                            <span className={styles.summaryAddress}>{amountLine}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className={styles.summaryRight}>
-                                                                        <span className={styles.summaryAsset}>{getStatusLabel(item.status)}</span>
-                                                                        <span className={styles.summaryDate}>{dateTimeLine}</span>
-                                                                    </div>
-                                                                </div>
-                                                            </article>
-                                                        );
-                                                    })}
-                                                </div>
+                                {activeHistoryTab === 'feed' ? (
+                                    <>
+                                        {isHistoryLoading && (
+                                            <div className={styles.skeletonList}>
+                                                {[0, 1, 2, 3].map((index) => (
+                                                    <div key={index} className={styles.skeletonItem}></div>
+                                                ))}
                                             </div>
-                                        ))}
-
-                                        {historyHasMore && (
-                                            <button
-                                                type="button"
-                                                className={styles.loadMoreButton}
-                                                onClick={handleLoadMore}
-                                                disabled={isHistoryLoadingMore}
-                                            >
-                                                {isHistoryLoadingMore && <Loader2 size={16} className={styles.spinner} />}
-                                                <span>
-                                                    {isHistoryLoadingMore
-                                                        ? (t('wallet_history_loading_more') || 'Loading...')
-                                                        : (t('wallet_history_load_more') || 'Load more')}
-                                                </span>
-                                            </button>
                                         )}
-                                    </div>
+
+                                        {!isHistoryLoading && historyError && (
+                                            <div className={styles.errorState}>{historyError}</div>
+                                        )}
+
+                                        {!isHistoryLoading && !historyError && groupedHistory.length === 0 && (
+                                            <div className={styles.emptyState}>
+                                                {t('wallet_history_empty') || 'No wallet operations yet'}
+                                            </div>
+                                        )}
+
+                                        {!isHistoryLoading && !historyError && groupedHistory.length > 0 && (
+                                            <div className={styles.groupList}>
+                                                {groupedHistory.map((group) => (
+                                                    <div key={group.key} className={styles.groupSection}>
+                                                        <h3 className={styles.groupTitle}>{group.label}</h3>
+                                                        <div className={styles.cards}>
+                                                            {group.items.map((item) => {
+                                                                const isIncoming = item.type === 'topup' || item.type === 'receive';
+                                                                const kindClass = isIncoming ? styles.kindReceived : styles.kindSent;
+                                                                const dateTimeLine = `${formatDetailsDate(item.createdAt, locale)}, ${formatTime(item.createdAt, locale)}`;
+                                                                const amountLine = `${isIncoming ? '+' : '-'}${formatCurrency(item.amount)} ${item.currency || 'UZS'}`;
+
+                                                                return (
+                                                                    <article key={item.id} className={styles.cardHistoryItem}>
+                                                                        <div className={styles.cardRow}>
+                                                                            <div className={styles.summaryLeft}>
+                                                                                <span className={`${styles.kindIcon} ${kindClass}`}>
+                                                                                    {isIncoming ? <ArrowDownLeft size={22} /> : <ArrowUpRight size={22} />}
+                                                                                </span>
+                                                                                <div className={styles.summaryText}>
+                                                                                    <span className={styles.summaryDirection}>{getOperationTitle(item.type)}</span>
+                                                                                    <span className={styles.summaryAddress}>{amountLine}</span>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className={styles.summaryRight}>
+                                                                                <span className={styles.summaryAsset}>{getStatusLabel(item.status)}</span>
+                                                                                <span className={styles.summaryDate}>{dateTimeLine}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </article>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                ))}
+
+                                                {historyHasMore && (
+                                                    <button
+                                                        type="button"
+                                                        className={styles.loadMoreButton}
+                                                        onClick={handleLoadMore}
+                                                        disabled={isHistoryLoadingMore}
+                                                    >
+                                                        {isHistoryLoadingMore && <Loader2 size={16} className={styles.spinner} />}
+                                                        <span>
+                                                            {isHistoryLoadingMore
+                                                                ? (t('wallet_history_loading_more') || 'Loading...')
+                                                                : (t('wallet_history_load_more') || 'Load more')}
+                                                        </span>
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </>
+                                ) : (
+                                    <>
+                                        {isNftLoading && (
+                                            <section className={styles.skeletonList}>
+                                                {[0, 1, 2, 3].map((index) => (
+                                                    <div key={index} className={styles.skeletonItem}></div>
+                                                ))}
+                                            </section>
+                                        )}
+
+                                        {!isNftLoading && nftError && (
+                                            <div className={styles.errorState}>{nftError}</div>
+                                        )}
+
+                                        {!isNftLoading && !nftError && groupedNftTransactions.length === 0 && (
+                                            <div className={styles.emptyState}>
+                                                {t('transactions_empty') || 'No transactions for selected period'}
+                                            </div>
+                                        )}
+
+                                        {!isNftLoading && !nftError && groupedNftTransactions.length > 0 && (
+                                            <section className={styles.groupList}>
+                                                {groupedNftTransactions.map((group) => (
+                                                    <div key={group.key} className={styles.groupSection}>
+                                                        <h3 className={styles.groupTitle}>{group.label}</h3>
+                                                        <div className={styles.cards}>
+                                                            {group.items.map((item) => {
+                                                                const displayKind = resolveNftDisplayKind(item);
+                                                                const counterpartAddress = displayKind === 'received' || displayKind === 'minted'
+                                                                    ? (item.fromFriendly || item.from)
+                                                                    : (item.toFriendly || item.to);
+                                                                const counterpartLabel = counterpartAddress
+                                                                    ? formatWalletLabel(counterpartAddress)
+                                                                    : (t('system') || 'System');
+                                                                const cardKindClassName = getNftKindClassName(displayKind);
+                                                                const cardDateTimeLine = `${formatDetailsDate(item.timestamp, locale)}, ${formatTime(item.timestamp, locale)}`;
+
+                                                                return (
+                                                                    <button
+                                                                        key={item.id}
+                                                                        type="button"
+                                                                        className={styles.nftCard}
+                                                                        onClick={() => handleNftCardClick(item)}
+                                                                    >
+                                                                        <div className={styles.cardRow}>
+                                                                            <div className={styles.summaryLeft}>
+                                                                                <span className={`${styles.kindIcon} ${cardKindClassName}`}>
+                                                                                    {getNftKindIcon(displayKind, 22)}
+                                                                                </span>
+                                                                                <div className={styles.summaryText}>
+                                                                                    <span className={styles.summaryDirection}>{getNftDirectionLabel(displayKind)}</span>
+                                                                                    <span className={styles.summaryAddress}>{counterpartLabel}</span>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className={styles.summaryRight}>
+                                                                                <span className={styles.summaryAsset}>{t('transactions_asset_nft') || 'NFT'}</span>
+                                                                                <span className={styles.summaryDate}>{cardDateTimeLine}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </section>
+                                        )}
+                                    </>
                                 )}
                             </section>
                         </>
                     )}
                 </main>
+
+                <div
+                    className={`${styles.nftDetailsOverlay} ${selectedNftTransaction ? styles.nftDetailsOverlayVisible : ''}`}
+                    onClick={closeNftDetails}
+                    aria-hidden={!selectedNftTransaction}
+                >
+                    <aside
+                        className={`${styles.nftDetailsDrawer} ${selectedNftTransaction ? styles.nftDetailsDrawerOpen : ''}`}
+                        onClick={(event) => event.stopPropagation()}
+                        aria-hidden={!selectedNftTransaction}
+                        {...nftDetailsSwipeHandlers}
+                    >
+                        <div className={styles.dragHandle}></div>
+                        <div className={styles.drawerHeader}>
+                            <h3>{t('transactions_details') || 'Transfer details'}</h3>
+                            <button
+                                type="button"
+                                className={styles.closeButton}
+                                onClick={closeNftDetails}
+                                aria-label={t('transactions_close') || 'Close'}
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {selectedNftTransaction && (
+                            <div className={styles.nftDetailsBody}>
+                                <section className={styles.nftDetailsTop}>
+                                    <div className={styles.nftDetailsAnimation}>
+                                        {selectedNftTransaction.tgsUrl ? (
+                                            <TgsPlayer
+                                                src={selectedNftTransaction.tgsUrl}
+                                                style={{ width: 100, height: 100 }}
+                                                autoplay
+                                                loop={false}
+                                                renderer="svg"
+                                                unstyled
+                                            />
+                                        ) : (
+                                            <div className={styles.nftDetailsAnimationFallback}>
+                                                {selectedNftIcon}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <h4 className={styles.nftDetailsName}>{selectedNftNameLine}</h4>
+                                    <div className={styles.nftDetailsTypeDate}>
+                                        <span className={styles.summaryAsset}>{t('transactions_asset_nft') || 'NFT'}</span>
+                                        <span className={styles.summaryDate}>{selectedNftDateTimeLine}</span>
+                                    </div>
+                                </section>
+
+                                <section className={styles.nftDetailsBottom}>
+                                    <table className={styles.nftDetailsTable}>
+                                        <tbody>
+                                            <tr className={styles.nftDetailsRow}>
+                                                <th className={styles.nftDetailsKey} scope="row">{selectedNftLowerTableLabel}</th>
+                                                <td className={`${styles.nftDetailsValue} ${styles.nftDetailsValueMono}`}>
+                                                    {selectedNftAddressValue}
+                                                </td>
+                                            </tr>
+                                            {shouldShowNftMemoDetails && (
+                                                <tr className={styles.nftDetailsRow}>
+                                                    <th className={styles.nftDetailsKey} scope="row">
+                                                        {t('transactions_fee') || 'Fee'}
+                                                    </th>
+                                                    <td className={styles.nftDetailsValue}>{selectedNftFeeValue}</td>
+                                                </tr>
+                                            )}
+                                            {shouldShowNftMemoDetails && (
+                                                <tr className={styles.nftDetailsRow}>
+                                                    <th className={styles.nftDetailsKey} scope="row">
+                                                        {t('transactions_comment') || t('transactions_memo') || 'Comment'}
+                                                    </th>
+                                                    <td className={styles.nftDetailsValue}>
+                                                        {selectedNftMemo}
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </section>
+                            </div>
+                        )}
+                    </aside>
+                </div>
 
                 <div
                     className={`${styles.overlay} ${drawerMode ? styles.overlayVisible : ''}`}
@@ -1157,10 +1619,6 @@ export default function WalletPage() {
 
                         {drawerMode === 'receive' ? (
                             <div className={`${styles.drawerBody} ${styles.receiveBody}`}>
-                                <p className={styles.drawerHint}>
-                                    {t('wallet_receive_hint') || 'Scan this QR code to receive assets on your wallet.'}
-                                </p>
-
                                 <div className={styles.receiveQrFrame}>
                                     <div className={styles.receiveQrSurface}>
                                         {copyValue ? (

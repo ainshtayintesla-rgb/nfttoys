@@ -170,6 +170,8 @@
     "wallet_withdraw_apply": "Withdraw now",
     "wallet_send_apply": "Send now",
     "wallet_history_title": "History",
+    "wallet_feed_tab": "Feed",
+    "wallet_nft_tab": "NFT",
     "wallet_history_empty": "No wallet operations yet",
     "wallet_history_load_more": "Load more",
     "wallet_history_loading_more": "Loading...",

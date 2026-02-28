@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.14] - 2026-02-28
+
+### Added
+- Wallet page now includes rounded Feed/NFT tabs under the balance card.
+- NFT tab now renders NFT transaction cards and transaction details drawer with the same behavior/style as the transactions page.
+
+### Changed
+- Receive drawer subtitle was removed for a cleaner QR-only receive view.
+- Wallet balance action icon buttons are now fully circular and slightly larger (icons increased too).
+- Localized wallet receive labels for RU/UZ and added tab labels for RU/EN/UZ locales.
+
 ## [0.2.13] - 2026-02-28
 
 ### Changed
