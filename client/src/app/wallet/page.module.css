@@ -793,33 +793,51 @@
     opacity: 0.7;
 }
 
-.confirmMeta {
-    display: grid;
-    gap: 10px;
-}
-
-.confirmFee {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+.confirmInfoTable {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
     border: 1px solid var(--surface-alpha-08);
-    border-radius: 12px;
+    border-radius: 14px;
+    overflow: hidden;
     background: var(--ink-alpha-20);
-    padding: 10px 12px;
-    gap: 8px;
 }
 
-.confirmFeeLabel {
-    color: var(--text-secondary);
+.confirmInfoRow {
+    vertical-align: middle;
+}
+
+.confirmInfoRow + .confirmInfoRow .confirmInfoKey,
+.confirmInfoRow + .confirmInfoRow .confirmInfoValue {
+    border-top: 1px solid var(--surface-alpha-08);
+}
+
+.confirmInfoKey {
+    width: 112px;
+    padding: 12px 10px;
+    text-align: left;
+    vertical-align: middle;
     font-size: 12px;
     font-weight: 600;
+    color: var(--text-secondary);
+    line-height: 1.3;
 }
 
-.confirmFeeValue {
+.confirmInfoValue {
+    padding: 12px 14px;
+    border-left: 1px solid var(--surface-alpha-08);
+    vertical-align: middle;
+    min-width: 0;
     color: var(--text-primary);
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
+
 
 .memoField {
     display: block;

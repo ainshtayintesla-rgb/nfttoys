@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.12] - 2026-02-28
+
+### Changed
+- Send UZS confirm step now shows `Amount / Fee / Total debit` as a structured table (same visual format as NFT transfer drawer info table).
+- Replaced per-row cards in Send UZS confirm step with table rows and separators for consistent wallet/NFT drawer styling.
+
 ## [0.2.11] - 2026-02-28
 
 ### Fixed

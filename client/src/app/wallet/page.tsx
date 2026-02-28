@@ -1370,24 +1370,27 @@ export default function WalletPage() {
                                             </div>
                                         </div>
 
-                                        <div className={styles.confirmMeta}>
-                                            <div className={styles.confirmFee}>
-                                                <span className={styles.confirmFeeLabel}>{t('wallet_amount_label') || 'Amount'}</span>
-                                                <span className={styles.confirmFeeValue}>
-                                                    {parsedAmount ? `${formatCurrency(parsedAmount)} UZS` : '—'}
-                                                </span>
-                                            </div>
-                                            <div className={styles.confirmFee}>
-                                                <span className={styles.confirmFeeLabel}>{t('wallet_send_fee_label') || 'Fee'}</span>
-                                                <span className={styles.confirmFeeValue}>{formatCurrency(WALLET_SEND_FEE)} UZS</span>
-                                            </div>
-                                            <div className={styles.confirmFee}>
-                                                <span className={styles.confirmFeeLabel}>{t('wallet_send_total_label') || 'Total debit'}</span>
-                                                <span className={styles.confirmFeeValue}>
-                                                    {sendTotalDebit ? `${formatCurrency(sendTotalDebit)} UZS` : '—'}
-                                                </span>
-                                            </div>
-                                        </div>
+                                        <table className={styles.confirmInfoTable}>
+                                            <tbody>
+                                                <tr className={styles.confirmInfoRow}>
+                                                    <th className={styles.confirmInfoKey} scope="row">{t('wallet_amount_label') || 'Amount'}</th>
+                                                    <td className={styles.confirmInfoValue}>
+                                                        {parsedAmount ? `${formatCurrency(parsedAmount)} UZS` : '—'}
+                                                    </td>
+                                                </tr>
+                                                <tr className={styles.confirmInfoRow}>
+                                                    <th className={styles.confirmInfoKey} scope="row">{t('wallet_send_fee_label') || 'Fee'}</th>
+                                                    <td className={styles.confirmInfoValue}>{formatCurrency(WALLET_SEND_FEE)} UZS</td>
+                                                </tr>
+                                                <tr className={styles.confirmInfoRow}>
+                                                    <th className={styles.confirmInfoKey} scope="row">{t('wallet_send_total_label') || 'Total debit'}</th>
+                                                    <td className={styles.confirmInfoValue}>
+                                                        {sendTotalDebit ? `${formatCurrency(sendTotalDebit)} UZS` : '—'}
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+
 
                                         <div className={styles.memoField}>
                                             <div className={styles.memoInputWrap}>
