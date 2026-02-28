@@ -229,6 +229,11 @@
 
 .memoInputWrap {
     position: relative;
+    --memo-padding-x: 12px;
+    --memo-padding-top: 10px;
+    --memo-padding-bottom: 8px;
+    --memo-counter-height: 12px;
+    --memo-counter-gap: 4px;
 }
 
 .memoInput {
@@ -238,7 +243,10 @@
     border: 1px solid var(--surface-alpha-08);
     background: var(--ink-alpha-30);
     color: var(--text-primary);
-    padding: 10px 68px 28px 12px;
+    padding: var(--memo-padding-top)
+        68px
+        calc(var(--memo-padding-bottom) + var(--memo-counter-height) + var(--memo-counter-gap))
+        var(--memo-padding-x);
     font-size: 14px;
     line-height: 1.4;
     resize: none;
@@ -254,14 +262,22 @@
     color: var(--surface-alpha-30);
 }
 
-.memoCounter {
+.memoCounterInside {
     position: absolute;
-    right: 12px;
-    bottom: 10px;
+    right: calc(var(--memo-padding-x) + 1px);
+    bottom: calc(var(--memo-padding-bottom) + 1px);
+    pointer-events: none;
+    line-height: var(--memo-counter-height);
+}
+
+.memoCounter {
+    display: inline-block;
     color: var(--text-secondary);
     font-size: 11px;
     line-height: 1;
-    pointer-events: none;
+    background: transparent;
+    border: 0;
+    padding: 0;
 }
 
 .error {

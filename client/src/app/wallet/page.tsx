@@ -1314,8 +1314,8 @@ export default function WalletPage() {
                                             </div>
                                         </div>
 
-                                        <div className={`${styles.amountField} ${styles.sendAmountField}`}>
-                                            <div className={`${styles.amountInputWrap} ${styles.sendAmountInputWrap}`}>
+                                        <div className={`${styles.sendField} ${styles.sendAmountField}`}>
+                                            <div className={`${styles.sendInputWrap} ${styles.sendAmountInputWrap}`}>
                                                 <input
                                                     type="text"
                                                     inputMode="numeric"
@@ -1326,7 +1326,7 @@ export default function WalletPage() {
                                                         setAmountInput(formatAmountInput(event.target.value));
                                                         setDrawerError('');
                                                     }}
-                                                    className={styles.sendAmountInput}
+                                                    className={`${styles.sendInput} ${styles.sendAmountInput}`}
                                                 />
                                                 <span className={styles.sendAmountCurrency}>UZS</span>
                                             </div>

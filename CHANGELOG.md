@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.10] - 2026-02-28
+
+### Fixed
+- Send UZS amount input now uses the same input shell style as recipient username/wallet field for consistent visual and focus behavior.
+- Continue button in Send UZS step is now forced to full width across the drawer content area.
+- Fee/Total summary card in Send UZS now matches username field surface and text weight/contrast.
+
 ## [0.2.9] - 2026-02-28
 
 ### Fixed

@@ -678,7 +678,7 @@
     border: 1px solid var(--surface-alpha-08);
     border-radius: 12px;
     background: var(--ink-alpha-30);
-    padding: 10px 12px;
+    padding: 11px 16px;
     display: grid;
     gap: 8px;
 }
@@ -688,19 +688,22 @@
     justify-content: space-between;
     align-items: center;
     gap: 8px;
-    font-size: 13px;
+    font-size: 14px;
+    font-weight: 600;
     color: var(--text-secondary);
 }
 
 .sendMetaRow strong {
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: 15px;
+    font-weight: 700;
 }
 
 .continueBar {
     position: sticky;
     bottom: 0;
     z-index: 4;
+    display: flex;
     margin-top: 4px;
     padding-top: 10px;
     padding-bottom: 2px;
@@ -708,8 +711,9 @@
 }
 
 .continueButton {
+    display: flex;
     width: 100%;
-    min-height: 52px;
+    height: 52px;
     border-radius: 14px;
     background: var(--accent-color);
     color: var(--accent-text);
@@ -1016,26 +1020,14 @@
 }
 
 .sendAmountInputWrap {
-    height: 48px;
-    border-radius: 12px;
-    border: 1px solid var(--surface-alpha-08);
-    background: var(--ink-alpha-30);
-    display: flex;
-    align-items: center;
     gap: 6px;
-    padding: 0 16px;
-}
-
-.sendAmountInputWrap:focus-within {
-    border-color: var(--accent-color);
-    background: var(--ink-alpha-40);
 }
 
 .sendAmountInput {
-    flex: 1;
     min-width: 0;
     text-align: left;
     padding: 0;
+    font-variant-numeric: tabular-nums;
 }
 
 .sendAmountCurrency {
@@ -1069,6 +1061,13 @@
 .submitButton:disabled {
     opacity: 0.65;
     cursor: not-allowed;
+}
+
+.submitButton.continueButton {
+    width: 100%;
+    height: 52px;
+    margin-top: 0;
+    display: flex;
 }
 
 .spinner {
