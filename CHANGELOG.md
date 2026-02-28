@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.11] - 2026-02-28
+
+### Fixed
+- Send UZS Continue button in step 1 now uses a dedicated full-width style (no mixed submit class), so it spans the drawer width consistently.
+- Send UZS fee/total calculator card now uses the same surface structure as recipient input shell (@username) with aligned border/background/typography.
+- Removed conflicting legacy selector .submitButton.continueButton from wallet styles to prevent width regressions.
+
 ## [0.2.10] - 2026-02-28
 
 ### Fixed

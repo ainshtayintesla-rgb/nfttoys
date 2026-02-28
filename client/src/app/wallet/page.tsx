@@ -1348,7 +1348,7 @@ export default function WalletPage() {
                                         <div className={styles.continueBar}>
                                             <button
                                                 type="button"
-                                                className={`${styles.submitButton} ${styles.continueButton}`}
+                                                className={styles.continueButton}
                                                 onClick={handleContinueSend}
                                                 disabled={!canContinueSend || isSubmitting}
                                             >

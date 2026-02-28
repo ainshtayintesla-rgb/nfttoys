@@ -678,12 +678,16 @@
     border: 1px solid var(--surface-alpha-08);
     border-radius: 12px;
     background: var(--ink-alpha-30);
-    padding: 11px 16px;
+    padding: 0;
+    overflow: hidden;
     display: grid;
-    gap: 8px;
+    gap: 0;
+    transition: all 0.2s ease;
 }
 
 .sendMetaRow {
+    min-height: 48px;
+    padding: 0 16px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -693,17 +697,23 @@
     color: var(--text-secondary);
 }
 
+.sendMetaRow + .sendMetaRow {
+    border-top: 1px solid var(--surface-alpha-08);
+}
+
 .sendMetaRow strong {
     color: var(--text-primary);
-    font-size: 15px;
-    font-weight: 700;
+    font-size: 16px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
 }
 
 .continueBar {
     position: sticky;
     bottom: 0;
     z-index: 4;
-    display: flex;
+    width: 100%;
+    justify-self: stretch;
     margin-top: 4px;
     padding-top: 10px;
     padding-bottom: 2px;
@@ -711,18 +721,26 @@
 }
 
 .continueButton {
-    display: flex;
     width: 100%;
-    height: 52px;
+    min-width: 100%;
+    min-height: 52px;
+    padding: 0 16px;
     border-radius: 14px;
+    font-size: 14px;
+    font-weight: 700;
     background: var(--accent-color);
     color: var(--accent-text);
     border: 1px solid transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
 
 .continueButton:disabled {
     opacity: 0.68;
+    cursor: not-allowed;
     background: var(--accent-color);
     color: var(--accent-text);
     border-color: transparent;
@@ -1061,13 +1079,6 @@
 .submitButton:disabled {
     opacity: 0.65;
     cursor: not-allowed;
-}
-
-.submitButton.continueButton {
-    width: 100%;
-    height: 52px;
-    margin-top: 0;
-    display: flex;
 }
 
 .spinner {
