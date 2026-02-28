@@ -471,7 +471,7 @@ export default function TransactionsPage() {
 
     const getDirectionLabel = useCallback((kind: TxDisplayKind) => {
         if (kind === 'burn') {
-            return t('transactions_direction_burn') || 'BURN';
+            return t('transactions_direction_burn') || t('burned') || 'BURNED';
         }
 
         if (kind === 'minted') {

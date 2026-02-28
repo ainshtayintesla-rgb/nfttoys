@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.15] - 2026-02-28
+
+### Changed
+- Unified recipient tabs style to fully rounded pill shape in both Send UZS drawer and NFT Transfer drawer, while keeping each block's existing sizing.
+- Removed hardcoded burn label fallback in transactions and wallet NFT feed by using localized `burned` key fallback.
+
+### Fixed
+- Localized burn direction/status labels across RU/EN/UZ (`transactions_direction_burn` + `burned`) to avoid English-only `BURN/Burned` strings.
+
 ## [0.2.14] - 2026-02-28
 
 ### Added
