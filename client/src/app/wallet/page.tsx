@@ -174,24 +174,6 @@ function formatAmountInput(value: string): string {
     return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 }
 
-function getRecipientFallbackLetter(recipient: RecipientLookupResult | null): string {
-    if (!recipient) {
-        return 'U';
-    }
-
-    const firstName = (recipient.firstName || '').trim();
-    if (firstName) {
-        return firstName.slice(0, 1).toUpperCase();
-    }
-
-    const username = sanitizeUsernameInput(recipient.username || '');
-    if (username) {
-        return username.slice(0, 1).toUpperCase();
-    }
-
-    return 'U';
-}
-
 export default function WalletPage() {
     const { t, locale } = useLanguage();
     const { user, authUser, isAuthenticated, haptic, webApp } = useTelegram();
@@ -219,7 +201,6 @@ export default function WalletPage() {
     const [usernameInput, setUsernameInput] = useState('');
     const [walletBodyInput, setWalletBodyInput] = useState('');
     const [recipientLookup, setRecipientLookup] = useState<RecipientLookupResult | null>(null);
-    const [isRecipientLookupLoading, setIsRecipientLookupLoading] = useState(false);
     const lookupSeqRef = useRef(0);
 
     useBodyScrollLock(Boolean(drawerMode));
@@ -381,10 +362,6 @@ export default function WalletPage() {
         () => sanitizeUsernameInput(recipientLookup?.username || ''),
         [recipientLookup?.username],
     );
-    const resolvedLookupWalletBody = useMemo(
-        () => sanitizeFriendlyBody(recipientLookup?.walletFriendly || ''),
-        [recipientLookup?.walletFriendly],
-    );
     const hasExactUsernameMatch = useMemo(() => {
         if (!normalizedUsername || !resolvedLookupUsername) {
             return false;
@@ -392,15 +369,20 @@ export default function WalletPage() {
 
         return normalizedUsername.toLowerCase() === resolvedLookupUsername.toLowerCase();
     }, [normalizedUsername, resolvedLookupUsername]);
-    const hasExactWalletMatch = useMemo(() => {
-        if (!normalizedWalletBody || !resolvedLookupWalletBody) {
-            return false;
+    const suggestedWallet = useMemo(() => {
+        if (!hasExactUsernameMatch) {
+            return '';
         }
 
-        return normalizedWalletBody === resolvedLookupWalletBody;
-    }, [normalizedWalletBody, resolvedLookupWalletBody]);
-    const recipientPreviewName = useMemo(() => {
-        if (hasExactUsernameMatch && resolvedLookupUsername) {
+        const source = sanitizeFriendlyBody(recipientLookup?.walletFriendly || '');
+        if (!source) {
+            return '';
+        }
+
+        return `LV-${source}`;
+    }, [hasExactUsernameMatch, recipientLookup?.walletFriendly]);
+    const suggestionDisplayName = useMemo(() => {
+        if (resolvedLookupUsername) {
             return `@${resolvedLookupUsername}`;
         }
 
@@ -409,94 +391,26 @@ export default function WalletPage() {
             return firstName;
         }
 
-        if (resolvedLookupUsername) {
-            return `@${resolvedLookupUsername}`;
-        }
-
         return t('wallet_send_to_label') || 'Recipient';
-    }, [hasExactUsernameMatch, recipientLookup?.firstName, resolvedLookupUsername, t]);
-    const recipientPreviewWallet = useMemo(() => {
-        if (resolvedLookupWalletBody) {
-            return `LV-${resolvedLookupWalletBody}`;
-        }
-
-        return '';
-    }, [resolvedLookupWalletBody]);
-    const recipientFallbackLetter = useMemo(
-        () => getRecipientFallbackLetter(recipientLookup),
-        [recipientLookup],
-    );
-
+    }, [recipientLookup?.firstName, resolvedLookupUsername, t]);
     useEffect(() => {
         if (drawerMode !== 'send') {
             lookupSeqRef.current += 1;
-            setRecipientLookup(null);
-            setIsRecipientLookupLoading(false);
             return;
         }
 
-        if (recipientType === 'username') {
-            const usernameLookup = normalizedUsername.toLowerCase();
-
-            if (usernameLookup.length < 2) {
-                lookupSeqRef.current += 1;
-                setRecipientLookup(null);
-                setIsRecipientLookupLoading(false);
-                return;
-            }
-
-            const lookupSeq = ++lookupSeqRef.current;
-            const timeoutId = window.setTimeout(async () => {
-                setIsRecipientLookupLoading(true);
-
-                try {
-                    const response = await api.nft.findRecipientByUsername(
-                        usernameLookup,
-                        webApp?.initData || undefined,
-                    );
-
-                    if (lookupSeqRef.current !== lookupSeq) {
-                        return;
-                    }
-
-                    const nextRecipient = response?.recipient || null;
-                    const nextUsername = sanitizeUsernameInput(nextRecipient?.username || '');
-
-                    if (nextRecipient && nextUsername && nextUsername.toLowerCase() === usernameLookup) {
-                        setRecipientLookup(nextRecipient);
-                    } else {
-                        setRecipientLookup(null);
-                    }
-                } catch {
-                    if (lookupSeqRef.current === lookupSeq) {
-                        setRecipientLookup(null);
-                    }
-                } finally {
-                    if (lookupSeqRef.current === lookupSeq) {
-                        setIsRecipientLookupLoading(false);
-                    }
-                }
-            }, SEND_LOOKUP_DEBOUNCE_MS);
-
-            return () => {
-                window.clearTimeout(timeoutId);
-            };
-        }
-
-        if (normalizedWalletBody.length < 3) {
+        const usernameLookup = normalizedUsername.toLowerCase();
+        if (usernameLookup.length < 2) {
             lookupSeqRef.current += 1;
             setRecipientLookup(null);
-            setIsRecipientLookupLoading(false);
             return;
         }
 
         const lookupSeq = ++lookupSeqRef.current;
         const timeoutId = window.setTimeout(async () => {
-            setIsRecipientLookupLoading(true);
-
             try {
-                const response = await api.wallet.findRecipient(
-                    { wallet: `LV-${normalizedWalletBody}` },
+                const response = await api.nft.findRecipientByUsername(
+                    usernameLookup,
                     webApp?.initData || undefined,
                 );
 
@@ -505,9 +419,9 @@ export default function WalletPage() {
                 }
 
                 const nextRecipient = response?.recipient || null;
-                const nextWalletBody = sanitizeFriendlyBody(nextRecipient?.walletFriendly || '');
+                const nextUsername = sanitizeUsernameInput(nextRecipient?.username || '');
 
-                if (nextRecipient && nextWalletBody === normalizedWalletBody) {
+                if (nextRecipient && nextUsername && nextUsername.toLowerCase() === usernameLookup) {
                     setRecipientLookup(nextRecipient);
                 } else {
                     setRecipientLookup(null);
@@ -516,17 +430,13 @@ export default function WalletPage() {
                 if (lookupSeqRef.current === lookupSeq) {
                     setRecipientLookup(null);
                 }
-            } finally {
-                if (lookupSeqRef.current === lookupSeq) {
-                    setIsRecipientLookupLoading(false);
-                }
             }
         }, SEND_LOOKUP_DEBOUNCE_MS);
 
         return () => {
             window.clearTimeout(timeoutId);
         };
-    }, [drawerMode, normalizedUsername, normalizedWalletBody, recipientType, webApp?.initData]);
+    }, [drawerMode, normalizedUsername, webApp?.initData]);
 
     const sendTotalDebit = useMemo(() => {
         if (!parsedAmount) {
@@ -564,8 +474,6 @@ export default function WalletPage() {
         setDrawerMode(mode);
         setDrawerError('');
         setCopiedInDrawer(false);
-        setRecipientLookup(null);
-        setIsRecipientLookupLoading(false);
 
         if (mode === 'receive') {
             setSelectedQuick(null);
@@ -574,11 +482,6 @@ export default function WalletPage() {
         }
 
         if (mode === 'send') {
-            setSelectedQuick(null);
-            setAmountInput('');
-            setRecipientType('username');
-            setUsernameInput('');
-            setWalletBodyInput('');
             return;
         }
 
@@ -594,13 +497,12 @@ export default function WalletPage() {
 
         setDrawerMode(null);
         setDrawerError('');
-        setAmountInput('');
-        setSelectedQuick(null);
-        setRecipientType('username');
-        setUsernameInput('');
-        setWalletBodyInput('');
-        setRecipientLookup(null);
-        setIsRecipientLookupLoading(false);
+        setCopiedInDrawer(false);
+
+        if (drawerMode !== 'send') {
+            setAmountInput('');
+            setSelectedQuick(null);
+        }
     };
 
     const writeToClipboard = useCallback(async (value: string) => {
@@ -699,6 +601,12 @@ export default function WalletPage() {
             ]);
 
             haptic.success();
+            setAmountInput('');
+            setSelectedQuick(null);
+            setRecipientType('username');
+            setUsernameInput('');
+            setWalletBodyInput('');
+            setRecipientLookup(null);
             closeDrawer(true);
         } catch (applyError) {
             setDrawerError(safeErrorMessage(applyError));
@@ -1044,7 +952,6 @@ export default function WalletPage() {
                                         className={`${styles.sendTab} ${recipientType === 'username' ? styles.sendTabActive : ''}`}
                                         onClick={() => {
                                             setRecipientType('username');
-                                            setRecipientLookup(null);
                                             setDrawerError('');
                                             haptic.selection();
                                         }}
@@ -1056,7 +963,6 @@ export default function WalletPage() {
                                         className={`${styles.sendTab} ${recipientType === 'wallet' ? styles.sendTabActive : ''}`}
                                         onClick={() => {
                                             setRecipientType('wallet');
-                                            setRecipientLookup(null);
                                             setDrawerError('');
                                             haptic.selection();
                                         }}
@@ -1065,29 +971,52 @@ export default function WalletPage() {
                                     </button>
                                 </div>
 
+                                {recipientType === 'wallet' && suggestedWallet && (
+                                    <button
+                                        type="button"
+                                        className={styles.sendWalletSuggestion}
+                                        onClick={() => {
+                                            setWalletBodyInput(sanitizeFriendlyBody(suggestedWallet.replace(/^LV-/i, '')));
+                                            setDrawerError('');
+                                            haptic.selection();
+                                        }}
+                                    >
+                                        <span className={styles.sendWalletSuggestionAvatarWrap}>
+                                            {recipientLookup?.photoUrl ? (
+                                                <img
+                                                    src={recipientLookup.photoUrl}
+                                                    alt=""
+                                                    className={styles.sendWalletSuggestionAvatar}
+                                                    loading="lazy"
+                                                    referrerPolicy="no-referrer"
+                                                />
+                                            ) : (
+                                                <span className={styles.sendWalletSuggestionAvatarFallback}>@</span>
+                                            )}
+                                        </span>
+                                        <span className={styles.sendWalletSuggestionMeta}>
+                                            <span className={styles.sendWalletSuggestionName}>
+                                                {suggestionDisplayName}
+                                            </span>
+                                            <span className={styles.sendWalletSuggestionAddress}>{suggestedWallet}</span>
+                                        </span>
+                                    </button>
+                                )}
+
                                 <div className={styles.sendField}>
                                     <div className={styles.sendInputWrap}>
                                         {recipientType === 'username' ? (
                                             <span className={styles.sendPrefixSlot}>
-                                                {hasExactUsernameMatch ? (
-                                                    recipientLookup?.photoUrl ? (
-                                                        <img
-                                                            src={recipientLookup.photoUrl}
-                                                            alt=""
-                                                            className={styles.sendPrefixAvatar}
-                                                            loading="lazy"
-                                                            referrerPolicy="no-referrer"
-                                                        />
-                                                    ) : (
-                                                        <span className={styles.sendPrefixAvatarFallback}>
-                                                            {recipientFallbackLetter}
-                                                        </span>
-                                                    )
+                                                {hasExactUsernameMatch && recipientLookup?.photoUrl ? (
+                                                    <img
+                                                        src={recipientLookup.photoUrl}
+                                                        alt=""
+                                                        className={styles.sendPrefixAvatar}
+                                                        loading="lazy"
+                                                        referrerPolicy="no-referrer"
+                                                    />
                                                 ) : (
                                                     <span className={styles.sendPrefix}>@</span>
-                                                )}
-                                                {isRecipientLookupLoading && (
-                                                    <Loader2 size={10} className={styles.sendPrefixSpinner} />
                                                 )}
                                             </span>
                                         ) : (
@@ -1123,50 +1052,12 @@ export default function WalletPage() {
                                                 } else {
                                                     const nextWalletBody = sanitizeFriendlyBody(event.target.value);
                                                     setWalletBodyInput(nextWalletBody);
-                                                    setRecipientLookup((current) => {
-                                                        if (!current) {
-                                                            return null;
-                                                        }
-
-                                                        const currentWalletBody = sanitizeFriendlyBody(current.walletFriendly || '');
-                                                        if (!currentWalletBody || !nextWalletBody) {
-                                                            return null;
-                                                        }
-
-                                                        return currentWalletBody === nextWalletBody
-                                                            ? current
-                                                            : null;
-                                                    });
                                                 }
                                                 setDrawerError('');
                                             }}
                                         />
                                     </div>
                                 </div>
-
-                                {recipientLookup && (recipientType === 'username' ? hasExactUsernameMatch : hasExactWalletMatch) && (
-                                    <div className={styles.sendRecipientPreview}>
-                                        <span className={styles.sendRecipientAvatarWrap}>
-                                            {recipientLookup.photoUrl ? (
-                                                <img
-                                                    src={recipientLookup.photoUrl}
-                                                    alt=""
-                                                    className={styles.sendRecipientAvatar}
-                                                    loading="lazy"
-                                                    referrerPolicy="no-referrer"
-                                                />
-                                            ) : (
-                                                <span className={styles.sendRecipientAvatarFallback}>{recipientFallbackLetter}</span>
-                                            )}
-                                        </span>
-                                        <span className={styles.sendRecipientMeta}>
-                                            <span className={styles.sendRecipientName}>{recipientPreviewName}</span>
-                                            <span className={styles.sendRecipientWallet}>
-                                                {recipientPreviewWallet || `ID: ${recipientLookup.id}`}
-                                            </span>
-                                        </span>
-                                    </div>
-                                )}
 
                                 <div className={styles.amountField}>
                                     <div className={styles.amountInputWrap}>

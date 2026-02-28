@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.7] - 2026-02-28
+
+### Fixed
+- Wallet Send drawer now matches NFT transfer behavior: username tab shows only prefix avatar, with no extra recipient card or inline loader.
+- Wallet recommendation card is shown only on the wallet tab and only from an exact username match; tapping it fills the recipient wallet.
+- Send drawer fields now persist in memory after close/reopen until a successful send clears the draft.
+- Wallet send tab styles were aligned with the profile NFT transfer drawer (`tabs`, input shell, and suggestion card).
+
 ## [0.2.6] - 2026-02-28
 
 ### Added
