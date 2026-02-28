@@ -10,6 +10,7 @@ const MIN_INTERVAL_MINUTES = 1;
 const MAX_INTERVAL_MINUTES = 720;
 const CHECK_TIMEOUT_MS = 2 * 60 * 1000;
 const LONG_TIMEOUT_MS = 20 * 60 * 1000;
+const DOCKER_UPDATE_TIMEOUT_MS = 45 * 60 * 1000;
 
 interface UpdateSettings {
     intervalMinutes: number;
@@ -309,7 +310,7 @@ class UpdateService {
             }
 
             await this.ensureCleanWorktree();
-            await this.runUpdatePipeline(branch);
+            const shouldQueuePm2Restart = await this.runUpdatePipeline(branch);
             await this.refreshLocalSnapshot();
 
             this.state.lastUpdatedAt = nowIso();
@@ -317,7 +318,9 @@ class UpdateService {
                 this.state.lastAutoUpdatedAt = this.state.lastUpdatedAt;
             }
 
-            this.queuePm2Restart();
+            if (shouldQueuePm2Restart) {
+                this.queuePm2Restart();
+            }
             return this.snapshot();
         } catch (error) {
             const message = toErrorMessage(error);
@@ -568,12 +571,22 @@ class UpdateService {
         }
     }
 
-    private async runUpdatePipeline(branch: string): Promise<void> {
+    private async runUpdatePipeline(branch: string): Promise<boolean> {
         const serverDir = path.resolve(this.repoRoot, 'server');
         const clientDir = path.resolve(this.repoRoot, 'client');
         const botDir = path.resolve(this.repoRoot, 'bot');
 
         await runCommand('git', ['pull', '--ff-only', 'origin', branch], this.repoRoot, LONG_TIMEOUT_MS);
+
+        if (this.runMode === 'production') {
+            const dockerUpdateScript = path.resolve(this.repoRoot, 'scripts', 'prod-update-docker.sh');
+            if (!fs.existsSync(dockerUpdateScript)) {
+                throw new Error(`Docker update script not found: ${dockerUpdateScript}`);
+            }
+
+            await runCommand('bash', [dockerUpdateScript], this.repoRoot, DOCKER_UPDATE_TIMEOUT_MS);
+            return false;
+        }
 
         if (fs.existsSync(clientDir)) {
             await runCommand('npm', ['ci'], clientDir, LONG_TIMEOUT_MS);
@@ -606,6 +619,8 @@ class UpdateService {
                 }
             }
         }
+
+        return true;
     }
 
     private getPm2Apps(): string[] {
