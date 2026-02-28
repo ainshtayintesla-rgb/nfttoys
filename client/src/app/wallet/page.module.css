@@ -675,9 +675,9 @@
 }
 
 .sendMeta {
-    border: 1px solid var(--surface-alpha-10);
+    border: 1px solid var(--surface-alpha-08);
     border-radius: 12px;
-    background: var(--surface-alpha-05);
+    background: var(--ink-alpha-30);
     padding: 10px 12px;
     display: grid;
     gap: 8px;
@@ -708,6 +708,7 @@
 }
 
 .continueButton {
+    width: 100%;
     min-height: 52px;
     border-radius: 14px;
     background: var(--accent-color);
@@ -1007,6 +1008,39 @@
 .amountInputWrap span {
     color: var(--text-secondary);
     font-size: 13px;
+    font-weight: 700;
+}
+
+.sendAmountField {
+    gap: 0;
+}
+
+.sendAmountInputWrap {
+    height: 48px;
+    border-radius: 12px;
+    border: 1px solid var(--surface-alpha-08);
+    background: var(--ink-alpha-30);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 16px;
+}
+
+.sendAmountInputWrap:focus-within {
+    border-color: var(--accent-color);
+    background: var(--ink-alpha-40);
+}
+
+.sendAmountInput {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+    padding: 0;
+}
+
+.sendAmountCurrency {
+    font-size: 13px;
+    color: var(--text-secondary);
     font-weight: 700;
 }
 

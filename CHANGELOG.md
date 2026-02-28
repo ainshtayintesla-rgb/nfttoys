@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.9] - 2026-02-28
+
+### Fixed
+- Wallet send amount input in drawer now keeps text anchored correctly and aligned with recipient field shell.
+- Continue button in Send UZS step now spans full drawer width.
+- Send amount placeholder was removed and send fee/total card surface now matches recipient input contrast.
+
 ## [0.2.8] - 2026-02-28
 
 ### Added
