@@ -92,6 +92,13 @@ interface WalletOperationItem {
     amount: number;
     currency: string;
     status: string;
+    fromAddress: string | null;
+    fromFriendly: string | null;
+    toAddress: string | null;
+    toFriendly: string | null;
+    memo: string | null;
+    feeAmount: number | null;
+    feeCurrency: string | null;
     createdAt: string;
 }
 

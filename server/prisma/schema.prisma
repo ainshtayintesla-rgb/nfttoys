@@ -57,6 +57,13 @@ model WalletTransaction {
   amount        Int
   currency      String   @default("UZS")
   status        String   @default("completed")
+  fromAddress   String?
+  fromFriendly  String?
+  toAddress     String?
+  toFriendly    String?
+  memo          String?
+  feeAmount     Int?
+  feeCurrency   String?
   createdAt     DateTime @default(now())
   wallet        Wallet   @relation(fields: [walletAddress], references: [address], onDelete: Cascade, onUpdate: Cascade)
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)

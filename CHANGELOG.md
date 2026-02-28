@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.16] - 2026-02-28
+
+### Added
+- Added UZS transaction details drawer in Wallet `Feed` (opened by tapping a UZS history card) with table rows for sender, recipient, amount, optional fee, optional comment, timestamp, and status.
+
+### Changed
+- Wallet operations API now returns sender/recipient addresses, memo, and fee metadata so UZS details can render real transfer data.
+- UZS details drawer fee row is now shown only to the sender side (`send`), hidden for receiver rows.
+- NFT transaction details drawer fee row is now shown only for sender-side transactions, independent from memo presence.
+
 ## [0.2.15] - 2026-02-28
 
 ### Changed

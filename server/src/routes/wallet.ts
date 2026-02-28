@@ -151,6 +151,13 @@ function walletOperationPayload(operation: {
     amount: number;
     currency: string;
     status: string;
+    fromAddress: string | null;
+    fromFriendly: string | null;
+    toAddress: string | null;
+    toFriendly: string | null;
+    memo: string | null;
+    feeAmount: number | null;
+    feeCurrency: string | null;
     createdAt: Date;
 }) {
     return {
@@ -159,6 +166,13 @@ function walletOperationPayload(operation: {
         amount: operation.amount,
         currency: operation.currency,
         status: operation.status,
+        fromAddress: operation.fromAddress,
+        fromFriendly: operation.fromFriendly,
+        toAddress: operation.toAddress,
+        toFriendly: operation.toFriendly,
+        memo: operation.memo,
+        feeAmount: operation.feeAmount,
+        feeCurrency: operation.feeCurrency,
         createdAt: operation.createdAt.toISOString(),
     };
 }
@@ -268,6 +282,19 @@ async function applyWalletBalanceOperation(userId: string, amount: number, opera
                 amount,
                 currency: 'UZS',
                 status: 'completed',
+                ...(operation === 'topup'
+                    ? {
+                        fromAddress: TREASURY_ADDRESS,
+                        fromFriendly: TREASURY_FRIENDLY_ADDRESS,
+                        toAddress: wallet.address,
+                        toFriendly: wallet.friendlyAddress,
+                    }
+                    : {
+                        fromAddress: wallet.address,
+                        fromFriendly: wallet.friendlyAddress,
+                        toAddress: TREASURY_ADDRESS,
+                        toFriendly: TREASURY_FRIENDLY_ADDRESS,
+                    }),
             },
             select: {
                 id: true,
@@ -275,6 +302,13 @@ async function applyWalletBalanceOperation(userId: string, amount: number, opera
                 amount: true,
                 currency: true,
                 status: true,
+                fromAddress: true,
+                fromFriendly: true,
+                toAddress: true,
+                toFriendly: true,
+                memo: true,
+                feeAmount: true,
+                feeCurrency: true,
                 createdAt: true,
             },
         });
@@ -457,6 +491,13 @@ router.get('/operations', standardLimit, requireAuth, async (req, res) => {
                 amount: true,
                 currency: true,
                 status: true,
+                fromAddress: true,
+                fromFriendly: true,
+                toAddress: true,
+                toFriendly: true,
+                memo: true,
+                feeAmount: true,
+                feeCurrency: true,
                 createdAt: true,
             },
         });
@@ -745,6 +786,7 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
 
             let recipientWalletAddress: string;
             let recipientUserId: string | null = null;
+            let recipientWalletFriendly: string | null = null;
 
             if (cleanUsername) {
                 const usernameLower = normalizedUsername(cleanUsername);
@@ -763,6 +805,7 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
                     select: {
                         id: true,
                         walletAddress: true,
+                        walletFriendly: true,
                     },
                 });
 
@@ -772,6 +815,7 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
 
                 recipientWalletAddress = recipient.walletAddress;
                 recipientUserId = recipient.id;
+                recipientWalletFriendly = recipient.walletFriendly || toFriendlyAddress(recipient.walletAddress);
             } else {
                 let normalizedAddress = rawAddressInput;
 
@@ -780,6 +824,7 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
                         where: { friendlyAddress: normalizedAddress.toUpperCase() },
                         select: {
                             address: true,
+                            friendlyAddress: true,
                             userId: true,
                         },
                     });
@@ -790,6 +835,7 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
 
                     normalizedAddress = friendlyWallet.address;
                     recipientUserId = friendlyWallet.userId;
+                    recipientWalletFriendly = friendlyWallet.friendlyAddress;
                 }
 
                 if (!isValidAddress(normalizedAddress)) {
@@ -800,6 +846,7 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
                     where: { address: normalizedAddress },
                     select: {
                         address: true,
+                        friendlyAddress: true,
                         userId: true,
                     },
                 });
@@ -810,6 +857,7 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
 
                 recipientWalletAddress = recipientWallet.address;
                 recipientUserId = recipientWallet.userId;
+                recipientWalletFriendly = recipientWallet.friendlyAddress;
             }
 
 
@@ -854,6 +902,13 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
                     amount,
                     currency: WALLET_SEND_FEE_CURRENCY,
                     status: 'completed',
+                    fromAddress: senderWallet.address,
+                    fromFriendly: senderWallet.friendlyAddress,
+                    toAddress: recipientWalletAddress,
+                    toFriendly: recipientWalletFriendly,
+                    memo: memo || null,
+                    feeAmount: WALLET_SEND_FEE_AMOUNT,
+                    feeCurrency: WALLET_SEND_FEE_CURRENCY,
                 },
                 select: {
                     id: true,
@@ -861,6 +916,13 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
                     amount: true,
                     currency: true,
                     status: true,
+                    fromAddress: true,
+                    fromFriendly: true,
+                    toAddress: true,
+                    toFriendly: true,
+                    memo: true,
+                    feeAmount: true,
+                    feeCurrency: true,
                     createdAt: true,
                 },
             });
@@ -874,6 +936,11 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
                         amount,
                         currency: WALLET_SEND_FEE_CURRENCY,
                         status: 'completed',
+                        fromAddress: senderWallet.address,
+                        fromFriendly: senderWallet.friendlyAddress,
+                        toAddress: recipientWalletAddress,
+                        toFriendly: recipientWalletFriendly,
+                        memo: memo || null,
                     },
                 });
             }

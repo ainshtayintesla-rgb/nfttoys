@@ -44,6 +44,13 @@ interface WalletHistoryItem {
     amount: number;
     currency: string;
     status: string;
+    fromAddress: string | null;
+    fromFriendly: string | null;
+    toAddress: string | null;
+    toFriendly: string | null;
+    memo: string | null;
+    feeAmount: number | null;
+    feeCurrency: string | null;
     createdAt: string;
 }
 
@@ -286,6 +293,7 @@ export default function WalletPage() {
     const [isNftLoading, setIsNftLoading] = useState(true);
     const [nftError, setNftError] = useState<string | null>(null);
     const [selectedNftTransaction, setSelectedNftTransaction] = useState<NftTransactionItem | null>(null);
+    const [selectedWalletTransaction, setSelectedWalletTransaction] = useState<WalletHistoryItem | null>(null);
 
     const [copiedInDrawer, setCopiedInDrawer] = useState(false);
 
@@ -312,7 +320,7 @@ export default function WalletPage() {
     const nftDetailsTouchStartY = useRef<number | null>(null);
     const nftDetailsTouchCurrentY = useRef<number | null>(null);
 
-    useBodyScrollLock(Boolean(drawerMode) || Boolean(selectedNftTransaction));
+    useBodyScrollLock(Boolean(drawerMode) || Boolean(selectedNftTransaction) || Boolean(selectedWalletTransaction));
 
     const formatCurrency = useCallback((amount: number) => {
         return new Intl.NumberFormat(localeToIntlCode(locale), {
@@ -731,7 +739,18 @@ export default function WalletPage() {
 
     const handleNftCardClick = useCallback((item: NftTransactionItem) => {
         haptic.impact('light');
+        setSelectedWalletTransaction(null);
         setSelectedNftTransaction(item);
+    }, [haptic]);
+
+    const closeWalletDetails = useCallback(() => {
+        setSelectedWalletTransaction(null);
+    }, []);
+
+    const handleWalletCardClick = useCallback((item: WalletHistoryItem) => {
+        haptic.impact('light');
+        setSelectedNftTransaction(null);
+        setSelectedWalletTransaction(item);
     }, [haptic]);
 
     const nftDetailsSwipeHandlers = {
@@ -762,6 +781,12 @@ export default function WalletPage() {
     useEffect(() => {
         if (activeHistoryTab !== 'nft') {
             setSelectedNftTransaction(null);
+        }
+    }, [activeHistoryTab]);
+
+    useEffect(() => {
+        if (activeHistoryTab !== 'feed') {
+            setSelectedWalletTransaction(null);
         }
     }, [activeHistoryTab]);
 
@@ -815,14 +840,101 @@ export default function WalletPage() {
         : (t('system') || 'System');
     const selectedNftMemo = (selectedNftTransaction?.memo || '').trim();
     const shouldShowNftMemoDetails = selectedNftMemo.length > 0;
-    const selectedNftFeeValue = selectedNftTransaction?.fee || '741 UZS';
+    const selectedNftFeeValue = (selectedNftTransaction?.fee || '').trim();
+    const shouldShowNftFeeDetails = Boolean(
+        selectedNftFeeValue
+        && selectedNftTransaction
+        && (
+            selectedNftTransaction.direction === 'out'
+            || (selectedNftTransaction.fromUser?.id === authUser?.uid)
+        ),
+    );
     const selectedNftNameLine = `${selectedNftTitle}${selectedNftSerial ? ` ${selectedNftSerial}` : ''}`;
     const selectedNftDateTimeLine = `${selectedNftDateLabel}, ${selectedNftTimeLabel}`;
     const selectedNftIcon = selectedNftKind ? getNftKindIcon(selectedNftKind) : <ArrowUpRight size={18} />;
 
+    const ownWalletAddress = wallet?.address || user?.walletAddress || null;
+    const ownWalletFriendly = wallet?.friendlyAddress || user?.walletFriendly || null;
+    const ownWalletLabel = formatWalletLabel(ownWalletFriendly || ownWalletAddress);
+    const selectedWalletDirectionLabel = selectedWalletTransaction
+        ? (selectedWalletTransaction.type === 'topup'
+            ? (t('wallet_history_operation_topup') || 'Top up')
+            : selectedWalletTransaction.type === 'withdraw'
+                ? (t('wallet_history_operation_withdraw') || 'Withdraw')
+                : selectedWalletTransaction.type === 'send'
+                    ? (t('wallet_history_operation_send') || 'Send')
+                    : selectedWalletTransaction.type === 'receive'
+                        ? (t('wallet_history_operation_receive') || 'Receive')
+                        : selectedWalletTransaction.type)
+        : '—';
+    const selectedWalletIsIncoming = selectedWalletTransaction
+        ? selectedWalletTransaction.type === 'topup' || selectedWalletTransaction.type === 'receive'
+        : false;
+    const selectedWalletKindClass = selectedWalletIsIncoming ? styles.kindReceived : styles.kindSent;
+    const selectedWalletIcon = selectedWalletIsIncoming
+        ? <ArrowDownLeft size={22} />
+        : <ArrowUpRight size={22} />;
+    const selectedWalletDateLabel = selectedWalletTransaction
+        ? formatDetailsDate(selectedWalletTransaction.createdAt, locale)
+        : '—';
+    const selectedWalletTimeLabel = selectedWalletTransaction
+        ? formatTime(selectedWalletTransaction.createdAt, locale)
+        : '—';
+    const selectedWalletDateTimeLine = `${selectedWalletDateLabel}, ${selectedWalletTimeLabel}`;
+    const selectedWalletStatus = (() => {
+        const status = selectedWalletTransaction?.status || '';
+        const normalized = status.trim().toLowerCase();
+
+        if (normalized === 'completed' || !normalized) {
+            return t('wallet_history_status_completed') || 'Completed';
+        }
+
+        return status;
+    })();
+    const selectedWalletSenderRaw = selectedWalletTransaction
+        ? (selectedWalletTransaction.fromFriendly || selectedWalletTransaction.fromAddress)
+        : null;
+    const selectedWalletRecipientRaw = selectedWalletTransaction
+        ? (selectedWalletTransaction.toFriendly || selectedWalletTransaction.toAddress)
+        : null;
+    const selectedWalletSenderValue = selectedWalletSenderRaw
+        ? formatWalletLabel(selectedWalletSenderRaw)
+        : (
+            selectedWalletTransaction?.type === 'send' || selectedWalletTransaction?.type === 'withdraw'
+                ? ownWalletLabel
+                : (t('system') || 'System')
+        );
+    const selectedWalletRecipientValue = selectedWalletRecipientRaw
+        ? formatWalletLabel(selectedWalletRecipientRaw)
+        : (
+            selectedWalletTransaction?.type === 'receive' || selectedWalletTransaction?.type === 'topup'
+                ? ownWalletLabel
+                : (t('system') || 'System')
+        );
+    const selectedWalletAmountValue = selectedWalletTransaction
+        ? `${formatCurrency(selectedWalletTransaction.amount)} ${selectedWalletTransaction.currency || 'UZS'}`
+        : '—';
+    const selectedWalletMemo = (selectedWalletTransaction?.memo || '').trim();
+    const shouldShowWalletMemo = selectedWalletMemo.length > 0;
+    const selectedWalletFeeAmount = selectedWalletTransaction
+        ? (selectedWalletTransaction.feeAmount ?? (selectedWalletTransaction.type === 'send' ? WALLET_SEND_FEE : null))
+        : null;
+    const selectedWalletFeeCurrency = selectedWalletTransaction?.feeCurrency || selectedWalletTransaction?.currency || 'UZS';
+    const isWalletSender = Boolean(
+        selectedWalletTransaction
+        && ownWalletAddress
+        && selectedWalletTransaction.fromAddress
+        && selectedWalletTransaction.fromAddress === ownWalletAddress,
+    ) || selectedWalletTransaction?.type === 'send';
+    const shouldShowWalletFee = Boolean(isWalletSender && selectedWalletFeeAmount !== null);
+    const selectedWalletFeeValue = selectedWalletFeeAmount !== null
+        ? `${formatCurrency(selectedWalletFeeAmount)} ${selectedWalletFeeCurrency}`
+        : '—';
+
     const openDrawer = (mode: Exclude<DrawerMode, null>) => {
         haptic.impact('light');
         setSelectedNftTransaction(null);
+        setSelectedWalletTransaction(null);
         setDrawerMode(mode);
         setDrawerError('');
         setCopiedInDrawer(false);
@@ -1384,7 +1496,12 @@ export default function WalletPage() {
                                                                 const amountLine = `${isIncoming ? '+' : '-'}${formatCurrency(item.amount)} ${item.currency || 'UZS'}`;
 
                                                                 return (
-                                                                    <article key={item.id} className={styles.cardHistoryItem}>
+                                                                    <button
+                                                                        key={item.id}
+                                                                        type="button"
+                                                                        className={styles.cardHistoryItem}
+                                                                        onClick={() => handleWalletCardClick(item)}
+                                                                    >
                                                                         <div className={styles.cardRow}>
                                                                             <div className={styles.summaryLeft}>
                                                                                 <span className={`${styles.kindIcon} ${kindClass}`}>
@@ -1400,7 +1517,7 @@ export default function WalletPage() {
                                                                                 <span className={styles.summaryDate}>{dateTimeLine}</span>
                                                                             </div>
                                                                         </div>
-                                                                    </article>
+                                                                    </button>
                                                                 );
                                                             })}
                                                         </div>
@@ -1500,6 +1617,103 @@ export default function WalletPage() {
                 </main>
 
                 <div
+                    className={`${styles.walletDetailsOverlay} ${selectedWalletTransaction ? styles.walletDetailsOverlayVisible : ''}`}
+                    onClick={closeWalletDetails}
+                    aria-hidden={!selectedWalletTransaction}
+                >
+                    <aside
+                        className={styles.walletDetailsDrawer}
+                        onClick={(event) => event.stopPropagation()}
+                        aria-hidden={!selectedWalletTransaction}
+                    >
+                        <div className={styles.dragHandle}></div>
+                        <div className={styles.drawerHeader}>
+                            <h3>{t('transactions_details') || 'Transfer details'}</h3>
+                            <button
+                                type="button"
+                                className={styles.closeButton}
+                                onClick={closeWalletDetails}
+                                aria-label={t('transactions_close') || 'Close'}
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {selectedWalletTransaction && (
+                            <div className={styles.walletDetailsBody}>
+                                <section className={styles.walletDetailsTop}>
+                                    <span className={`${styles.kindIcon} ${selectedWalletKindClass}`}>
+                                        {selectedWalletIcon}
+                                    </span>
+                                    <h4 className={styles.walletDetailsName}>{selectedWalletDirectionLabel}</h4>
+                                    <div className={styles.walletDetailsTypeDate}>
+                                        <span className={styles.summaryAsset}>UZS</span>
+                                        <span className={styles.summaryDate}>{selectedWalletDateTimeLine}</span>
+                                    </div>
+                                </section>
+
+                                <section className={styles.walletDetailsBottom}>
+                                    <table className={styles.nftDetailsTable}>
+                                        <tbody>
+                                            <tr className={styles.nftDetailsRow}>
+                                                <th className={styles.nftDetailsKey} scope="row">
+                                                    {t('transactions_sender') || 'Sender'}
+                                                </th>
+                                                <td className={`${styles.nftDetailsValue} ${styles.nftDetailsValueMono}`}>
+                                                    {selectedWalletSenderValue}
+                                                </td>
+                                            </tr>
+                                            <tr className={styles.nftDetailsRow}>
+                                                <th className={styles.nftDetailsKey} scope="row">
+                                                    {t('transactions_recipient') || 'Recipient'}
+                                                </th>
+                                                <td className={`${styles.nftDetailsValue} ${styles.nftDetailsValueMono}`}>
+                                                    {selectedWalletRecipientValue}
+                                                </td>
+                                            </tr>
+                                            <tr className={styles.nftDetailsRow}>
+                                                <th className={styles.nftDetailsKey} scope="row">
+                                                    {t('wallet_amount_label') || 'Amount'}
+                                                </th>
+                                                <td className={styles.nftDetailsValue}>{selectedWalletAmountValue}</td>
+                                            </tr>
+                                            {shouldShowWalletFee && (
+                                                <tr className={styles.nftDetailsRow}>
+                                                    <th className={styles.nftDetailsKey} scope="row">
+                                                        {t('transactions_fee') || 'Fee'}
+                                                    </th>
+                                                    <td className={styles.nftDetailsValue}>{selectedWalletFeeValue}</td>
+                                                </tr>
+                                            )}
+                                            {shouldShowWalletMemo && (
+                                                <tr className={styles.nftDetailsRow}>
+                                                    <th className={styles.nftDetailsKey} scope="row">
+                                                        {t('transactions_comment') || t('transactions_memo') || 'Comment'}
+                                                    </th>
+                                                    <td className={styles.nftDetailsValue}>{selectedWalletMemo}</td>
+                                                </tr>
+                                            )}
+                                            <tr className={styles.nftDetailsRow}>
+                                                <th className={styles.nftDetailsKey} scope="row">
+                                                    {t('transactions_timestamp') || 'Timestamp'}
+                                                </th>
+                                                <td className={styles.nftDetailsValue}>{selectedWalletDateTimeLine}</td>
+                                            </tr>
+                                            <tr className={styles.nftDetailsRow}>
+                                                <th className={styles.nftDetailsKey} scope="row">
+                                                    {t('status') || 'Status'}
+                                                </th>
+                                                <td className={styles.nftDetailsValue}>{selectedWalletStatus}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </section>
+                            </div>
+                        )}
+                    </aside>
+                </div>
+
+                <div
                     className={`${styles.nftDetailsOverlay} ${selectedNftTransaction ? styles.nftDetailsOverlayVisible : ''}`}
                     onClick={closeNftDetails}
                     aria-hidden={!selectedNftTransaction}
@@ -1558,7 +1772,7 @@ export default function WalletPage() {
                                                     {selectedNftAddressValue}
                                                 </td>
                                             </tr>
-                                            {shouldShowNftMemoDetails && (
+                                            {shouldShowNftFeeDetails && (
                                                 <tr className={styles.nftDetailsRow}>
                                                     <th className={styles.nftDetailsKey} scope="row">
                                                         {t('transactions_fee') || 'Fee'}
