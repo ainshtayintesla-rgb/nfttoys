@@ -159,6 +159,8 @@
     "wallet_receive_share_text": "My wallet address",
     "wallet_amount_label": "Amount",
     "wallet_send_to_label": "Recipient",
+    "wallet_send_from_label": "From",
+    "wallet_send_to_short_label": "To",
     "wallet_send_username_placeholder": "username",
     "wallet_send_wallet_placeholder": "XXXXXXXXXXXX",
     "wallet_send_fee_label": "Fee",

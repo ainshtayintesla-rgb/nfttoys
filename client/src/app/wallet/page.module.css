@@ -697,6 +697,250 @@
     font-size: 13px;
 }
 
+.continueBar {
+    position: sticky;
+    bottom: 0;
+    z-index: 4;
+    margin-top: 4px;
+    padding-top: 10px;
+    padding-bottom: 2px;
+    background: linear-gradient(180deg, var(--ink-alpha-00) 0%, var(--bg-secondary) 42%);
+}
+
+.continueButton {
+    min-height: 52px;
+    border-radius: 14px;
+    background: var(--accent-color);
+    color: var(--accent-text);
+    border: 1px solid transparent;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+.continueButton:disabled {
+    opacity: 0.68;
+    background: var(--accent-color);
+    color: var(--accent-text);
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.confirmSection {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-bottom: 2px;
+}
+
+.transferSummary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    background: var(--surface-alpha-04);
+    border-radius: 16px;
+}
+
+.fromTo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+
+.fromToLabel {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.fromToValue {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.arrow {
+    color: var(--accent-color);
+    opacity: 0.7;
+}
+
+.confirmMeta {
+    display: grid;
+    gap: 10px;
+}
+
+.confirmFee {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid var(--surface-alpha-08);
+    border-radius: 12px;
+    background: var(--ink-alpha-20);
+    padding: 10px 12px;
+    gap: 8px;
+}
+
+.confirmFeeLabel {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.confirmFeeValue {
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.memoField {
+    display: block;
+}
+
+.memoInputWrap {
+    position: relative;
+    --memo-padding-x: 12px;
+    --memo-padding-top: 10px;
+    --memo-padding-bottom: 8px;
+    --memo-counter-height: 12px;
+    --memo-counter-gap: 4px;
+}
+
+.memoInput {
+    width: 100%;
+    min-height: 90px;
+    border-radius: 12px;
+    border: 1px solid var(--surface-alpha-08);
+    background: var(--ink-alpha-30);
+    color: var(--text-primary);
+    padding: var(--memo-padding-top)
+        68px
+        calc(var(--memo-padding-bottom) + var(--memo-counter-height) + var(--memo-counter-gap))
+        var(--memo-padding-x);
+    font-size: 14px;
+    line-height: 1.4;
+    resize: none;
+    outline: none;
+}
+
+.memoInput:focus {
+    border-color: var(--accent-color);
+    background: var(--ink-alpha-40);
+}
+
+.memoInput::placeholder {
+    color: var(--surface-alpha-30);
+}
+
+.memoCounterInside {
+    position: absolute;
+    right: calc(var(--memo-padding-x) + 1px);
+    bottom: calc(var(--memo-padding-bottom) + 1px);
+    pointer-events: none;
+    line-height: var(--memo-counter-height);
+}
+
+.memoCounter {
+    display: inline-block;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1;
+}
+
+.swipeConfirm {
+    width: 100%;
+    padding-top: 2px;
+    display: grid;
+    gap: 10px;
+}
+
+.swipeTrack {
+    position: relative;
+    height: 56px;
+    border-radius: 16px;
+    border: 1px solid color-mix(in srgb, var(--accent-color) 34%, var(--surface-alpha-12));
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--accent-color) 26%, rgba(255, 255, 255, 0.04)),
+        color-mix(in srgb, var(--accent-color) 12%, rgba(0, 0, 0, 0.22))
+    );
+    overflow: hidden;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    touch-action: pan-y;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.swipeFill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 56px;
+    border-radius: 16px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08));
+    transition: width 0.14s ease-out;
+    pointer-events: none;
+}
+
+.swipeLabel {
+    width: 100%;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    color: transparent;
+    background: linear-gradient(120deg, rgba(255, 255, 255, 0.72) 35%, #ffffff 50%, rgba(255, 255, 255, 0.72) 65%);
+    background-size: 220% 100%;
+    background-position: 0 0;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: swipeShine 2.2s linear infinite;
+    pointer-events: none;
+    user-select: none;
+}
+
+.swipeHandle {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: #ffffff;
+    color: color-mix(in srgb, var(--accent-color) 82%, #0f172a);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    touch-action: none;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
+    transition: box-shadow 0.14s ease-out, transform 0.14s ease-out;
+    z-index: 2;
+}
+
+.swipeHandle:disabled {
+    cursor: default;
+}
+
+.swipeHandleActive {
+    transition: none;
+    cursor: grabbing;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+}
+
+.swipeSpinner {
+    animation: spin 0.85s linear infinite;
+}
+
 .quickGrid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -795,6 +1039,16 @@
 
 .spinner {
     animation: spin 0.8s linear infinite;
+}
+
+@keyframes swipeShine {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -20% 0;
+    }
 }
 
 @keyframes spin {

@@ -250,6 +250,8 @@
     "wallet_receive_share_text": "Mening hamyon manzilim",
     "wallet_amount_label": "Summa",
     "wallet_send_to_label": "Qabul qiluvchi",
+    "wallet_send_from_label": "Kimdan",
+    "wallet_send_to_short_label": "Kimga",
     "wallet_send_username_placeholder": "username",
     "wallet_send_wallet_placeholder": "XXXXXXXXXXXX",
     "wallet_send_fee_label": "Komissiya",

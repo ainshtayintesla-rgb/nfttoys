@@ -22,6 +22,7 @@ const TELEGRAM_USERNAME_MAX_LENGTH = 32;
 const WALLET_FRIENDLY_BODY_LENGTH = 12;
 const WALLET_SEND_FEE_AMOUNT = 71;
 const WALLET_SEND_FEE_CURRENCY = 'UZS';
+const WALLET_SEND_MEMO_MAX_LENGTH = 180;
 const TREASURY_ADDRESS_HASH = TREASURY_ADDRESS.slice(3);
 
 type WalletBalanceMutationKind = 'topup' | 'withdraw';
@@ -119,6 +120,14 @@ function normalizeWalletLookupInput(value: unknown): string {
         .slice(0, WALLET_FRIENDLY_BODY_LENGTH);
 
     return friendlyBody ? `LV-${friendlyBody}` : '';
+}
+
+function normalizeWalletMemoInput(value: unknown): string {
+    if (typeof value !== 'string') {
+        return '';
+    }
+
+    return value.trim().slice(0, WALLET_SEND_MEMO_MAX_LENGTH);
 }
 
 function walletPayload(wallet: {
@@ -677,6 +686,7 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
             amount?: unknown;
             toUsername?: unknown;
             toAddress?: unknown;
+            memo?: unknown;
         } | undefined) || {};
 
         const amount = parseAmount(body.amount);
@@ -694,6 +704,7 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
 
         const cleanUsername = normalizeUsernameLookupInput(body.toUsername);
         const rawAddressInput = typeof body.toAddress === 'string' ? body.toAddress.trim() : '';
+        const memo = normalizeWalletMemoInput(body.memo);
 
         if ((cleanUsername ? 1 : 0) + (rawAddressInput ? 1 : 0) !== 1) {
             return res.status(400).json({
@@ -903,6 +914,7 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
                 currency: WALLET_SEND_FEE_CURRENCY,
                 totalDebited: result.totalDebit,
             },
+            memo: memo || null,
         });
     } catch (error) {
         if (error instanceof WalletValidationError) {

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.8] - 2026-02-28
+
+### Added
+- Wallet Send drawer now has 2-step flow: input step with `Continue`, then confirm step with fixed recipient/amount summary, optional comment, and swipe-to-confirm.
+- Wallet send API now accepts optional `memo` in request payload.
+
+### Changed
+- Send drawer close action now acts as Back on confirm step (same interaction pattern as NFT transfer drawer).
+- Send draft values (recipient, amount, comment) are preserved in-memory across close/reopen until successful transfer.
+
 ## [0.2.7] - 2026-02-28
 
 ### Fixed

@@ -410,7 +410,7 @@ export const api = {
                 body: JSON.stringify({ amount }),
             }),
 
-        send: (data: { amount: number; toUsername?: string; toAddress?: string }) =>
+        send: (data: { amount: number; toUsername?: string; toAddress?: string; memo?: string }) =>
             apiFetch<WalletMutationResponse>('/wallet/send', {
                 method: 'POST',
                 body: JSON.stringify(data),

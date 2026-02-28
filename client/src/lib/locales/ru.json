@@ -159,6 +159,8 @@
     "wallet_receive_share_text": "Мой адрес кошелька",
     "wallet_amount_label": "Сумма",
     "wallet_send_to_label": "Получатель",
+    "wallet_send_from_label": "От",
+    "wallet_send_to_short_label": "Кому",
     "wallet_send_username_placeholder": "username",
     "wallet_send_wallet_placeholder": "XXXXXXXXXXXX",
     "wallet_send_fee_label": "Комиссия",
