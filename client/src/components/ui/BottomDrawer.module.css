@@ -1,0 +1,104 @@
+.overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 140;
+    background: var(--ink-alpha-00);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: background 0.2s ease, opacity 0.2s ease, visibility 0s linear 0.2s;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0 16px calc(16px + var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px)));
+}
+
+.overlayVisible {
+    background: var(--ink-alpha-60);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    opacity: 1;
+    visibility: visible;
+    pointer-events: all;
+    transition: background 0.2s ease, opacity 0.2s ease;
+}
+
+.drawer {
+    width: 100%;
+    max-height: 85vh;
+    min-height: 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--surface-alpha-08);
+    border-radius: 24px;
+    display: flex;
+    flex-direction: column;
+    overscroll-behavior: contain;
+    box-shadow: 0 -18px 36px var(--ink-alpha-30);
+}
+
+.drawerAnimated {
+    transform: translateY(calc(100% + 96px));
+    opacity: 0;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+}
+
+.drawerOpen {
+    transform: translateY(0);
+    opacity: 1;
+}
+
+.drawerStatic {
+    transform: none;
+    opacity: 1;
+}
+
+.dragHandle {
+    width: 40px;
+    height: 4px;
+    background: var(--surface-alpha-20);
+    border-radius: 2px;
+    margin: 10px auto 6px;
+    flex-shrink: 0;
+}
+
+.header {
+    padding: 0 16px 12px;
+    border-bottom: 1px solid var(--surface-alpha-08);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.closeButton {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: none;
+    background: var(--surface-alpha-10);
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.closeButton:hover {
+    background: var(--surface-alpha-15);
+    color: var(--text-primary);
+}
+
+.body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}

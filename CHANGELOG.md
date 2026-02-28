@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.17] - 2026-02-28
+
+### Added
+- Added reusable UI primitives under `client/src/components/ui`: `BottomDrawer`, `SegmentedTabs`, `TxCard`, `DetailsTable`, and `RoundIconButton`.
+
+### Changed
+- Wallet page now uses shared UI primitives for history tabs, transaction cards, details tables, action icon shells, and all bottom drawers (receive/send/topup/withdraw + NFT/UZS details).
+- Transactions page now uses shared `TxCard`, `DetailsTable`, and `BottomDrawer` for both filter and transfer-details drawers.
+- NFT transfer modal now uses shared `SegmentedTabs` (recipient switch) and `DetailsTable` (info table), keeping existing behavior and content.
 ## [0.2.16] - 2026-02-28
 
 ### Added

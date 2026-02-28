@@ -2,8 +2,11 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowDownLeft, ArrowUpRight, Flame, Funnel, Sparkles, X } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Flame, Funnel, Sparkles } from 'lucide-react';
 
+import { BottomDrawer } from '@/components/ui/BottomDrawer';
+import { DetailsTable } from '@/components/ui/DetailsTable';
+import { TxCard } from '@/components/ui/TxCard';
 import { api } from '@/lib/api';
 import { Locale, useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
@@ -622,28 +625,25 @@ export default function TransactionsPage() {
                                         const cardDateTimeLine = `${formatDetailsDate(item.timestamp, locale)}, ${formatTime(item.timestamp, locale)}`;
 
                                         return (
-                                            <button
+                                            <TxCard
                                                 key={item.id}
-                                                type="button"
                                                 className={styles.card}
                                                 onClick={() => handleCardClick(item)}
-                                            >
-                                                <div className={styles.cardRow}>
-                                                    <div className={styles.summaryLeft}>
-                                                        <span className={`${styles.kindIcon} ${cardKindClassName}`}>
-                                                            {getKindIcon(displayKind, 22)}
-                                                        </span>
-                                                        <div className={styles.summaryText}>
-                                                            <span className={styles.summaryDirection}>{getDirectionLabel(displayKind)}</span>
-                                                            <span className={styles.summaryAddress}>{counterpartLabel}</span>
-                                                        </div>
-                                                    </div>
-                                                    <div className={styles.summaryRight}>
-                                                        <span className={styles.summaryAsset}>{t('transactions_asset_nft') || 'NFT'}</span>
-                                                        <span className={styles.summaryDate}>{cardDateTimeLine}</span>
-                                                    </div>
-                                                </div>
-                                            </button>
+                                                icon={getKindIcon(displayKind, 22)}
+                                                iconWrapClassName={`${styles.kindIcon} ${cardKindClassName}`}
+                                                title={getDirectionLabel(displayKind)}
+                                                subtitle={counterpartLabel}
+                                                rightTop={t('transactions_asset_nft') || 'NFT'}
+                                                rightBottom={cardDateTimeLine}
+                                                rowClassName={styles.cardRow}
+                                                leftClassName={styles.summaryLeft}
+                                                textClassName={styles.summaryText}
+                                                titleClassName={styles.summaryDirection}
+                                                subtitleClassName={styles.summaryAddress}
+                                                rightClassName={styles.summaryRight}
+                                                rightTopClassName={styles.summaryAsset}
+                                                rightBottomClassName={styles.summaryDate}
+                                            />
                                         );
                                     })}
                                 </div>
@@ -653,60 +653,16 @@ export default function TransactionsPage() {
                 )}
             </main>
 
-            <div
-                className={`${styles.sidebarOverlay} ${isFilterOpen ? styles.sidebarOverlayVisible : ''}`}
-                onClick={closeFilter}
-            >
-                <aside
-                    className={`${styles.sidebar} ${styles.filterSidebar} ${isFilterOpen ? styles.sidebarOpen : ''}`}
-                    onClick={(event) => event.stopPropagation()}
-                    {...filterSwipeHandlers}
-                >
-                    <div className={styles.dragHandle}></div>
-                    <div className={styles.sidebarHeader}>
-                        <h3>{t('transactions_filter') || 'Filter'}</h3>
-                        <button type="button" className={styles.closeButton} onClick={closeFilter} aria-label={t('transactions_close') || 'Close'}>
-                            <X size={18} />
-                        </button>
-                    </div>
-
-                    <div className={styles.sidebarBody}>
-                        <div className={styles.quickGrid}>
-                            {quickButtons.map((preset) => (
-                                <button
-                                    key={preset.id}
-                                    type="button"
-                                    className={`${styles.quickButton} ${draftPreset === preset.id ? styles.quickButtonActive : ''}`}
-                                    onClick={() => applyPreset(preset.id)}
-                                >
-                                    {preset.label}
-                                </button>
-                            ))}
-                        </div>
-
-                        <div className={styles.dateFields}>
-                            <label className={styles.dateField}>
-                                <span>{t('transactions_from') || 'От'}</span>
-                                <input
-                                    type="date"
-                                    value={draftRange.from}
-                                    onChange={(event) => handleDraftDateChange('from', event.target.value)}
-                                />
-                            </label>
-
-                            <label className={styles.dateField}>
-                                <span>{t('transactions_to') || 'До'}</span>
-                                <input
-                                    type="date"
-                                    value={draftRange.to}
-                                    onChange={(event) => handleDraftDateChange('to', event.target.value)}
-                                />
-                            </label>
-                        </div>
-
-                        {draftError && <p className={styles.sidebarError}>{draftError}</p>}
-                    </div>
-
+            <BottomDrawer
+                open={isFilterOpen}
+                onClose={closeFilter}
+                title={t('transactions_filter') || 'Filter'}
+                closeAriaLabel={t('transactions_close') || 'Close'}
+                overlayClassName={styles.sidebarOverlay}
+                drawerClassName={`${styles.sidebar} ${styles.filterSidebar}`}
+                bodyClassName={styles.sidebarBody}
+                drawerProps={filterSwipeHandlers}
+                footer={(
                     <div className={styles.sidebarActions}>
                         <button type="button" className={styles.resetButton} onClick={resetFilter}>
                             {t('transactions_reset') || 'Reset'}
@@ -715,86 +671,112 @@ export default function TransactionsPage() {
                             {t('transactions_apply') || 'Apply'}
                         </button>
                     </div>
-                </aside>
-            </div>
-
-            <div
-                className={`${styles.sidebarOverlay} ${selectedTransaction ? styles.sidebarOverlayVisible : ''}`}
-                onClick={closeDetails}
+                )}
             >
-                <aside
-                    className={`${styles.sidebar} ${styles.detailsSidebar} ${selectedTransaction ? styles.sidebarOpen : ''}`}
-                    onClick={(event) => event.stopPropagation()}
-                    {...detailsSwipeHandlers}
-                >
-                    <div className={styles.dragHandle}></div>
-                    <div className={styles.sidebarHeader}>
-                        <h3>{t('transactions_details') || 'Transfer details'}</h3>
-                        <button type="button" className={styles.closeButton} onClick={closeDetails} aria-label={t('transactions_close') || 'Close'}>
-                            <X size={18} />
+                <div className={styles.quickGrid}>
+                    {quickButtons.map((preset) => (
+                        <button
+                            key={preset.id}
+                            type="button"
+                            className={`${styles.quickButton} ${draftPreset === preset.id ? styles.quickButtonActive : ''}`}
+                            onClick={() => applyPreset(preset.id)}
+                        >
+                            {preset.label}
                         </button>
+                    ))}
+                </div>
+
+                <div className={styles.dateFields}>
+                    <label className={styles.dateField}>
+                        <span>{t('transactions_from') || 'От'}</span>
+                        <input
+                            type="date"
+                            value={draftRange.from}
+                            onChange={(event) => handleDraftDateChange('from', event.target.value)}
+                        />
+                    </label>
+
+                    <label className={styles.dateField}>
+                        <span>{t('transactions_to') || 'До'}</span>
+                        <input
+                            type="date"
+                            value={draftRange.to}
+                            onChange={(event) => handleDraftDateChange('to', event.target.value)}
+                        />
+                    </label>
+                </div>
+
+                {draftError && <p className={styles.sidebarError}>{draftError}</p>}
+            </BottomDrawer>
+
+            <BottomDrawer
+                open={Boolean(selectedTransaction)}
+                onClose={closeDetails}
+                title={t('transactions_details') || 'Transfer details'}
+                closeAriaLabel={t('transactions_close') || 'Close'}
+                overlayClassName={`${styles.sidebarOverlay} ${styles.detailsOverlay}`}
+                drawerClassName={`${styles.sidebar} ${styles.detailsSidebar}`}
+                bodyClassName={styles.sidebarBodyPlain}
+                drawerProps={detailsSwipeHandlers}
+            >
+                {selectedTransaction && (
+                    <div className={`${styles.sidebarBody} ${styles.detailsBody}`}>
+                        <section className={styles.detailsTop}>
+                            <div className={styles.detailsAnimation}>
+                                {selectedTransaction.tgsUrl ? (
+                                    <TgsPlayer
+                                        src={selectedTransaction.tgsUrl}
+                                        style={{ width: 100, height: 100 }}
+                                        autoplay
+                                        loop={false}
+                                        renderer="svg"
+                                        unstyled
+                                    />
+                                ) : (
+                                    <div className={styles.detailsAnimationFallback}>
+                                        {selectedIcon}
+                                    </div>
+                                )}
+                            </div>
+                            <h4 className={styles.detailsName}>{selectedNameLine}</h4>
+                            <div className={styles.detailsTypeDate}>
+                                <span className={styles.summaryAsset}>{t('transactions_asset_nft') || 'NFT'}</span>
+                                <span className={styles.summaryDate}>{selectedDateTimeLine}</span>
+                            </div>
+                        </section>
+
+                        <section className={styles.detailsBottom}>
+                            <DetailsTable
+                                className={styles.detailsTable}
+                                rowClassName={styles.detailsRow}
+                                keyClassName={styles.detailsKey}
+                                valueClassName={styles.detailsValue}
+                                monoValueClassName={styles.detailsValueMono}
+                                rows={[
+                                    {
+                                        id: 'counterparty',
+                                        label: lowerTableLabel,
+                                        value: lowerTableAddressValue,
+                                        mono: true,
+                                    },
+                                    {
+                                        id: 'fee',
+                                        label: t('transactions_fee') || 'Fee',
+                                        value: selectedFeeValue,
+                                        hidden: !shouldShowMemoDetails,
+                                    },
+                                    {
+                                        id: 'memo',
+                                        label: t('transactions_comment') || t('transactions_memo') || 'Comment',
+                                        value: selectedMemo,
+                                        hidden: !shouldShowMemoDetails,
+                                    },
+                                ]}
+                            />
+                        </section>
                     </div>
-
-                    {selectedTransaction && (
-                        <div className={`${styles.sidebarBody} ${styles.detailsBody}`}>
-                            <section className={styles.detailsTop}>
-                                <div className={styles.detailsAnimation}>
-                                    {selectedTransaction.tgsUrl ? (
-                                        <TgsPlayer
-                                            src={selectedTransaction.tgsUrl}
-                                            style={{ width: 100, height: 100 }}
-                                            autoplay
-                                            loop={false}
-                                            renderer="svg"
-                                            unstyled
-                                        />
-                                    ) : (
-                                        <div className={styles.detailsAnimationFallback}>
-                                            {selectedIcon}
-                                        </div>
-                                    )}
-                                </div>
-                                <h4 className={styles.detailsName}>{selectedNameLine}</h4>
-                                <div className={styles.detailsTypeDate}>
-                                    <span className={styles.summaryAsset}>{t('transactions_asset_nft') || 'NFT'}</span>
-                                    <span className={styles.summaryDate}>{selectedDateTimeLine}</span>
-                                </div>
-                            </section>
-
-                            <section className={styles.detailsBottom}>
-                                <table className={styles.detailsTable}>
-                                    <tbody>
-                                        <tr className={styles.detailsRow}>
-                                            <th className={styles.detailsKey} scope="row">{lowerTableLabel}</th>
-                                            <td className={`${styles.detailsValue} ${styles.detailsValueMono}`}>
-                                                {lowerTableAddressValue}
-                                            </td>
-                                        </tr>
-                                        {shouldShowMemoDetails && (
-                                            <tr className={styles.detailsRow}>
-                                                <th className={styles.detailsKey} scope="row">
-                                                    {t('transactions_fee') || 'Fee'}
-                                                </th>
-                                                <td className={styles.detailsValue}>{selectedFeeValue}</td>
-                                            </tr>
-                                        )}
-                                        {shouldShowMemoDetails && (
-                                            <tr className={styles.detailsRow}>
-                                                <th className={styles.detailsKey} scope="row">
-                                                    {t('transactions_comment') || t('transactions_memo') || 'Comment'}
-                                                </th>
-                                                <td className={styles.detailsValue}>
-                                                    {selectedMemo}
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </section>
-                        </div>
-                    )}
-                </aside>
-            </div>
+                )}
+            </BottomDrawer>
         </div>
     );
 }

@@ -3,6 +3,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X, Send, Check, Loader2, ArrowRight, ChevronLeft, Tag, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { DetailsTable } from '@/components/ui/DetailsTable';
+import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
 import { TgsPlayer } from '@/components/ui/TgsPlayer';
 import { useTelegram } from '@/lib/context/TelegramContext';
 import { useLanguage } from '@/lib/context/LanguageContext';
@@ -734,11 +736,17 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                         </div>
 
                         {viewMode === 'info' ? (
-                            <table className={styles.infoTable}>
-                                <tbody>
-                                    <tr className={styles.infoRow}>
-                                        <th className={styles.infoKey} scope="row">{t('owner') || 'Owner'}</th>
-                                        <td className={styles.infoValue}>
+                            <DetailsTable
+                                className={styles.infoTable}
+                                rowClassName={styles.infoRow}
+                                keyClassName={styles.infoKey}
+                                valueClassName={styles.infoValue}
+                                monoValueClassName={styles.infoValueMono}
+                                rows={[
+                                    {
+                                        id: 'owner',
+                                        label: t('owner') || 'Owner',
+                                        value: (
                                             <span className={styles.ownerCell}>
                                                 <span className={styles.ownerAvatarWrap}>
                                                     {ownerAvatarUrl ? (
@@ -755,46 +763,39 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                                                 </span>
                                                 <span className={styles.ownerName}>{ownerDisplayName}</span>
                                             </span>
-                                        </td>
-                                    </tr>
-                                    <tr className={styles.infoRow}>
-                                        <th className={styles.infoKey} scope="row">{t('model') || 'Model'}</th>
-                                        <td className={styles.infoValue}>{nft.modelName}</td>
-                                    </tr>
-                                    <tr className={styles.infoRow}>
-                                        <th className={styles.infoKey} scope="row">
-                                            {t('transfer_modal_availability') || 'Availability'}
-                                        </th>
-                                        <td className={`${styles.infoValue} ${styles.infoValueMono}`}>
-                                            {availabilityText}
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                                        ),
+                                    },
+                                    {
+                                        id: 'model',
+                                        label: t('model') || 'Model',
+                                        value: nft.modelName,
+                                    },
+                                    {
+                                        id: 'availability',
+                                        label: t('transfer_modal_availability') || 'Availability',
+                                        value: availabilityText,
+                                        mono: true,
+                                    },
+                                ]}
+                            />
                         ) : (
                             <>
                                 {/* Recipient Input */}
                                 <div className={styles.inputSection}>
-                                    <div className={styles.tabs}>
-                                        <button
-                                            className={`${styles.tab} ${recipientType === 'username' ? styles.active : ''}`}
-                                            onClick={() => {
-                                                setRecipientType('username');
-                                                setError('');
-                                            }}
-                                        >
-                                            @username
-                                        </button>
-                                        <button
-                                            className={`${styles.tab} ${recipientType === 'wallet' ? styles.active : ''}`}
-                                            onClick={() => {
-                                                setRecipientType('wallet');
-                                                setError('');
-                                            }}
-                                        >
-                                            {t('wallet')}
-                                        </button>
-                                    </div>
+                                    <SegmentedTabs
+                                        className={styles.tabs}
+                                        tabClassName={styles.tab}
+                                        activeTabClassName={styles.tabActive}
+                                        items={[
+                                            { key: 'username' as const, label: '@username' },
+                                            { key: 'wallet' as const, label: t('wallet') || 'Wallet' },
+                                        ]}
+                                        activeKey={recipientType}
+                                        onChange={(nextType) => {
+                                            setRecipientType(nextType);
+                                            setError('');
+                                        }}
+                                    />
 
                                     {recipientType === 'wallet' && suggestedWallet && (
                                         <button

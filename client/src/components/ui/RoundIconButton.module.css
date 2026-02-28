@@ -1,0 +1,36 @@
+.root {
+    --round-icon-size: 44px;
+    width: var(--round-icon-size);
+    height: var(--round-icon-size);
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.button {
+    border: 1px solid var(--surface-alpha-12);
+    background: var(--surface-alpha-08);
+    color: var(--text-primary);
+    padding: 0;
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.button:hover {
+    background: var(--surface-alpha-12);
+}
+
+.button:active {
+    transform: scale(0.97);
+}
+
+.button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.span {
+    pointer-events: none;
+}

@@ -396,25 +396,7 @@
 }
 
 .walletDetailsOverlay {
-    position: fixed;
-    inset: 0;
     z-index: 144;
-    background: var(--ink-alpha-60);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    padding: 0 16px calc(16px + var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px)));
-}
-
-.walletDetailsOverlayVisible {
-    opacity: 1;
-    visibility: visible;
-    pointer-events: all;
 }
 
 .walletDetailsDrawer {
@@ -469,28 +451,7 @@
 }
 
 .nftDetailsOverlay {
-    position: fixed;
-    inset: 0;
     z-index: 145;
-    background: var(--ink-alpha-00);
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transition: background 0.2s ease, opacity 0.2s ease, visibility 0s linear 0.2s;
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    padding: 0 16px calc(16px + var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px)));
-}
-
-.nftDetailsOverlayVisible {
-    background: var(--ink-alpha-60);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    opacity: 1;
-    visibility: visible;
-    pointer-events: all;
-    transition: background 0.2s ease, opacity 0.2s ease;
 }
 
 .nftDetailsDrawer {
@@ -499,18 +460,10 @@
     background: var(--bg-secondary);
     border: 1px solid var(--surface-alpha-08);
     border-radius: 24px;
-    transform: translateY(calc(100% + 96px));
-    opacity: 0;
-    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
     display: flex;
     flex-direction: column;
     overscroll-behavior: contain;
     box-shadow: 0 -18px 36px var(--ink-alpha-30);
-}
-
-.nftDetailsDrawerOpen {
-    transform: translateY(0);
-    opacity: 1;
 }
 
 .nftDetailsBody {
@@ -616,28 +569,7 @@
 }
 
 .overlay {
-    position: fixed;
-    inset: 0;
     z-index: 140;
-    background: var(--ink-alpha-00);
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transition: background 0.2s ease, opacity 0.2s ease, visibility 0s linear 0.2s;
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    padding: 0 16px calc(16px + var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px)));
-}
-
-.overlayVisible {
-    background: var(--ink-alpha-60);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    opacity: 1;
-    visibility: visible;
-    pointer-events: all;
-    transition: background 0.2s ease, opacity 0.2s ease;
 }
 
 .drawer {
@@ -646,18 +578,10 @@
     background: var(--bg-secondary);
     border: 1px solid var(--surface-alpha-10);
     border-radius: 24px;
-    transform: translateY(calc(100% + 96px));
-    opacity: 0;
-    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     box-shadow: 0 -18px 36px var(--ink-alpha-30);
-}
-
-.drawerOpen {
-    transform: translateY(0);
-    opacity: 1;
 }
 
 .dragHandle {
@@ -704,6 +628,11 @@
     padding: 14px 16px 16px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+}
+
+.drawerBodyPlain {
+    padding: 0;
+    overflow: visible;
 }
 
 .drawerHint {

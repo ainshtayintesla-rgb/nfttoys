@@ -8,7 +8,6 @@ import {
     ArrowUpFromLine,
     ArrowUpRight,
     Check,
-    ChevronLeft,
     Copy,
     Flame,
     Loader2,
@@ -17,12 +16,16 @@ import {
     Share2,
     Sparkles,
     Wallet as WalletIcon,
-    X,
 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 
+import { BottomDrawer } from '@/components/ui/BottomDrawer';
+import { DetailsTable } from '@/components/ui/DetailsTable';
+import { RoundIconButton } from '@/components/ui/RoundIconButton';
+import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
 import { TelegramBackButton } from '@/components/ui/TelegramBackButton';
 import { TgsPlayer } from '@/components/ui/TgsPlayer';
+import { TxCard } from '@/components/ui/TxCard';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
@@ -1391,9 +1394,9 @@ export default function WalletPage() {
                                         className={styles.actionTile}
                                         onClick={() => openDrawer('topup')}
                                     >
-                                        <span className={`${styles.actionIcon} ${styles.actionIconTopup}`}>
+                                        <RoundIconButton as="span" size={50} className={`${styles.actionIcon} ${styles.actionIconTopup}`}>
                                             <ArrowDownToLine size={20} />
-                                        </span>
+                                        </RoundIconButton>
                                         <span className={styles.actionLabel}>{t('wallet_topup') || 'Top up'}</span>
                                     </button>
 
@@ -1403,9 +1406,9 @@ export default function WalletPage() {
                                         onClick={() => openDrawer('withdraw')}
                                         disabled={wallet.balance <= 0}
                                     >
-                                        <span className={`${styles.actionIcon} ${styles.actionIconWithdraw}`}>
+                                        <RoundIconButton as="span" size={50} className={`${styles.actionIcon} ${styles.actionIconWithdraw}`}>
                                             <ArrowUpFromLine size={20} />
-                                        </span>
+                                        </RoundIconButton>
                                         <span className={styles.actionLabel}>{t('wallet_withdraw') || 'Withdraw'}</span>
                                     </button>
 
@@ -1415,9 +1418,9 @@ export default function WalletPage() {
                                         onClick={() => openDrawer('receive')}
                                         disabled={!copyValue}
                                     >
-                                        <span className={`${styles.actionIcon} ${styles.actionIconReceive}`}>
+                                        <RoundIconButton as="span" size={50} className={`${styles.actionIcon} ${styles.actionIconReceive}`}>
                                             <QrCode size={20} />
-                                        </span>
+                                        </RoundIconButton>
                                         <span className={styles.actionLabel}>{t('wallet_receive') || 'Receive'}</span>
                                     </button>
 
@@ -1427,40 +1430,29 @@ export default function WalletPage() {
                                         onClick={() => openDrawer('send')}
                                         disabled={wallet.balance <= WALLET_SEND_FEE}
                                     >
-                                        <span className={`${styles.actionIcon} ${styles.actionIconSend}`}>
+                                        <RoundIconButton as="span" size={50} className={`${styles.actionIcon} ${styles.actionIconSend}`}>
                                             <Send size={20} />
-                                        </span>
+                                        </RoundIconButton>
                                         <span className={styles.actionLabel}>{t('wallet_send') || t('send') || 'Send'}</span>
                                     </button>
                                 </div>
                             </section>
 
-                            <section className={styles.historyTabs} role="tablist" aria-label={t('wallet_history_title') || 'History'}>
-                                <button
-                                    type="button"
-                                    role="tab"
-                                    aria-selected={activeHistoryTab === 'feed'}
-                                    className={`${styles.historyTab} ${activeHistoryTab === 'feed' ? styles.historyTabActive : ''}`}
-                                    onClick={() => {
-                                        setActiveHistoryTab('feed');
-                                        haptic.selection();
-                                    }}
-                                >
-                                    {t('wallet_feed_tab') || 'Feed'}
-                                </button>
-                                <button
-                                    type="button"
-                                    role="tab"
-                                    aria-selected={activeHistoryTab === 'nft'}
-                                    className={`${styles.historyTab} ${activeHistoryTab === 'nft' ? styles.historyTabActive : ''}`}
-                                    onClick={() => {
-                                        setActiveHistoryTab('nft');
-                                        haptic.selection();
-                                    }}
-                                >
-                                    {t('wallet_nft_tab') || 'NFT'}
-                                </button>
-                            </section>
+                            <SegmentedTabs
+                                ariaLabel={t('wallet_history_title') || 'History'}
+                                className={styles.historyTabs}
+                                tabClassName={styles.historyTab}
+                                activeTabClassName={styles.historyTabActive}
+                                items={[
+                                    { key: 'feed' as const, label: t('wallet_feed_tab') || 'Feed' },
+                                    { key: 'nft' as const, label: t('wallet_nft_tab') || 'NFT' },
+                                ]}
+                                activeKey={activeHistoryTab}
+                                onChange={(nextTab) => {
+                                    setActiveHistoryTab(nextTab);
+                                    haptic.selection();
+                                }}
+                            />
 
                             <section className={styles.historySection}>
                                 {activeHistoryTab === 'feed' ? (
@@ -1496,28 +1488,25 @@ export default function WalletPage() {
                                                                 const amountLine = `${isIncoming ? '+' : '-'}${formatCurrency(item.amount)} ${item.currency || 'UZS'}`;
 
                                                                 return (
-                                                                    <button
+                                                                    <TxCard
                                                                         key={item.id}
-                                                                        type="button"
                                                                         className={styles.cardHistoryItem}
                                                                         onClick={() => handleWalletCardClick(item)}
-                                                                    >
-                                                                        <div className={styles.cardRow}>
-                                                                            <div className={styles.summaryLeft}>
-                                                                                <span className={`${styles.kindIcon} ${kindClass}`}>
-                                                                                    {isIncoming ? <ArrowDownLeft size={22} /> : <ArrowUpRight size={22} />}
-                                                                                </span>
-                                                                                <div className={styles.summaryText}>
-                                                                                    <span className={styles.summaryDirection}>{getOperationTitle(item.type)}</span>
-                                                                                    <span className={styles.summaryAddress}>{amountLine}</span>
-                                                                                </div>
-                                                                            </div>
-                                                                            <div className={styles.summaryRight}>
-                                                                                <span className={styles.summaryAsset}>{getStatusLabel(item.status)}</span>
-                                                                                <span className={styles.summaryDate}>{dateTimeLine}</span>
-                                                                            </div>
-                                                                        </div>
-                                                                    </button>
+                                                                        icon={isIncoming ? <ArrowDownLeft size={22} /> : <ArrowUpRight size={22} />}
+                                                                        iconWrapClassName={`${styles.kindIcon} ${kindClass}`}
+                                                                        title={getOperationTitle(item.type)}
+                                                                        subtitle={amountLine}
+                                                                        rightTop={getStatusLabel(item.status)}
+                                                                        rightBottom={dateTimeLine}
+                                                                        rowClassName={styles.cardRow}
+                                                                        leftClassName={styles.summaryLeft}
+                                                                        textClassName={styles.summaryText}
+                                                                        titleClassName={styles.summaryDirection}
+                                                                        subtitleClassName={styles.summaryAddress}
+                                                                        rightClassName={styles.summaryRight}
+                                                                        rightTopClassName={styles.summaryAsset}
+                                                                        rightBottomClassName={styles.summaryDate}
+                                                                    />
                                                                 );
                                                             })}
                                                         </div>
@@ -1580,28 +1569,25 @@ export default function WalletPage() {
                                                                 const cardDateTimeLine = `${formatDetailsDate(item.timestamp, locale)}, ${formatTime(item.timestamp, locale)}`;
 
                                                                 return (
-                                                                    <button
+                                                                    <TxCard
                                                                         key={item.id}
-                                                                        type="button"
                                                                         className={styles.nftCard}
                                                                         onClick={() => handleNftCardClick(item)}
-                                                                    >
-                                                                        <div className={styles.cardRow}>
-                                                                            <div className={styles.summaryLeft}>
-                                                                                <span className={`${styles.kindIcon} ${cardKindClassName}`}>
-                                                                                    {getNftKindIcon(displayKind, 22)}
-                                                                                </span>
-                                                                                <div className={styles.summaryText}>
-                                                                                    <span className={styles.summaryDirection}>{getNftDirectionLabel(displayKind)}</span>
-                                                                                    <span className={styles.summaryAddress}>{counterpartLabel}</span>
-                                                                                </div>
-                                                                            </div>
-                                                                            <div className={styles.summaryRight}>
-                                                                                <span className={styles.summaryAsset}>{t('transactions_asset_nft') || 'NFT'}</span>
-                                                                                <span className={styles.summaryDate}>{cardDateTimeLine}</span>
-                                                                            </div>
-                                                                        </div>
-                                                                    </button>
+                                                                        icon={getNftKindIcon(displayKind, 22)}
+                                                                        iconWrapClassName={`${styles.kindIcon} ${cardKindClassName}`}
+                                                                        title={getNftDirectionLabel(displayKind)}
+                                                                        subtitle={counterpartLabel}
+                                                                        rightTop={t('transactions_asset_nft') || 'NFT'}
+                                                                        rightBottom={cardDateTimeLine}
+                                                                        rowClassName={styles.cardRow}
+                                                                        leftClassName={styles.summaryLeft}
+                                                                        textClassName={styles.summaryText}
+                                                                        titleClassName={styles.summaryDirection}
+                                                                        subtitleClassName={styles.summaryAddress}
+                                                                        rightClassName={styles.summaryRight}
+                                                                        rightTopClassName={styles.summaryAsset}
+                                                                        rightBottomClassName={styles.summaryDate}
+                                                                    />
                                                                 );
                                                             })}
                                                         </div>
@@ -1616,569 +1602,513 @@ export default function WalletPage() {
                     )}
                 </main>
 
-                <div
-                    className={`${styles.walletDetailsOverlay} ${selectedWalletTransaction ? styles.walletDetailsOverlayVisible : ''}`}
-                    onClick={closeWalletDetails}
-                    aria-hidden={!selectedWalletTransaction}
+                <BottomDrawer
+                    open={Boolean(selectedWalletTransaction)}
+                    onClose={closeWalletDetails}
+                    title={t('transactions_details') || 'Transfer details'}
+                    closeAriaLabel={t('transactions_close') || 'Close'}
+                    mode="static"
+                    overlayClassName={styles.walletDetailsOverlay}
+                    drawerClassName={styles.walletDetailsDrawer}
+                    bodyClassName={styles.drawerBodyPlain}
                 >
-                    <aside
-                        className={styles.walletDetailsDrawer}
-                        onClick={(event) => event.stopPropagation()}
-                        aria-hidden={!selectedWalletTransaction}
-                    >
-                        <div className={styles.dragHandle}></div>
-                        <div className={styles.drawerHeader}>
-                            <h3>{t('transactions_details') || 'Transfer details'}</h3>
-                            <button
-                                type="button"
-                                className={styles.closeButton}
-                                onClick={closeWalletDetails}
-                                aria-label={t('transactions_close') || 'Close'}
-                            >
-                                <X size={18} />
-                            </button>
-                        </div>
-
-                        {selectedWalletTransaction && (
-                            <div className={styles.walletDetailsBody}>
-                                <section className={styles.walletDetailsTop}>
-                                    <span className={`${styles.kindIcon} ${selectedWalletKindClass}`}>
-                                        {selectedWalletIcon}
-                                    </span>
-                                    <h4 className={styles.walletDetailsName}>{selectedWalletDirectionLabel}</h4>
-                                    <div className={styles.walletDetailsTypeDate}>
-                                        <span className={styles.summaryAsset}>UZS</span>
-                                        <span className={styles.summaryDate}>{selectedWalletDateTimeLine}</span>
-                                    </div>
-                                </section>
-
-                                <section className={styles.walletDetailsBottom}>
-                                    <table className={styles.nftDetailsTable}>
-                                        <tbody>
-                                            <tr className={styles.nftDetailsRow}>
-                                                <th className={styles.nftDetailsKey} scope="row">
-                                                    {t('transactions_sender') || 'Sender'}
-                                                </th>
-                                                <td className={`${styles.nftDetailsValue} ${styles.nftDetailsValueMono}`}>
-                                                    {selectedWalletSenderValue}
-                                                </td>
-                                            </tr>
-                                            <tr className={styles.nftDetailsRow}>
-                                                <th className={styles.nftDetailsKey} scope="row">
-                                                    {t('transactions_recipient') || 'Recipient'}
-                                                </th>
-                                                <td className={`${styles.nftDetailsValue} ${styles.nftDetailsValueMono}`}>
-                                                    {selectedWalletRecipientValue}
-                                                </td>
-                                            </tr>
-                                            <tr className={styles.nftDetailsRow}>
-                                                <th className={styles.nftDetailsKey} scope="row">
-                                                    {t('wallet_amount_label') || 'Amount'}
-                                                </th>
-                                                <td className={styles.nftDetailsValue}>{selectedWalletAmountValue}</td>
-                                            </tr>
-                                            {shouldShowWalletFee && (
-                                                <tr className={styles.nftDetailsRow}>
-                                                    <th className={styles.nftDetailsKey} scope="row">
-                                                        {t('transactions_fee') || 'Fee'}
-                                                    </th>
-                                                    <td className={styles.nftDetailsValue}>{selectedWalletFeeValue}</td>
-                                                </tr>
-                                            )}
-                                            {shouldShowWalletMemo && (
-                                                <tr className={styles.nftDetailsRow}>
-                                                    <th className={styles.nftDetailsKey} scope="row">
-                                                        {t('transactions_comment') || t('transactions_memo') || 'Comment'}
-                                                    </th>
-                                                    <td className={styles.nftDetailsValue}>{selectedWalletMemo}</td>
-                                                </tr>
-                                            )}
-                                            <tr className={styles.nftDetailsRow}>
-                                                <th className={styles.nftDetailsKey} scope="row">
-                                                    {t('transactions_timestamp') || 'Timestamp'}
-                                                </th>
-                                                <td className={styles.nftDetailsValue}>{selectedWalletDateTimeLine}</td>
-                                            </tr>
-                                            <tr className={styles.nftDetailsRow}>
-                                                <th className={styles.nftDetailsKey} scope="row">
-                                                    {t('status') || 'Status'}
-                                                </th>
-                                                <td className={styles.nftDetailsValue}>{selectedWalletStatus}</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </section>
-                            </div>
-                        )}
-                    </aside>
-                </div>
-
-                <div
-                    className={`${styles.nftDetailsOverlay} ${selectedNftTransaction ? styles.nftDetailsOverlayVisible : ''}`}
-                    onClick={closeNftDetails}
-                    aria-hidden={!selectedNftTransaction}
-                >
-                    <aside
-                        className={`${styles.nftDetailsDrawer} ${selectedNftTransaction ? styles.nftDetailsDrawerOpen : ''}`}
-                        onClick={(event) => event.stopPropagation()}
-                        aria-hidden={!selectedNftTransaction}
-                        {...nftDetailsSwipeHandlers}
-                    >
-                        <div className={styles.dragHandle}></div>
-                        <div className={styles.drawerHeader}>
-                            <h3>{t('transactions_details') || 'Transfer details'}</h3>
-                            <button
-                                type="button"
-                                className={styles.closeButton}
-                                onClick={closeNftDetails}
-                                aria-label={t('transactions_close') || 'Close'}
-                            >
-                                <X size={18} />
-                            </button>
-                        </div>
-
-                        {selectedNftTransaction && (
-                            <div className={styles.nftDetailsBody}>
-                                <section className={styles.nftDetailsTop}>
-                                    <div className={styles.nftDetailsAnimation}>
-                                        {selectedNftTransaction.tgsUrl ? (
-                                            <TgsPlayer
-                                                src={selectedNftTransaction.tgsUrl}
-                                                style={{ width: 100, height: 100 }}
-                                                autoplay
-                                                loop={false}
-                                                renderer="svg"
-                                                unstyled
-                                            />
-                                        ) : (
-                                            <div className={styles.nftDetailsAnimationFallback}>
-                                                {selectedNftIcon}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <h4 className={styles.nftDetailsName}>{selectedNftNameLine}</h4>
-                                    <div className={styles.nftDetailsTypeDate}>
-                                        <span className={styles.summaryAsset}>{t('transactions_asset_nft') || 'NFT'}</span>
-                                        <span className={styles.summaryDate}>{selectedNftDateTimeLine}</span>
-                                    </div>
-                                </section>
-
-                                <section className={styles.nftDetailsBottom}>
-                                    <table className={styles.nftDetailsTable}>
-                                        <tbody>
-                                            <tr className={styles.nftDetailsRow}>
-                                                <th className={styles.nftDetailsKey} scope="row">{selectedNftLowerTableLabel}</th>
-                                                <td className={`${styles.nftDetailsValue} ${styles.nftDetailsValueMono}`}>
-                                                    {selectedNftAddressValue}
-                                                </td>
-                                            </tr>
-                                            {shouldShowNftFeeDetails && (
-                                                <tr className={styles.nftDetailsRow}>
-                                                    <th className={styles.nftDetailsKey} scope="row">
-                                                        {t('transactions_fee') || 'Fee'}
-                                                    </th>
-                                                    <td className={styles.nftDetailsValue}>{selectedNftFeeValue}</td>
-                                                </tr>
-                                            )}
-                                            {shouldShowNftMemoDetails && (
-                                                <tr className={styles.nftDetailsRow}>
-                                                    <th className={styles.nftDetailsKey} scope="row">
-                                                        {t('transactions_comment') || t('transactions_memo') || 'Comment'}
-                                                    </th>
-                                                    <td className={styles.nftDetailsValue}>
-                                                        {selectedNftMemo}
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </section>
-                            </div>
-                        )}
-                    </aside>
-                </div>
-
-                <div
-                    className={`${styles.overlay} ${drawerMode ? styles.overlayVisible : ''}`}
-                    onClick={() => closeDrawer()}
-                    aria-hidden={!drawerMode}
-                >
-                    <section
-                        className={`${styles.drawer} ${drawerMode ? styles.drawerOpen : ''}`}
-                        onClick={(event) => event.stopPropagation()}
-                        aria-hidden={!drawerMode}
-                    >
-                        <div className={styles.dragHandle} />
-
-                        <div className={styles.drawerHeader}>
-                            <h3>
-                                {drawerMode === 'withdraw'
-                                    ? (t('wallet_withdraw_title') || 'Withdraw')
-                                    : drawerMode === 'receive'
-                                        ? (t('wallet_receive_title') || 'Receive')
-                                        : drawerMode === 'send'
-                                            ? (t('wallet_send_title') || 'Send UZS')
-                                            : (t('wallet_topup_title') || 'Top up wallet')}
-                            </h3>
-                            <button
-                                type="button"
-                                className={styles.closeButton}
-                                onClick={drawerMode === 'send' && sendStep === 'confirm'
-                                    ? handleBackFromSendConfirm
-                                    : () => closeDrawer()}
-                            >
-                                {drawerMode === 'send' && sendStep === 'confirm' ? <ChevronLeft size={16} /> : <X size={16} />}
-                            </button>
-                        </div>
-
-                        {drawerMode === 'receive' ? (
-                            <div className={`${styles.drawerBody} ${styles.receiveBody}`}>
-                                <div className={styles.receiveQrFrame}>
-                                    <div className={styles.receiveQrSurface}>
-                                        {copyValue ? (
-                                            <QRCode value={copyValue} size={188} bgColor="#ffffff" fgColor="#111111" />
-                                        ) : (
-                                            <div className={styles.receiveQrPlaceholder}>
-                                                {t('wallet_receive_qr_placeholder') || 'Wallet address unavailable'}
-                                            </div>
-                                        )}
-                                    </div>
+                    {selectedWalletTransaction && (
+                        <div className={styles.walletDetailsBody}>
+                            <section className={styles.walletDetailsTop}>
+                                <span className={`${styles.kindIcon} ${selectedWalletKindClass}`}>
+                                    {selectedWalletIcon}
+                                </span>
+                                <h4 className={styles.walletDetailsName}>{selectedWalletDirectionLabel}</h4>
+                                <div className={styles.walletDetailsTypeDate}>
+                                    <span className={styles.summaryAsset}>UZS</span>
+                                    <span className={styles.summaryDate}>{selectedWalletDateTimeLine}</span>
                                 </div>
+                            </section>
 
-                                <div className={styles.receiveAddressRow}>
-                                    <span className={styles.receiveAddress}>{receiveWalletValue}</span>
-                                    <div className={styles.receiveActions}>
-                                        <button
-                                            type="button"
-                                            className={`${styles.iconButton} ${copiedInDrawer ? styles.iconButtonDone : ''}`}
-                                            onClick={handleCopyAddressInDrawer}
-                                            disabled={!copyValue}
-                                            aria-label={t('wallet_copy') || 'Copy address'}
-                                        >
-                                            {copiedInDrawer ? <Check size={16} /> : <Copy size={16} />}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className={styles.iconButton}
-                                            onClick={handleShareAddress}
-                                            disabled={!copyValue}
-                                            aria-label={t('wallet_share') || 'Share address'}
-                                        >
-                                            <Share2 size={16} />
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : drawerMode === 'send' ? (
-                            <div className={styles.drawerBody}>
-                                {sendStep === 'input' ? (
-                                    <>
-                                        <div className={styles.sendTabs}>
-                                            <button
-                                                type="button"
-                                                className={`${styles.sendTab} ${recipientType === 'username' ? styles.sendTabActive : ''}`}
-                                                onClick={() => {
-                                                    setRecipientType('username');
-                                                    setDrawerError('');
-                                                    haptic.selection();
-                                                }}
-                                            >
-                                                @username
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className={`${styles.sendTab} ${recipientType === 'wallet' ? styles.sendTabActive : ''}`}
-                                                onClick={() => {
-                                                    setRecipientType('wallet');
-                                                    setDrawerError('');
-                                                    haptic.selection();
-                                                }}
-                                            >
-                                                {t('wallet') || 'Wallet'}
-                                            </button>
+                            <section className={styles.walletDetailsBottom}>
+                                <DetailsTable
+                                    className={styles.nftDetailsTable}
+                                    rowClassName={styles.nftDetailsRow}
+                                    keyClassName={styles.nftDetailsKey}
+                                    valueClassName={styles.nftDetailsValue}
+                                    monoValueClassName={styles.nftDetailsValueMono}
+                                    rows={[
+                                        {
+                                            id: 'sender',
+                                            label: t('transactions_sender') || 'Sender',
+                                            value: selectedWalletSenderValue,
+                                            mono: true,
+                                        },
+                                        {
+                                            id: 'recipient',
+                                            label: t('transactions_recipient') || 'Recipient',
+                                            value: selectedWalletRecipientValue,
+                                            mono: true,
+                                        },
+                                        {
+                                            id: 'amount',
+                                            label: t('wallet_amount_label') || 'Amount',
+                                            value: selectedWalletAmountValue,
+                                        },
+                                        {
+                                            id: 'fee',
+                                            label: t('transactions_fee') || 'Fee',
+                                            value: selectedWalletFeeValue,
+                                            hidden: !shouldShowWalletFee,
+                                        },
+                                        {
+                                            id: 'memo',
+                                            label: t('transactions_comment') || t('transactions_memo') || 'Comment',
+                                            value: selectedWalletMemo,
+                                            hidden: !shouldShowWalletMemo,
+                                        },
+                                        {
+                                            id: 'timestamp',
+                                            label: t('transactions_timestamp') || 'Timestamp',
+                                            value: selectedWalletDateTimeLine,
+                                        },
+                                        {
+                                            id: 'status',
+                                            label: t('status') || 'Status',
+                                            value: selectedWalletStatus,
+                                        },
+                                    ]}
+                                />
+                            </section>
+                        </div>
+                    )}
+                </BottomDrawer>
+
+                <BottomDrawer
+                    open={Boolean(selectedNftTransaction)}
+                    onClose={closeNftDetails}
+                    title={t('transactions_details') || 'Transfer details'}
+                    closeAriaLabel={t('transactions_close') || 'Close'}
+                    mode="animated"
+                    overlayClassName={styles.nftDetailsOverlay}
+                    drawerClassName={styles.nftDetailsDrawer}
+                    bodyClassName={styles.drawerBodyPlain}
+                    drawerProps={nftDetailsSwipeHandlers}
+                >
+                    {selectedNftTransaction && (
+                        <div className={styles.nftDetailsBody}>
+                            <section className={styles.nftDetailsTop}>
+                                <div className={styles.nftDetailsAnimation}>
+                                    {selectedNftTransaction.tgsUrl ? (
+                                        <TgsPlayer
+                                            src={selectedNftTransaction.tgsUrl}
+                                            style={{ width: 100, height: 100 }}
+                                            autoplay
+                                            loop={false}
+                                            renderer="svg"
+                                            unstyled
+                                        />
+                                    ) : (
+                                        <div className={styles.nftDetailsAnimationFallback}>
+                                            {selectedNftIcon}
                                         </div>
+                                    )}
+                                </div>
+                                <h4 className={styles.nftDetailsName}>{selectedNftNameLine}</h4>
+                                <div className={styles.nftDetailsTypeDate}>
+                                    <span className={styles.summaryAsset}>{t('transactions_asset_nft') || 'NFT'}</span>
+                                    <span className={styles.summaryDate}>{selectedNftDateTimeLine}</span>
+                                </div>
+                            </section>
 
-                                        {recipientType === 'wallet' && suggestedWallet && (
-                                            <button
-                                                type="button"
-                                                className={styles.sendWalletSuggestion}
-                                                onClick={() => {
-                                                    setWalletBodyInput(sanitizeFriendlyBody(suggestedWallet.replace(/^LV-/i, '')));
-                                                    setDrawerError('');
-                                                    haptic.selection();
-                                                }}
-                                            >
-                                                <span className={styles.sendWalletSuggestionAvatarWrap}>
-                                                    {recipientLookup?.photoUrl ? (
+                            <section className={styles.nftDetailsBottom}>
+                                <DetailsTable
+                                    className={styles.nftDetailsTable}
+                                    rowClassName={styles.nftDetailsRow}
+                                    keyClassName={styles.nftDetailsKey}
+                                    valueClassName={styles.nftDetailsValue}
+                                    monoValueClassName={styles.nftDetailsValueMono}
+                                    rows={[
+                                        {
+                                            id: 'counterparty',
+                                            label: selectedNftLowerTableLabel,
+                                            value: selectedNftAddressValue,
+                                            mono: true,
+                                        },
+                                        {
+                                            id: 'fee',
+                                            label: t('transactions_fee') || 'Fee',
+                                            value: selectedNftFeeValue,
+                                            hidden: !shouldShowNftFeeDetails,
+                                        },
+                                        {
+                                            id: 'memo',
+                                            label: t('transactions_comment') || t('transactions_memo') || 'Comment',
+                                            value: selectedNftMemo,
+                                            hidden: !shouldShowNftMemoDetails,
+                                        },
+                                    ]}
+                                />
+                            </section>
+                        </div>
+                    )}
+                </BottomDrawer>
+
+                <BottomDrawer
+                    open={Boolean(drawerMode)}
+                    onClose={() => closeDrawer()}
+                    title={
+                        drawerMode === 'withdraw'
+                            ? (t('wallet_withdraw_title') || 'Withdraw')
+                            : drawerMode === 'receive'
+                                ? (t('wallet_receive_title') || 'Receive')
+                                : drawerMode === 'send'
+                                    ? (t('wallet_send_title') || 'Send UZS')
+                                    : (t('wallet_topup_title') || 'Top up wallet')
+                    }
+                    closeAriaLabel={t('transactions_close') || 'Close'}
+                    backAriaLabel={t('back') || 'Back'}
+                    showBackButton={drawerMode === 'send' && sendStep === 'confirm'}
+                    onBack={handleBackFromSendConfirm}
+                    overlayClassName={styles.overlay}
+                    drawerClassName={styles.drawer}
+                    bodyClassName={styles.drawerBodyPlain}
+                >
+                    {drawerMode === 'receive' ? (
+                        <div className={`${styles.drawerBody} ${styles.receiveBody}`}>
+                            <div className={styles.receiveQrFrame}>
+                                <div className={styles.receiveQrSurface}>
+                                    {copyValue ? (
+                                        <QRCode value={copyValue} size={188} bgColor="#ffffff" fgColor="#111111" />
+                                    ) : (
+                                        <div className={styles.receiveQrPlaceholder}>
+                                            {t('wallet_receive_qr_placeholder') || 'Wallet address unavailable'}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className={styles.receiveAddressRow}>
+                                <span className={styles.receiveAddress}>{receiveWalletValue}</span>
+                                <div className={styles.receiveActions}>
+                                    <RoundIconButton
+                                        size={34}
+                                        className={`${styles.iconButton} ${copiedInDrawer ? styles.iconButtonDone : ''}`}
+                                        onClick={handleCopyAddressInDrawer}
+                                        disabled={!copyValue}
+                                        aria-label={t('wallet_copy') || 'Copy address'}
+                                    >
+                                        {copiedInDrawer ? <Check size={16} /> : <Copy size={16} />}
+                                    </RoundIconButton>
+                                    <RoundIconButton
+                                        size={34}
+                                        className={styles.iconButton}
+                                        onClick={handleShareAddress}
+                                        disabled={!copyValue}
+                                        aria-label={t('wallet_share') || 'Share address'}
+                                    >
+                                        <Share2 size={16} />
+                                    </RoundIconButton>
+                                </div>
+                            </div>
+                        </div>
+                    ) : drawerMode === 'send' ? (
+                        <div className={styles.drawerBody}>
+                            {sendStep === 'input' ? (
+                                <>
+                                    <SegmentedTabs
+                                        className={styles.sendTabs}
+                                        tabClassName={styles.sendTab}
+                                        activeTabClassName={styles.sendTabActive}
+                                        items={[
+                                            { key: 'username' as const, label: '@username' },
+                                            { key: 'wallet' as const, label: t('wallet') || 'Wallet' },
+                                        ]}
+                                        activeKey={recipientType}
+                                        onChange={(nextType) => {
+                                            setRecipientType(nextType);
+                                            setDrawerError('');
+                                            haptic.selection();
+                                        }}
+                                    />
+
+                                    {recipientType === 'wallet' && suggestedWallet && (
+                                        <button
+                                            type="button"
+                                            className={styles.sendWalletSuggestion}
+                                            onClick={() => {
+                                                setWalletBodyInput(sanitizeFriendlyBody(suggestedWallet.replace(/^LV-/i, '')));
+                                                setDrawerError('');
+                                                haptic.selection();
+                                            }}
+                                        >
+                                            <span className={styles.sendWalletSuggestionAvatarWrap}>
+                                                {recipientLookup?.photoUrl ? (
+                                                    <img
+                                                        src={recipientLookup.photoUrl}
+                                                        alt=""
+                                                        className={styles.sendWalletSuggestionAvatar}
+                                                        loading="lazy"
+                                                        referrerPolicy="no-referrer"
+                                                    />
+                                                ) : (
+                                                    <span className={styles.sendWalletSuggestionAvatarFallback}>@</span>
+                                                )}
+                                            </span>
+                                            <span className={styles.sendWalletSuggestionMeta}>
+                                                <span className={styles.sendWalletSuggestionName}>
+                                                    {suggestionDisplayName}
+                                                </span>
+                                                <span className={styles.sendWalletSuggestionAddress}>{suggestedWallet}</span>
+                                            </span>
+                                        </button>
+                                    )}
+
+                                    <div className={styles.sendField}>
+                                        <div className={styles.sendInputWrap}>
+                                            {recipientType === 'username' ? (
+                                                <span className={styles.sendPrefixSlot}>
+                                                    {hasExactUsernameMatch && recipientLookup?.photoUrl ? (
                                                         <img
                                                             src={recipientLookup.photoUrl}
                                                             alt=""
-                                                            className={styles.sendWalletSuggestionAvatar}
+                                                            className={styles.sendPrefixAvatar}
                                                             loading="lazy"
                                                             referrerPolicy="no-referrer"
                                                         />
                                                     ) : (
-                                                        <span className={styles.sendWalletSuggestionAvatarFallback}>@</span>
+                                                        <span className={styles.sendPrefix}>@</span>
                                                     )}
                                                 </span>
-                                                <span className={styles.sendWalletSuggestionMeta}>
-                                                    <span className={styles.sendWalletSuggestionName}>
-                                                        {suggestionDisplayName}
-                                                    </span>
-                                                    <span className={styles.sendWalletSuggestionAddress}>{suggestedWallet}</span>
-                                                </span>
-                                            </button>
-                                        )}
+                                            ) : (
+                                                <span className={styles.sendPrefix}>LV-</span>
+                                            )}
+                                            <input
+                                                type="text"
+                                                className={styles.sendInput}
+                                                value={recipientType === 'username' ? usernameInput : walletBodyInput}
+                                                placeholder={
+                                                    recipientType === 'username'
+                                                        ? (t('wallet_send_username_placeholder') || 'username')
+                                                        : (t('wallet_send_wallet_placeholder') || 'XXXXXXXXXXXX')
+                                                }
+                                                onChange={(event) => {
+                                                    if (recipientType === 'username') {
+                                                        const nextUsername = sanitizeUsernameInput(event.target.value);
+                                                        setUsernameInput(nextUsername);
+                                                        setRecipientLookup((current) => {
+                                                            if (!current) {
+                                                                return null;
+                                                            }
 
-                                        <div className={styles.sendField}>
-                                            <div className={styles.sendInputWrap}>
-                                                {recipientType === 'username' ? (
-                                                    <span className={styles.sendPrefixSlot}>
-                                                        {hasExactUsernameMatch && recipientLookup?.photoUrl ? (
-                                                            <img
-                                                                src={recipientLookup.photoUrl}
-                                                                alt=""
-                                                                className={styles.sendPrefixAvatar}
-                                                                loading="lazy"
-                                                                referrerPolicy="no-referrer"
-                                                            />
-                                                        ) : (
-                                                            <span className={styles.sendPrefix}>@</span>
-                                                        )}
-                                                    </span>
-                                                ) : (
-                                                    <span className={styles.sendPrefix}>LV-</span>
-                                                )}
-                                                <input
-                                                    type="text"
-                                                    className={styles.sendInput}
-                                                    value={recipientType === 'username' ? usernameInput : walletBodyInput}
-                                                    placeholder={
-                                                        recipientType === 'username'
-                                                            ? (t('wallet_send_username_placeholder') || 'username')
-                                                            : (t('wallet_send_wallet_placeholder') || 'XXXXXXXXXXXX')
+                                                            const currentUsername = sanitizeUsernameInput(current.username || '');
+                                                            if (!currentUsername || !nextUsername) {
+                                                                return null;
+                                                            }
+
+                                                            return currentUsername.toLowerCase() === nextUsername.toLowerCase()
+                                                                ? current
+                                                                : null;
+                                                        });
+                                                    } else {
+                                                        const nextWalletBody = sanitizeFriendlyBody(event.target.value);
+                                                        setWalletBodyInput(nextWalletBody);
                                                     }
-                                                    onChange={(event) => {
-                                                        if (recipientType === 'username') {
-                                                            const nextUsername = sanitizeUsernameInput(event.target.value);
-                                                            setUsernameInput(nextUsername);
-                                                            setRecipientLookup((current) => {
-                                                                if (!current) {
-                                                                    return null;
-                                                                }
+                                                    setDrawerError('');
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
 
-                                                                const currentUsername = sanitizeUsernameInput(current.username || '');
-                                                                if (!currentUsername || !nextUsername) {
-                                                                    return null;
-                                                                }
+                                    <div className={`${styles.sendField} ${styles.sendAmountField}`}>
+                                        <div className={`${styles.sendInputWrap} ${styles.sendAmountInputWrap}`}>
+                                            <input
+                                                type="text"
+                                                inputMode="numeric"
+                                                pattern="[0-9 ]*"
+                                                value={amountInput}
+                                                onChange={(event) => {
+                                                    setSelectedQuick(null);
+                                                    setAmountInput(formatAmountInput(event.target.value));
+                                                    setDrawerError('');
+                                                }}
+                                                className={`${styles.sendInput} ${styles.sendAmountInput}`}
+                                            />
+                                            <span className={styles.sendAmountCurrency}>UZS</span>
+                                        </div>
+                                    </div>
 
-                                                                return currentUsername.toLowerCase() === nextUsername.toLowerCase()
-                                                                    ? current
-                                                                    : null;
-                                                            });
-                                                        } else {
-                                                            const nextWalletBody = sanitizeFriendlyBody(event.target.value);
-                                                            setWalletBodyInput(nextWalletBody);
-                                                        }
-                                                        setDrawerError('');
-                                                    }}
-                                                />
+                                    <div className={styles.sendMeta}>
+                                        <div className={styles.sendMetaRow}>
+                                            <span>{t('wallet_send_fee_label') || 'Fee'}</span>
+                                            <strong>{formatCurrency(WALLET_SEND_FEE)} UZS</strong>
+                                        </div>
+                                        <div className={styles.sendMetaRow}>
+                                            <span>{t('wallet_send_total_label') || 'Total debit'}</span>
+                                            <strong>{sendTotalDebit ? `${formatCurrency(sendTotalDebit)} UZS` : '—'}</strong>
+                                        </div>
+                                    </div>
+
+                                    {drawerError && <p className={styles.drawerError}>{drawerError}</p>}
+
+                                    <div className={styles.continueBar}>
+                                        <button
+                                            type="button"
+                                            className={styles.continueButton}
+                                            onClick={handleContinueSend}
+                                            disabled={!canContinueSend || isSubmitting}
+                                        >
+                                            <span>{t('continue') || 'Continue'}</span>
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className={styles.confirmSection}>
+                                    <div className={styles.transferSummary}>
+                                        <div className={styles.fromTo}>
+                                            <span className={styles.fromToLabel}>{t('wallet_send_from_label') || 'From'}</span>
+                                            <span className={styles.fromToValue}>@{user?.username || (t('you') || 'you')}</span>
+                                        </div>
+                                        <ArrowRight size={20} className={styles.arrow} />
+                                        <div className={styles.fromTo}>
+                                            <span className={styles.fromToLabel}>{t('wallet_send_to_short_label') || 'To'}</span>
+                                            <span className={styles.fromToValue}>{sendRecipientDisplay}</span>
+                                        </div>
+                                    </div>
+
+                                    <DetailsTable
+                                        className={styles.confirmInfoTable}
+                                        rowClassName={styles.confirmInfoRow}
+                                        keyClassName={styles.confirmInfoKey}
+                                        valueClassName={styles.confirmInfoValue}
+                                        rows={[
+                                            {
+                                                id: 'amount',
+                                                label: t('wallet_amount_label') || 'Amount',
+                                                value: parsedAmount ? `${formatCurrency(parsedAmount)} UZS` : '—',
+                                            },
+                                            {
+                                                id: 'fee',
+                                                label: t('wallet_send_fee_label') || 'Fee',
+                                                value: `${formatCurrency(WALLET_SEND_FEE)} UZS`,
+                                            },
+                                            {
+                                                id: 'total',
+                                                label: t('wallet_send_total_label') || 'Total debit',
+                                                value: sendTotalDebit ? `${formatCurrency(sendTotalDebit)} UZS` : '—',
+                                            },
+                                        ]}
+                                    />
+
+                                    <div className={styles.memoField}>
+                                        <div className={styles.memoInputWrap}>
+                                            <textarea
+                                                className={styles.memoInput}
+                                                value={sendMemoInput}
+                                                onChange={(event) => {
+                                                    setSendMemoInput(sanitizeSendMemo(event.target.value));
+                                                }}
+                                                placeholder={t('transfer_memo_placeholder') || 'Optional comment'}
+                                                maxLength={SEND_MEMO_MAX_LENGTH}
+                                                rows={3}
+                                            />
+                                            <div className={styles.memoCounterInside}>
+                                                <span className={styles.memoCounter}>
+                                                    {sendMemoLength}/{SEND_MEMO_MAX_LENGTH}
+                                                </span>
                                             </div>
                                         </div>
+                                    </div>
 
-                                        <div className={`${styles.sendField} ${styles.sendAmountField}`}>
-                                            <div className={`${styles.sendInputWrap} ${styles.sendAmountInputWrap}`}>
-                                                <input
-                                                    type="text"
-                                                    inputMode="numeric"
-                                                    pattern="[0-9 ]*"
-                                                    value={amountInput}
-                                                    onChange={(event) => {
-                                                        setSelectedQuick(null);
-                                                        setAmountInput(formatAmountInput(event.target.value));
-                                                        setDrawerError('');
-                                                    }}
-                                                    className={`${styles.sendInput} ${styles.sendAmountInput}`}
-                                                />
-                                                <span className={styles.sendAmountCurrency}>UZS</span>
-                                            </div>
-                                        </div>
+                                    {drawerError && <p className={styles.drawerError}>{drawerError}</p>}
 
-                                        <div className={styles.sendMeta}>
-                                            <div className={styles.sendMetaRow}>
-                                                <span>{t('wallet_send_fee_label') || 'Fee'}</span>
-                                                <strong>{formatCurrency(WALLET_SEND_FEE)} UZS</strong>
-                                            </div>
-                                            <div className={styles.sendMetaRow}>
-                                                <span>{t('wallet_send_total_label') || 'Total debit'}</span>
-                                                <strong>{sendTotalDebit ? `${formatCurrency(sendTotalDebit)} UZS` : '—'}</strong>
-                                            </div>
-                                        </div>
-
-                                        {drawerError && <p className={styles.drawerError}>{drawerError}</p>}
-
-                                        <div className={styles.continueBar}>
+                                    <div className={styles.swipeConfirm}>
+                                        <div className={styles.swipeTrack} ref={sendSwipeTrackRef}>
+                                            <div
+                                                className={styles.swipeFill}
+                                                style={{ width: `${SWIPE_HANDLE_SIZE + sendSwipeOffset + (SWIPE_TRACK_HORIZONTAL_PADDING * 2)}px` }}
+                                            />
+                                            <span className={styles.swipeLabel}>
+                                                {t('transfer_swipe_confirm') || 'Confirm'}
+                                            </span>
                                             <button
                                                 type="button"
-                                                className={styles.continueButton}
-                                                onClick={handleContinueSend}
-                                                disabled={!canContinueSend || isSubmitting}
+                                                className={`${styles.swipeHandle} ${isSendSwiping ? styles.swipeHandleActive : ''}`}
+                                                style={{ transform: `translateX(${sendSwipeOffset}px)` }}
+                                                onPointerDown={handleSendSwipePointerDown}
+                                                onPointerMove={handleSendSwipePointerMove}
+                                                onPointerUp={finalizeSendSwipe}
+                                                onPointerCancel={handleSendSwipePointerCancel}
+                                                disabled={isSubmitting}
+                                                aria-label={t('transfer_swipe_confirm') || 'Confirm'}
                                             >
-                                                <span>{t('continue') || 'Continue'}</span>
+                                                {isSubmitting ? (
+                                                    <Loader2 size={20} className={styles.swipeSpinner} />
+                                                ) : (
+                                                    <ArrowRight size={20} />
+                                                )}
                                             </button>
                                         </div>
-                                    </>
-                                ) : (
-                                    <div className={styles.confirmSection}>
-                                        <div className={styles.transferSummary}>
-                                            <div className={styles.fromTo}>
-                                                <span className={styles.fromToLabel}>{t('wallet_send_from_label') || 'From'}</span>
-                                                <span className={styles.fromToValue}>@{user?.username || (t('you') || 'you')}</span>
-                                            </div>
-                                            <ArrowRight size={20} className={styles.arrow} />
-                                            <div className={styles.fromTo}>
-                                                <span className={styles.fromToLabel}>{t('wallet_send_to_short_label') || 'To'}</span>
-                                                <span className={styles.fromToValue}>{sendRecipientDisplay}</span>
-                                            </div>
-                                        </div>
-
-                                        <table className={styles.confirmInfoTable}>
-                                            <tbody>
-                                                <tr className={styles.confirmInfoRow}>
-                                                    <th className={styles.confirmInfoKey} scope="row">{t('wallet_amount_label') || 'Amount'}</th>
-                                                    <td className={styles.confirmInfoValue}>
-                                                        {parsedAmount ? `${formatCurrency(parsedAmount)} UZS` : '—'}
-                                                    </td>
-                                                </tr>
-                                                <tr className={styles.confirmInfoRow}>
-                                                    <th className={styles.confirmInfoKey} scope="row">{t('wallet_send_fee_label') || 'Fee'}</th>
-                                                    <td className={styles.confirmInfoValue}>{formatCurrency(WALLET_SEND_FEE)} UZS</td>
-                                                </tr>
-                                                <tr className={styles.confirmInfoRow}>
-                                                    <th className={styles.confirmInfoKey} scope="row">{t('wallet_send_total_label') || 'Total debit'}</th>
-                                                    <td className={styles.confirmInfoValue}>
-                                                        {sendTotalDebit ? `${formatCurrency(sendTotalDebit)} UZS` : '—'}
-                                                    </td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
-
-
-                                        <div className={styles.memoField}>
-                                            <div className={styles.memoInputWrap}>
-                                                <textarea
-                                                    className={styles.memoInput}
-                                                    value={sendMemoInput}
-                                                    onChange={(event) => {
-                                                        setSendMemoInput(sanitizeSendMemo(event.target.value));
-                                                    }}
-                                                    placeholder={t('transfer_memo_placeholder') || 'Optional comment'}
-                                                    maxLength={SEND_MEMO_MAX_LENGTH}
-                                                    rows={3}
-                                                />
-                                                <div className={styles.memoCounterInside}>
-                                                    <span className={styles.memoCounter}>
-                                                        {sendMemoLength}/{SEND_MEMO_MAX_LENGTH}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {drawerError && <p className={styles.drawerError}>{drawerError}</p>}
-
-                                        <div className={styles.swipeConfirm}>
-                                            <div className={styles.swipeTrack} ref={sendSwipeTrackRef}>
-                                                <div
-                                                    className={styles.swipeFill}
-                                                    style={{ width: `${SWIPE_HANDLE_SIZE + sendSwipeOffset + (SWIPE_TRACK_HORIZONTAL_PADDING * 2)}px` }}
-                                                />
-                                                <span className={styles.swipeLabel}>
-                                                    {t('transfer_swipe_confirm') || 'Confirm'}
-                                                </span>
-                                                <button
-                                                    type="button"
-                                                    className={`${styles.swipeHandle} ${isSendSwiping ? styles.swipeHandleActive : ''}`}
-                                                    style={{ transform: `translateX(${sendSwipeOffset}px)` }}
-                                                    onPointerDown={handleSendSwipePointerDown}
-                                                    onPointerMove={handleSendSwipePointerMove}
-                                                    onPointerUp={finalizeSendSwipe}
-                                                    onPointerCancel={handleSendSwipePointerCancel}
-                                                    disabled={isSubmitting}
-                                                    aria-label={t('transfer_swipe_confirm') || 'Confirm'}
-                                                >
-                                                    {isSubmitting ? (
-                                                        <Loader2 size={20} className={styles.swipeSpinner} />
-                                                    ) : (
-                                                        <ArrowRight size={20} />
-                                                    )}
-                                                </button>
-                                            </div>
-                                        </div>
                                     </div>
-                                )}
-                            </div>
-                        ) : (
-                            <div className={styles.drawerBody}>
-                                <p className={styles.drawerHint}>
-                                    {drawerMode === 'withdraw'
-                                        ? (t('wallet_withdraw_hint') || 'Choose amount to withdraw from your wallet balance.')
-                                        : (t('wallet_topup_hint') || 'Choose amount to add to your wallet balance.')}
-                                </p>
-
-                                <div className={styles.quickGrid}>
-                                    {QUICK_AMOUNTS.map((value) => (
-                                        <button
-                                            key={value}
-                                            type="button"
-                                            className={`${styles.quickButton} ${selectedQuick === value ? styles.quickButtonActive : ''}`}
-                                            onClick={() => {
-                                                setSelectedQuick(value);
-                                                setAmountInput(formatAmountInput(String(value)));
-                                                haptic.selection();
-                                            }}
-                                        >
-                                            {formatCurrency(value)} UZS
-                                        </button>
-                                    ))}
                                 </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className={styles.drawerBody}>
+                            <p className={styles.drawerHint}>
+                                {drawerMode === 'withdraw'
+                                    ? (t('wallet_withdraw_hint') || 'Choose amount to withdraw from your wallet balance.')
+                                    : (t('wallet_topup_hint') || 'Choose amount to add to your wallet balance.')}
+                            </p>
 
-                                <label className={styles.amountField}>
-                                    <span>{t('wallet_amount_label') || 'Amount'}</span>
-                                    <div className={styles.amountInputWrap}>
-                                        <input
-                                            type="text"
-                                            inputMode="numeric"
-                                            pattern="[0-9 ]*"
-                                            value={amountInput}
-                                            onChange={(event) => {
-                                                setSelectedQuick(null);
-                                                setAmountInput(formatAmountInput(event.target.value));
-                                            }}
-                                            placeholder="10 000"
-                                        />
-                                        <span>UZS</span>
-                                    </div>
-                                </label>
-
-                                {drawerError && <p className={styles.drawerError}>{drawerError}</p>}
-
-                                <button
-                                    type="button"
-                                    className={styles.submitButton}
-                                    onClick={handleApplyBalanceMutation}
-                                    disabled={isSubmitting}
-                                >
-                                    {isSubmitting && <Loader2 size={16} className={styles.spinner} />}
-                                    <span>
-                                        {drawerMode === 'withdraw'
-                                            ? (t('wallet_withdraw_apply') || 'Withdraw now')
-                                            : (t('wallet_topup_apply') || 'Top up now')}
-                                    </span>
-                                </button>
+                            <div className={styles.quickGrid}>
+                                {QUICK_AMOUNTS.map((value) => (
+                                    <button
+                                        key={value}
+                                        type="button"
+                                        className={`${styles.quickButton} ${selectedQuick === value ? styles.quickButtonActive : ''}`}
+                                        onClick={() => {
+                                            setSelectedQuick(value);
+                                            setAmountInput(formatAmountInput(String(value)));
+                                            haptic.selection();
+                                        }}
+                                    >
+                                        {formatCurrency(value)} UZS
+                                    </button>
+                                ))}
                             </div>
-                        )}
-                    </section>
-                </div>
+
+                            <label className={styles.amountField}>
+                                <span>{t('wallet_amount_label') || 'Amount'}</span>
+                                <div className={styles.amountInputWrap}>
+                                    <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        pattern="[0-9 ]*"
+                                        value={amountInput}
+                                        onChange={(event) => {
+                                            setSelectedQuick(null);
+                                            setAmountInput(formatAmountInput(event.target.value));
+                                        }}
+                                        placeholder="10 000"
+                                    />
+                                    <span>UZS</span>
+                                </div>
+                            </label>
+
+                            {drawerError && <p className={styles.drawerError}>{drawerError}</p>}
+
+                            <button
+                                type="button"
+                                className={styles.submitButton}
+                                onClick={handleApplyBalanceMutation}
+                                disabled={isSubmitting}
+                            >
+                                {isSubmitting && <Loader2 size={16} className={styles.spinner} />}
+                                <span>
+                                    {drawerMode === 'withdraw'
+                                        ? (t('wallet_withdraw_apply') || 'Withdraw now')
+                                        : (t('wallet_topup_apply') || 'Top up now')}
+                                </span>
+                            </button>
+                        </div>
+                    )}
+                </BottomDrawer>
             </div>
         </>
     );
