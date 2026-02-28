@@ -35,7 +35,7 @@
 
 .balanceCard {
     display: grid;
-    gap: 12px;
+    gap: 14px;
 }
 
 .balanceBadge {
@@ -72,112 +72,68 @@
 
 .actionRow {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
 }
 
-.actionButton {
-    border: 1px solid var(--surface-alpha-12);
-    border-radius: 12px;
-    height: 46px;
+.actionTile {
+    border: none;
+    background: transparent;
     display: inline-flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    padding: 0 6px;
+    padding: 0;
     min-width: 0;
     cursor: pointer;
     transition: transform 0.15s ease, opacity 0.2s ease;
 }
 
-.actionButton span {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+.actionTile:active {
+    transform: translateY(1px);
 }
 
-.actionButton:active {
-    transform: scale(0.99);
-}
-
-.actionButton:disabled {
+.actionTile:disabled {
     opacity: 0.45;
     cursor: not-allowed;
 }
 
-.actionPrimary {
-    color: var(--accent-text);
-    background: linear-gradient(135deg, var(--accent-color), color-mix(in srgb, var(--accent-color) 74%, #111));
-    border-color: transparent;
-}
-
-.actionSecondary {
-    color: var(--text-primary);
-    background: var(--surface-alpha-06);
-}
-
-.infoHead {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-}
-
-.infoLabel {
-    font-size: 13px;
-    color: var(--text-secondary);
-}
-
-.addressPreview {
-    font-size: 12px;
-    color: var(--text-secondary);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace;
-}
-
-.addressValue {
-    display: block;
-    width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    border-radius: 12px;
-    border: 1px solid var(--surface-alpha-10);
-    background: var(--surface-alpha-05);
-    color: var(--text-primary);
-    padding: 10px 12px;
-    font-size: 12px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace;
-}
-
-.copyButton {
-    margin-top: 10px;
-    border: none;
-    width: 100%;
-    height: 40px;
-    border-radius: 10px;
-    background: var(--surface-alpha-10);
-    color: var(--text-primary);
+.actionIcon {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 7px;
-    font-size: 13px;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+.actionIconTopup {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+}
+
+.actionIconWithdraw {
+    background: linear-gradient(135deg, #f97316, #ea580c);
+}
+
+.actionIconReceive {
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+}
+
+.actionIconSend {
+    background: linear-gradient(135deg, #14b8a6, #0f766e);
+}
+
+.actionLabel {
+    color: var(--text-primary);
+    font-size: 12px;
     font-weight: 600;
-    cursor: pointer;
-    transition: background 0.2s ease;
-}
-
-.copyButton:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.copyButtonDone {
-    background: rgba(34, 197, 94, 0.2);
-    color: #22c55e;
+    line-height: 1.15;
+    text-align: center;
+    white-space: nowrap;
 }
 
 .historySection {
@@ -555,6 +511,99 @@
     color: #22c55e;
 }
 
+.sendTabs {
+    display: flex;
+    gap: 8px;
+    background: var(--ink-alpha-30);
+    padding: 4px;
+    border-radius: 14px;
+}
+
+.sendTab {
+    flex: 1;
+    padding: 11px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.sendTabActive {
+    background: var(--accent-color);
+    color: var(--accent-text);
+}
+
+.sendField {
+    display: grid;
+    gap: 6px;
+}
+
+.sendField span {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.sendInputWrap {
+    height: 48px;
+    border-radius: 12px;
+    border: 1px solid var(--surface-alpha-10);
+    background: var(--surface-alpha-05);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px;
+}
+
+.sendPrefix {
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    flex-shrink: 0;
+}
+
+.sendInput {
+    flex: 1;
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 15px;
+    font-weight: 600;
+    outline: none;
+}
+
+.sendInput::placeholder {
+    color: var(--surface-alpha-30);
+}
+
+.sendMeta {
+    border: 1px solid var(--surface-alpha-10);
+    border-radius: 12px;
+    background: var(--surface-alpha-05);
+    padding: 10px 12px;
+    display: grid;
+    gap: 8px;
+}
+
+.sendMetaRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.sendMetaRow strong {
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
 .quickGrid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -618,13 +667,9 @@
     margin: 0;
 }
 
-.amountInputWrap input[type=number] {
-    -moz-appearance: textfield;
-}
-
 .amountInputWrap span {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
 }
 
@@ -635,9 +680,10 @@
 }
 
 .submitButton {
+    margin-top: 2px;
     border: none;
+    height: 46px;
     border-radius: 12px;
-    height: 44px;
     background: linear-gradient(135deg, var(--accent-color), color-mix(in srgb, var(--accent-color) 74%, #111));
     color: var(--accent-text);
     font-size: 14px;
@@ -658,12 +704,6 @@
     animation: spin 0.8s linear infinite;
 }
 
-@keyframes shimmer {
-    to {
-        background-position-x: -200%;
-    }
-}
-
 @keyframes spin {
     from {
         transform: rotate(0deg);
@@ -674,8 +714,23 @@
     }
 }
 
-@media (max-width: 520px) {
-    .quickGrid {
-        grid-template-columns: 1fr;
+@keyframes shimmer {
+    0% {
+        background-position: 100% 0;
+    }
+
+    100% {
+        background-position: -100% 0;
+    }
+}
+
+@media (max-width: 360px) {
+    .actionIcon {
+        width: 40px;
+        height: 40px;
+    }
+
+    .actionLabel {
+        font-size: 11px;
     }
 }

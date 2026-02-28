@@ -10,6 +10,7 @@ import {
     Copy,
     Loader2,
     QrCode,
+    Send,
     Share2,
     Wallet as WalletIcon,
     X,
@@ -34,7 +35,7 @@ interface WalletInfo {
 
 interface WalletHistoryItem {
     id: string;
-    type: 'topup' | 'withdraw';
+    type: 'topup' | 'withdraw' | 'send' | 'receive' | string;
     amount: number;
     currency: string;
     status: string;
@@ -47,10 +48,14 @@ interface WalletHistoryGroup {
     items: WalletHistoryItem[];
 }
 
-type DrawerMode = 'topup' | 'withdraw' | 'receive' | null;
+type DrawerMode = 'topup' | 'withdraw' | 'receive' | 'send' | null;
+type SendRecipientType = 'username' | 'wallet';
 
 const QUICK_AMOUNTS = [5000, 10000, 25000, 50000, 100000];
 const HISTORY_PAGE_SIZE = 20;
+const WALLET_SEND_FEE = 71;
+const WALLET_FRIENDLY_BODY_LENGTH = 12;
+const TELEGRAM_USERNAME_MAX_LENGTH = 32;
 
 function localeToIntlCode(locale: string): string {
     if (locale === 'ru') return 'ru-RU';
@@ -130,6 +135,21 @@ function formatTime(value: string, locale: string): string {
     }).format(date);
 }
 
+function sanitizeUsernameInput(value: string): string {
+    const candidate = value.trim().replace(/^@+/, '');
+    return candidate.replace(/[^a-zA-Z0-9_]/g, '').slice(0, TELEGRAM_USERNAME_MAX_LENGTH);
+}
+
+function sanitizeFriendlyBody(value: string): string {
+    return value
+        .trim()
+        .replace(/^LV-/i, '')
+        .replace(/^UZ-/i, '')
+        .replace(/[^a-zA-Z0-9_]/g, '')
+        .toUpperCase()
+        .slice(0, WALLET_FRIENDLY_BODY_LENGTH);
+}
+
 export default function WalletPage() {
     const { t, locale } = useLanguage();
     const { user, authUser, isAuthenticated, haptic, webApp } = useTelegram();
@@ -145,7 +165,6 @@ export default function WalletPage() {
     const [isHistoryLoadingMore, setIsHistoryLoadingMore] = useState(false);
     const [historyError, setHistoryError] = useState<string | null>(null);
 
-    const [copied, setCopied] = useState(false);
     const [copiedInDrawer, setCopiedInDrawer] = useState(false);
 
     const [drawerMode, setDrawerMode] = useState<DrawerMode>(null);
@@ -153,6 +172,10 @@ export default function WalletPage() {
     const [selectedQuick, setSelectedQuick] = useState<number | null>(null);
     const [drawerError, setDrawerError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const [recipientType, setRecipientType] = useState<SendRecipientType>('username');
+    const [usernameInput, setUsernameInput] = useState('');
+    const [walletBodyInput, setWalletBodyInput] = useState('');
 
     useBodyScrollLock(Boolean(drawerMode));
 
@@ -283,19 +306,6 @@ export default function WalletPage() {
         return (wallet?.address || user?.walletAddress || '').trim();
     }, [wallet?.address, wallet?.friendlyAddress, user?.walletAddress, user?.walletFriendly]);
 
-    const shortWalletValue = useMemo(() => {
-        const raw = copyValue.toUpperCase();
-        if (!raw) {
-            return '—';
-        }
-
-        if (raw.length <= 14) {
-            return raw;
-        }
-
-        return `${raw.slice(0, 8)}...${raw.slice(-6)}`;
-    }, [copyValue]);
-
     const receiveWalletValue = useMemo(() => {
         const raw = copyValue.toUpperCase();
         if (!raw) {
@@ -319,6 +329,17 @@ export default function WalletPage() {
 
         return parsed;
     }, [amountInput]);
+
+    const normalizedUsername = useMemo(() => sanitizeUsernameInput(usernameInput), [usernameInput]);
+    const normalizedWalletBody = useMemo(() => sanitizeFriendlyBody(walletBodyInput), [walletBodyInput]);
+
+    const sendTotalDebit = useMemo(() => {
+        if (!parsedAmount) {
+            return null;
+        }
+
+        return parsedAmount + WALLET_SEND_FEE;
+    }, [parsedAmount]);
 
     const groupedHistory = useMemo<WalletHistoryGroup[]>(() => {
         const groupsMap = new Map<string, WalletHistoryItem[]>();
@@ -358,6 +379,12 @@ export default function WalletPage() {
         const defaultAmount = QUICK_AMOUNTS[1];
         setSelectedQuick(defaultAmount);
         setAmountInput(String(defaultAmount));
+
+        if (mode === 'send') {
+            setRecipientType('username');
+            setUsernameInput('');
+            setWalletBodyInput('');
+        }
     };
 
     const closeDrawer = (force = false) => {
@@ -369,6 +396,9 @@ export default function WalletPage() {
         setDrawerError('');
         setAmountInput('');
         setSelectedQuick(null);
+        setRecipientType('username');
+        setUsernameInput('');
+        setWalletBodyInput('');
     };
 
     const writeToClipboard = useCallback(async (value: string) => {
@@ -388,23 +418,6 @@ export default function WalletPage() {
         document.execCommand('copy');
         document.body.removeChild(textarea);
     }, []);
-
-    const handleCopyAddress = useCallback(async () => {
-        if (!copyValue) {
-            return;
-        }
-
-        haptic.impact('light');
-
-        try {
-            await writeToClipboard(copyValue);
-            setCopied(true);
-            haptic.success();
-            window.setTimeout(() => setCopied(false), 1500);
-        } catch {
-            haptic.error();
-        }
-    }, [copyValue, haptic, writeToClipboard]);
 
     const handleCopyAddressInDrawer = useCallback(async () => {
         if (!copyValue) {
@@ -447,7 +460,7 @@ export default function WalletPage() {
         }
     }, [copyValue, haptic, t, webApp]);
 
-    const handleApply = async () => {
+    const handleApplyBalanceMutation = async () => {
         if (drawerMode !== 'topup' && drawerMode !== 'withdraw') {
             return;
         }
@@ -493,6 +506,64 @@ export default function WalletPage() {
         }
     };
 
+    const handleApplySend = async () => {
+        if (drawerMode !== 'send') {
+            return;
+        }
+
+        if (isSubmitting) {
+            return;
+        }
+
+        if (!parsedAmount) {
+            setDrawerError(t('wallet_amount_invalid') || 'Enter valid amount');
+            haptic.error();
+            return;
+        }
+
+        const recipientByUsername = recipientType === 'username' ? normalizedUsername : '';
+        const recipientByWallet = recipientType === 'wallet' ? normalizedWalletBody : '';
+
+        if (!recipientByUsername && !recipientByWallet) {
+            setDrawerError(t('recipient_required') || 'Recipient is required');
+            haptic.error();
+            return;
+        }
+
+        const requiredBalance = parsedAmount + WALLET_SEND_FEE;
+        if (requiredBalance > (wallet?.balance || 0)) {
+            const fallback = `Need ${formatCurrency(requiredBalance)} UZS`;
+            setDrawerError(t('wallet_send_insufficient') || fallback);
+            haptic.error();
+            return;
+        }
+
+        setIsSubmitting(true);
+        setDrawerError('');
+
+        try {
+            await api.wallet.send({
+                amount: parsedAmount,
+                ...(recipientByUsername
+                    ? { toUsername: recipientByUsername }
+                    : { toAddress: `LV-${recipientByWallet}` }),
+            });
+
+            await Promise.all([
+                loadWallet(),
+                loadHistory({ cursor: null, append: false }),
+            ]);
+
+            haptic.success();
+            closeDrawer(true);
+        } catch (applyError) {
+            setDrawerError(safeErrorMessage(applyError));
+            haptic.error();
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     const handleLoadMore = () => {
         if (!historyHasMore || !historyCursor || isHistoryLoadingMore) {
             return;
@@ -503,9 +574,23 @@ export default function WalletPage() {
     };
 
     const getOperationTitle = (type: WalletHistoryItem['type']) => {
-        return type === 'topup'
-            ? (t('wallet_history_operation_topup') || 'Top up')
-            : (t('wallet_history_operation_withdraw') || 'Withdraw');
+        if (type === 'topup') {
+            return t('wallet_history_operation_topup') || 'Top up';
+        }
+
+        if (type === 'withdraw') {
+            return t('wallet_history_operation_withdraw') || 'Withdraw';
+        }
+
+        if (type === 'send') {
+            return t('wallet_history_operation_send') || 'Send';
+        }
+
+        if (type === 'receive') {
+            return t('wallet_history_operation_receive') || 'Receive';
+        }
+
+        return type;
     };
 
     const getStatusLabel = (status: string) => {
@@ -556,52 +641,51 @@ export default function WalletPage() {
                                 <div className={styles.actionRow}>
                                     <button
                                         type="button"
-                                        className={`${styles.actionButton} ${styles.actionPrimary}`}
+                                        className={styles.actionTile}
                                         onClick={() => openDrawer('topup')}
                                     >
-                                        <ArrowDownToLine size={18} />
-                                        <span>{t('wallet_topup') || 'Top up'}</span>
+                                        <span className={`${styles.actionIcon} ${styles.actionIconTopup}`}>
+                                            <ArrowDownToLine size={18} />
+                                        </span>
+                                        <span className={styles.actionLabel}>{t('wallet_topup') || 'Top up'}</span>
                                     </button>
 
                                     <button
                                         type="button"
-                                        className={`${styles.actionButton} ${styles.actionSecondary}`}
+                                        className={styles.actionTile}
                                         onClick={() => openDrawer('withdraw')}
                                         disabled={wallet.balance <= 0}
                                     >
-                                        <ArrowUpFromLine size={18} />
-                                        <span>{t('wallet_withdraw') || 'Withdraw'}</span>
+                                        <span className={`${styles.actionIcon} ${styles.actionIconWithdraw}`}>
+                                            <ArrowUpFromLine size={18} />
+                                        </span>
+                                        <span className={styles.actionLabel}>{t('wallet_withdraw') || 'Withdraw'}</span>
                                     </button>
 
                                     <button
                                         type="button"
-                                        className={`${styles.actionButton} ${styles.actionSecondary}`}
+                                        className={styles.actionTile}
                                         onClick={() => openDrawer('receive')}
                                         disabled={!copyValue}
                                     >
-                                        <QrCode size={18} />
-                                        <span>{t('wallet_receive') || 'Receive'}</span>
+                                        <span className={`${styles.actionIcon} ${styles.actionIconReceive}`}>
+                                            <QrCode size={18} />
+                                        </span>
+                                        <span className={styles.actionLabel}>{t('wallet_receive') || 'Receive'}</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        className={styles.actionTile}
+                                        onClick={() => openDrawer('send')}
+                                        disabled={wallet.balance <= WALLET_SEND_FEE}
+                                    >
+                                        <span className={`${styles.actionIcon} ${styles.actionIconSend}`}>
+                                            <Send size={18} />
+                                        </span>
+                                        <span className={styles.actionLabel}>{t('wallet_send') || t('send') || 'Send'}</span>
                                     </button>
                                 </div>
-                            </section>
-
-                            <section className={styles.card}>
-                                <div className={styles.infoHead}>
-                                    <span className={styles.infoLabel}>{t('wallet_address_label') || 'Wallet address'}</span>
-                                    <span className={styles.addressPreview}>{shortWalletValue}</span>
-                                </div>
-
-                                <code className={styles.addressValue}>{copyValue || '—'}</code>
-
-                                <button
-                                    type="button"
-                                    className={`${styles.copyButton} ${copied ? styles.copyButtonDone : ''}`}
-                                    onClick={handleCopyAddress}
-                                    disabled={!copyValue}
-                                >
-                                    {copied ? <Check size={16} /> : <Copy size={16} />}
-                                    <span>{copied ? (t('wallet_copied') || 'Copied') : (t('wallet_copy') || 'Copy address')}</span>
-                                </button>
                             </section>
 
                             <section className={styles.historySection}>
@@ -630,17 +714,17 @@ export default function WalletPage() {
                                                 <h3 className={styles.groupTitle}>{group.label}</h3>
                                                 <div className={styles.cards}>
                                                     {group.items.map((item) => {
-                                                        const isTopup = item.type === 'topup';
-                                                        const kindClass = isTopup ? styles.kindReceived : styles.kindSent;
+                                                        const isIncoming = item.type === 'topup' || item.type === 'receive';
+                                                        const kindClass = isIncoming ? styles.kindReceived : styles.kindSent;
                                                         const dateTimeLine = `${formatDetailsDate(item.createdAt, locale)}, ${formatTime(item.createdAt, locale)}`;
-                                                        const amountLine = `${isTopup ? '+' : '-'}${formatCurrency(item.amount)} ${item.currency || 'UZS'}`;
+                                                        const amountLine = `${isIncoming ? '+' : '-'}${formatCurrency(item.amount)} ${item.currency || 'UZS'}`;
 
                                                         return (
                                                             <article key={item.id} className={styles.cardHistoryItem}>
                                                                 <div className={styles.cardRow}>
                                                                     <div className={styles.summaryLeft}>
                                                                         <span className={`${styles.kindIcon} ${kindClass}`}>
-                                                                            {isTopup ? <ArrowDownLeft size={22} /> : <ArrowUpRight size={22} />}
+                                                                            {isIncoming ? <ArrowDownLeft size={22} /> : <ArrowUpRight size={22} />}
                                                                         </span>
                                                                         <div className={styles.summaryText}>
                                                                             <span className={styles.summaryDirection}>{getOperationTitle(item.type)}</span>
@@ -699,7 +783,9 @@ export default function WalletPage() {
                                     ? (t('wallet_withdraw_title') || 'Withdraw')
                                     : drawerMode === 'receive'
                                         ? (t('wallet_receive_title') || 'Receive')
-                                        : (t('wallet_topup_title') || 'Top up wallet')}
+                                        : drawerMode === 'send'
+                                            ? (t('wallet_send_title') || 'Send UZS')
+                                            : (t('wallet_topup_title') || 'Top up wallet')}
                             </h3>
                             <button type="button" className={styles.closeButton} onClick={() => closeDrawer()}>
                                 <X size={16} />
@@ -747,6 +833,121 @@ export default function WalletPage() {
                                         </button>
                                     </div>
                                 </div>
+                            </div>
+                        ) : drawerMode === 'send' ? (
+                            <div className={styles.drawerBody}>
+                                <p className={styles.drawerHint}>
+                                    {t('wallet_send_hint') || 'Send UZS to another wallet by username or wallet address.'}
+                                </p>
+
+                                <div className={styles.sendTabs}>
+                                    <button
+                                        type="button"
+                                        className={`${styles.sendTab} ${recipientType === 'username' ? styles.sendTabActive : ''}`}
+                                        onClick={() => {
+                                            setRecipientType('username');
+                                            setDrawerError('');
+                                            haptic.selection();
+                                        }}
+                                    >
+                                        @username
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`${styles.sendTab} ${recipientType === 'wallet' ? styles.sendTabActive : ''}`}
+                                        onClick={() => {
+                                            setRecipientType('wallet');
+                                            setDrawerError('');
+                                            haptic.selection();
+                                        }}
+                                    >
+                                        {t('wallet') || 'Wallet'}
+                                    </button>
+                                </div>
+
+                                <label className={styles.sendField}>
+                                    <span>{t('wallet_send_to_label') || 'Recipient'}</span>
+                                    <div className={styles.sendInputWrap}>
+                                        <span className={styles.sendPrefix}>{recipientType === 'username' ? '@' : 'LV-'}</span>
+                                        <input
+                                            type="text"
+                                            className={styles.sendInput}
+                                            value={recipientType === 'username' ? usernameInput : walletBodyInput}
+                                            placeholder={
+                                                recipientType === 'username'
+                                                    ? (t('wallet_send_username_placeholder') || 'username')
+                                                    : (t('wallet_send_wallet_placeholder') || 'XXXXXXXXXXXX')
+                                            }
+                                            onChange={(event) => {
+                                                if (recipientType === 'username') {
+                                                    setUsernameInput(sanitizeUsernameInput(event.target.value));
+                                                } else {
+                                                    setWalletBodyInput(sanitizeFriendlyBody(event.target.value));
+                                                }
+                                                setDrawerError('');
+                                            }}
+                                        />
+                                    </div>
+                                </label>
+
+                                <div className={styles.quickGrid}>
+                                    {QUICK_AMOUNTS.map((value) => (
+                                        <button
+                                            key={value}
+                                            type="button"
+                                            className={`${styles.quickButton} ${selectedQuick === value ? styles.quickButtonActive : ''}`}
+                                            onClick={() => {
+                                                setSelectedQuick(value);
+                                                setAmountInput(String(value));
+                                                haptic.selection();
+                                            }}
+                                        >
+                                            {formatCurrency(value)} UZS
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <label className={styles.amountField}>
+                                    <span>{t('wallet_amount_label') || 'Amount'}</span>
+                                    <div className={styles.amountInputWrap}>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            value={amountInput}
+                                            onChange={(event) => {
+                                                setSelectedQuick(null);
+                                                setAmountInput(event.target.value.replace(/[^0-9]/g, ''));
+                                            }}
+                                            placeholder="10000"
+                                        />
+                                        <span>UZS</span>
+                                    </div>
+                                </label>
+
+                                <div className={styles.sendMeta}>
+                                    <div className={styles.sendMetaRow}>
+                                        <span>{t('wallet_send_fee_label') || 'Fee'}</span>
+                                        <strong>{formatCurrency(WALLET_SEND_FEE)} UZS</strong>
+                                    </div>
+                                    <div className={styles.sendMetaRow}>
+                                        <span>{t('wallet_send_total_label') || 'Total debit'}</span>
+                                        <strong>{sendTotalDebit ? `${formatCurrency(sendTotalDebit)} UZS` : '—'}</strong>
+                                    </div>
+                                </div>
+
+                                {drawerError && <p className={styles.drawerError}>{drawerError}</p>}
+
+                                <button
+                                    type="button"
+                                    className={styles.submitButton}
+                                    onClick={handleApplySend}
+                                    disabled={isSubmitting}
+                                >
+                                    {isSubmitting && <Loader2 size={16} className={styles.spinner} />}
+                                    <span>{t('wallet_send_apply') || 'Send now'}</span>
+                                </button>
                             </div>
                         ) : (
                             <div className={styles.drawerBody}>
@@ -797,7 +998,7 @@ export default function WalletPage() {
                                 <button
                                     type="button"
                                     className={styles.submitButton}
-                                    onClick={handleApply}
+                                    onClick={handleApplyBalanceMutation}
                                     disabled={isSubmitting}
                                 >
                                     {isSubmitting && <Loader2 size={16} className={styles.spinner} />}

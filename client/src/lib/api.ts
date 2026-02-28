@@ -88,7 +88,7 @@ interface WalletSummary {
 
 interface WalletOperationItem {
     id: string;
-    type: 'topup' | 'withdraw';
+    type: 'topup' | 'withdraw' | 'send' | 'receive';
     amount: number;
     currency: string;
     status: string;
@@ -397,6 +397,12 @@ export const api = {
             apiFetch<WalletMutationResponse>('/wallet/withdraw', {
                 method: 'POST',
                 body: JSON.stringify({ amount }),
+            }),
+
+        send: (data: { amount: number; toUsername?: string; toAddress?: string }) =>
+            apiFetch<WalletMutationResponse>('/wallet/send', {
+                method: 'POST',
+                body: JSON.stringify(data),
             }),
 
         operations: (params: { limit?: number; cursor?: string } = {}) => {

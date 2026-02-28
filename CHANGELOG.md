@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.5] - 2026-02-28
+
+### Added
+- Wallet balance card now has a new Send action with a dedicated bottom drawer.
+- UZS send flow supports recipient by @username or LV- wallet address and applies fixed fee 71 UZS.
+- Backend endpoint POST /wallet/send with fee routing to admin/system wallet and sender/recipient operation history entries.
+
+### Changed
+- Wallet page removed standalone address card; actions are now 4 icon-first buttons in one horizontal row with labels below.
+- Wallet action drawer now includes send recipient tabs and fee/total debit summary block.
+- Wallet history now supports Send and Receive operation labels.
+
 ## [0.2.4] - 2026-02-27
 
 ### Added

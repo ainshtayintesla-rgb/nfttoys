@@ -1,8 +1,16 @@
+import { Prisma } from '@prisma/client';
 import { Router } from 'express';
 
 import { prisma } from '../lib/db/prisma';
-import { parseTelegramId } from '../lib/db/utils';
-import { generateWalletAddress, toFriendlyAddress } from '../lib/utils/crypto';
+import { normalizedUsername, parseTelegramId } from '../lib/db/utils';
+import {
+    TREASURY_ADDRESS,
+    TREASURY_FRIENDLY_ADDRESS,
+    generateWalletAddress,
+    isValidAddress,
+    toFriendlyAddress,
+} from '../lib/utils/crypto';
+import { getAdminTelegramIds } from '../middleware/admin';
 import { requireAuth } from '../middleware/auth';
 import { authLimit, standardLimit } from '../middleware/rateLimit';
 
@@ -10,8 +18,33 @@ const router = Router();
 const MAX_WALLET_OPERATION_AMOUNT = 10_000_000_000;
 const DEFAULT_HISTORY_LIMIT = 20;
 const MAX_HISTORY_LIMIT = 50;
+const TELEGRAM_USERNAME_MAX_LENGTH = 32;
+const WALLET_SEND_FEE_AMOUNT = 71;
+const WALLET_SEND_FEE_CURRENCY = 'UZS';
+const TREASURY_ADDRESS_HASH = TREASURY_ADDRESS.slice(3);
 
-type WalletOperationKind = 'topup' | 'withdraw';
+type WalletBalanceMutationKind = 'topup' | 'withdraw';
+type WalletOperationKind = 'topup' | 'withdraw' | 'send' | 'receive';
+
+class WalletValidationError extends Error {
+    public readonly code: string;
+
+    public readonly statusCode: number;
+
+    public readonly details?: Record<string, unknown>;
+
+    constructor(
+        message: string,
+        code: string,
+        statusCode = 400,
+        details?: Record<string, unknown>,
+    ) {
+        super(message);
+        this.code = code;
+        this.statusCode = statusCode;
+        this.details = details;
+    }
+}
 
 function parseAmount(rawAmount: unknown): number | null {
     if (typeof rawAmount === 'number' && Number.isInteger(rawAmount)) {
@@ -44,6 +77,16 @@ function parseHistoryLimit(rawLimit: unknown): number {
     }
 
     return Math.min(parsed, MAX_HISTORY_LIMIT);
+}
+
+function normalizeUsernameLookupInput(value: unknown): string {
+    if (typeof value !== 'string') {
+        return '';
+    }
+
+    const candidate = value.trim().replace(/^@+/, '');
+    const normalized = candidate.replace(/[^a-zA-Z0-9_]/g, '');
+    return normalized.slice(0, TELEGRAM_USERNAME_MAX_LENGTH);
 }
 
 function walletPayload(wallet: {
@@ -79,7 +122,53 @@ function walletOperationPayload(operation: {
     };
 }
 
-async function applyWalletBalanceOperation(userId: string, amount: number, operation: WalletOperationKind) {
+async function resolveFeeWalletAddress(
+    tx: Prisma.TransactionClient,
+    senderWalletAddress: string,
+): Promise<string> {
+    const adminTelegramIds = getAdminTelegramIds();
+
+    if (adminTelegramIds.length > 0) {
+        const adminUser = await tx.user.findFirst({
+            where: {
+                telegramId: { in: adminTelegramIds },
+                walletAddress: { not: null },
+            },
+            orderBy: { createdAt: 'asc' },
+            select: { walletAddress: true },
+        });
+
+        if (adminUser?.walletAddress && adminUser.walletAddress !== senderWalletAddress) {
+            const wallet = await tx.wallet.findUnique({
+                where: { address: adminUser.walletAddress },
+                select: { address: true },
+            });
+
+            if (wallet?.address) {
+                return wallet.address;
+            }
+        }
+    }
+
+    await tx.wallet.upsert({
+        where: { address: TREASURY_ADDRESS },
+        update: {
+            friendlyAddress: TREASURY_FRIENDLY_ADDRESS,
+            userId: null,
+        },
+        create: {
+            address: TREASURY_ADDRESS,
+            friendlyAddress: TREASURY_FRIENDLY_ADDRESS,
+            userId: null,
+            addressHash: TREASURY_ADDRESS_HASH,
+            balance: 0,
+        },
+    });
+
+    return TREASURY_ADDRESS;
+}
+
+async function applyWalletBalanceOperation(userId: string, amount: number, operation: WalletBalanceMutationKind) {
     return prisma.$transaction(async (tx) => {
         const user = await tx.user.findUnique({
             where: { id: userId },
@@ -436,6 +525,255 @@ router.post('/withdraw', authLimit, requireAuth, async (req, res) => {
     } catch (error) {
         console.error('Wallet withdraw error:', error);
         return res.status(500).json({ error: 'Failed to withdraw from wallet', code: 'WITHDRAW_ERROR' });
+    }
+});
+
+// POST /wallet/send
+router.post('/send', authLimit, requireAuth, async (req, res) => {
+    try {
+        const userId = req.authUser!.uid;
+        const body = (req.body as {
+            amount?: unknown;
+            toUsername?: unknown;
+            toAddress?: unknown;
+        } | undefined) || {};
+
+        const amount = parseAmount(body.amount);
+
+        if (!amount) {
+            return res.status(400).json({ error: 'Invalid amount', code: 'INVALID_AMOUNT' });
+        }
+
+        if (amount > MAX_WALLET_OPERATION_AMOUNT) {
+            return res.status(400).json({
+                error: `Amount must be <= ${MAX_WALLET_OPERATION_AMOUNT}`,
+                code: 'AMOUNT_TOO_LARGE',
+            });
+        }
+
+        const cleanUsername = normalizeUsernameLookupInput(body.toUsername);
+        const rawAddressInput = typeof body.toAddress === 'string' ? body.toAddress.trim() : '';
+
+        if ((cleanUsername ? 1 : 0) + (rawAddressInput ? 1 : 0) !== 1) {
+            return res.status(400).json({
+                error: 'Provide exactly one recipient: username or wallet address',
+                code: 'RECIPIENT_REQUIRED',
+            });
+        }
+
+        const totalDebit = amount + WALLET_SEND_FEE_AMOUNT;
+
+        const result = await prisma.$transaction(async (tx) => {
+            const senderUser = await tx.user.findUnique({
+                where: { id: userId },
+                select: { walletAddress: true },
+            });
+
+            if (!senderUser) {
+                throw new WalletValidationError('User not found', 'NOT_FOUND', 404);
+            }
+
+            if (!senderUser.walletAddress) {
+                throw new WalletValidationError('User has no wallet', 'NO_WALLET', 404);
+            }
+
+            const senderWallet = await tx.wallet.findUnique({
+                where: { address: senderUser.walletAddress },
+                select: {
+                    address: true,
+                    friendlyAddress: true,
+                    balance: true,
+                    createdAt: true,
+                },
+            });
+
+            if (!senderWallet) {
+                throw new WalletValidationError('Wallet not found', 'WALLET_NOT_FOUND', 404);
+            }
+
+            let recipientWalletAddress: string;
+            let recipientUserId: string | null = null;
+
+            if (cleanUsername) {
+                const usernameLower = normalizedUsername(cleanUsername);
+
+                if (!usernameLower || usernameLower.length < 2) {
+                    throw new WalletValidationError('Invalid recipient username', 'VALIDATION_ERROR', 400);
+                }
+
+                const recipient = await tx.user.findFirst({
+                    where: {
+                        OR: [
+                            { usernameLower },
+                            { username: { equals: cleanUsername, mode: 'insensitive' } },
+                        ],
+                    },
+                    select: {
+                        id: true,
+                        walletAddress: true,
+                    },
+                });
+
+                if (!recipient?.walletAddress) {
+                    throw new WalletValidationError('Recipient not found', 'RECIPIENT_NOT_FOUND', 404);
+                }
+
+                recipientWalletAddress = recipient.walletAddress;
+                recipientUserId = recipient.id;
+            } else {
+                let normalizedAddress = rawAddressInput;
+
+                if (/^(UZ-|LV-)/i.test(normalizedAddress)) {
+                    const friendlyWallet = await tx.wallet.findUnique({
+                        where: { friendlyAddress: normalizedAddress.toUpperCase() },
+                        select: {
+                            address: true,
+                            userId: true,
+                        },
+                    });
+
+                    if (!friendlyWallet) {
+                        throw new WalletValidationError('Wallet not found', 'RECIPIENT_NOT_FOUND', 404);
+                    }
+
+                    normalizedAddress = friendlyWallet.address;
+                    recipientUserId = friendlyWallet.userId;
+                }
+
+                if (!isValidAddress(normalizedAddress)) {
+                    throw new WalletValidationError('Invalid wallet address format', 'INVALID_ADDRESS', 400);
+                }
+
+                const recipientWallet = await tx.wallet.findUnique({
+                    where: { address: normalizedAddress },
+                    select: {
+                        address: true,
+                        userId: true,
+                    },
+                });
+
+                if (!recipientWallet) {
+                    throw new WalletValidationError('Wallet not found', 'RECIPIENT_NOT_FOUND', 404);
+                }
+
+                recipientWalletAddress = recipientWallet.address;
+                recipientUserId = recipientWallet.userId;
+            }
+
+            if (recipientWalletAddress === senderWallet.address) {
+                throw new WalletValidationError('Cannot transfer to yourself', 'SELF_TRANSFER', 400);
+            }
+
+            const debitResult = await tx.wallet.updateMany({
+                where: {
+                    address: senderWallet.address,
+                    balance: { gte: totalDebit },
+                },
+                data: {
+                    balance: { decrement: totalDebit },
+                },
+            });
+
+            if (debitResult.count !== 1) {
+                throw new WalletValidationError('Insufficient balance', 'INSUFFICIENT_BALANCE', 400, {
+                    currentBalance: senderWallet.balance,
+                    requiredBalance: totalDebit,
+                });
+            }
+
+            const feeWalletAddress = await resolveFeeWalletAddress(tx, senderWallet.address);
+
+            await tx.wallet.update({
+                where: { address: recipientWalletAddress },
+                data: {
+                    balance: { increment: amount },
+                },
+            });
+
+            await tx.wallet.update({
+                where: { address: feeWalletAddress },
+                data: {
+                    balance: { increment: WALLET_SEND_FEE_AMOUNT },
+                },
+            });
+
+            const senderOperation = await tx.walletTransaction.create({
+                data: {
+                    walletAddress: senderWallet.address,
+                    userId,
+                    type: 'send',
+                    amount,
+                    currency: WALLET_SEND_FEE_CURRENCY,
+                    status: 'completed',
+                },
+                select: {
+                    id: true,
+                    type: true,
+                    amount: true,
+                    currency: true,
+                    status: true,
+                    createdAt: true,
+                },
+            });
+
+            if (recipientUserId) {
+                await tx.walletTransaction.create({
+                    data: {
+                        walletAddress: recipientWalletAddress,
+                        userId: recipientUserId,
+                        type: 'receive',
+                        amount,
+                        currency: WALLET_SEND_FEE_CURRENCY,
+                        status: 'completed',
+                    },
+                });
+            }
+
+            const updatedWallet = await tx.wallet.findUnique({
+                where: { address: senderWallet.address },
+                select: {
+                    address: true,
+                    friendlyAddress: true,
+                    balance: true,
+                    createdAt: true,
+                },
+            });
+
+            if (!updatedWallet) {
+                throw new WalletValidationError('Wallet not found', 'WALLET_NOT_FOUND', 404);
+            }
+
+            const nftCount = await tx.nft.count({ where: { ownerWallet: updatedWallet.address } });
+
+            return {
+                wallet: updatedWallet,
+                nftCount,
+                operation: senderOperation,
+                totalDebit,
+            };
+        });
+
+        return res.json({
+            success: true,
+            wallet: walletPayload(result.wallet, result.nftCount),
+            operation: walletOperationPayload(result.operation),
+            fee: {
+                amount: WALLET_SEND_FEE_AMOUNT,
+                currency: WALLET_SEND_FEE_CURRENCY,
+                totalDebited: result.totalDebit,
+            },
+        });
+    } catch (error) {
+        if (error instanceof WalletValidationError) {
+            return res.status(error.statusCode).json({
+                error: error.message,
+                code: error.code,
+                ...(error.details ? error.details : {}),
+            });
+        }
+
+        console.error('Wallet send error:', error);
+        return res.status(500).json({ error: 'Failed to send funds', code: 'SEND_ERROR' });
     }
 });
 
