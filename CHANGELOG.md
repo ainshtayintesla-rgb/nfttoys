@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.25] - 2026-03-01
+
+### Changed
+- Admin `Top up` tab UI was tightened to match existing drawer standards: removed extra heading/lookup hint card and fixed inner drawer paddings so content is not stretched edge-to-edge.
+- Confirm drawer for admin top-up now shows only `Recipient` and `Amount`, without search mode/status rows.
+- After successful swipe confirmation, the drawer now stays open, shows a success check icon under the swipe control, and auto-closes after 5 seconds.
+- Wallet history details drawer now shows sender as `System` for top-up operations and hides `Comment` and `Status` rows for top-ups.
+
+### Added
+- Added server-side idempotency for admin wallet top-up via required unique `transactionId` in `POST /admin/wallet/topup`.
+- Added `WalletTransaction.requestId` (unique) with migration `20260301221000_wallet_transaction_request_id` to prevent duplicate balance increments on repeated confirm requests.
+
 ## [0.2.24] - 2026-03-01
 
 ### Changed

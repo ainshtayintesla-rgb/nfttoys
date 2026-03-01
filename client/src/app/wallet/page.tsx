@@ -887,6 +887,7 @@ export default function WalletPage() {
         ? formatTime(selectedWalletTransaction.createdAt, locale)
         : '—';
     const selectedWalletDateTimeLine = `${selectedWalletDateLabel}, ${selectedWalletTimeLabel}`;
+    const selectedWalletIsTopup = selectedWalletTransaction?.type === 'topup';
     const selectedWalletStatus = (() => {
         const status = selectedWalletTransaction?.status || '';
         const normalized = status.trim().toLowerCase();
@@ -903,13 +904,15 @@ export default function WalletPage() {
     const selectedWalletRecipientRaw = selectedWalletTransaction
         ? (selectedWalletTransaction.toFriendly || selectedWalletTransaction.toAddress)
         : null;
-    const selectedWalletSenderValue = selectedWalletSenderRaw
-        ? formatWalletLabel(selectedWalletSenderRaw)
-        : (
-            selectedWalletTransaction?.type === 'send' || selectedWalletTransaction?.type === 'withdraw'
-                ? ownWalletLabel
-                : (t('system') || 'System')
-        );
+    const selectedWalletSenderValue = selectedWalletIsTopup
+        ? (t('system') || 'System')
+        : selectedWalletSenderRaw
+            ? formatWalletLabel(selectedWalletSenderRaw)
+            : (
+                selectedWalletTransaction?.type === 'send' || selectedWalletTransaction?.type === 'withdraw'
+                    ? ownWalletLabel
+                    : (t('system') || 'System')
+            );
     const selectedWalletRecipientValue = selectedWalletRecipientRaw
         ? formatWalletLabel(selectedWalletRecipientRaw)
         : (
@@ -921,7 +924,8 @@ export default function WalletPage() {
         ? `${formatCurrency(selectedWalletTransaction.amount)} ${selectedWalletTransaction.currency || 'UZS'}`
         : '—';
     const selectedWalletMemo = (selectedWalletTransaction?.memo || '').trim();
-    const shouldShowWalletMemo = selectedWalletMemo.length > 0;
+    const shouldShowWalletMemo = selectedWalletMemo.length > 0 && !selectedWalletIsTopup;
+    const shouldShowWalletStatus = !selectedWalletIsTopup;
     const selectedWalletFeeAmount = selectedWalletTransaction
         ? (selectedWalletTransaction.feeAmount ?? (selectedWalletTransaction.type === 'send' ? WALLET_SEND_FEE : null))
         : null;
@@ -1662,6 +1666,7 @@ export default function WalletPage() {
                                             id: 'status',
                                             label: t('status') || 'Status',
                                             value: selectedWalletStatus,
+                                            hidden: !shouldShowWalletStatus,
                                         },
                                     ]}
                                 />

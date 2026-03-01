@@ -418,7 +418,7 @@ export const api = {
             );
         },
 
-        topupWallet: (data: { amount: number; wallet: string }) =>
+        topupWallet: (data: { amount: number; wallet: string; transactionId: string }) =>
             apiFetch<AdminWalletTopupResponse>('/admin/wallet/topup', {
                 method: 'POST',
                 body: JSON.stringify(data),

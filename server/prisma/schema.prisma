@@ -51,6 +51,7 @@ model Wallet {
 
 model WalletTransaction {
   id            String   @id @default(cuid())
+  requestId     String?  @unique
   walletAddress String
   userId        String?
   type          String

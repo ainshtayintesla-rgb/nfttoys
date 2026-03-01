@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 
 import { prisma } from '../lib/db/prisma';
 import { normalizedUsername } from '../lib/db/utils';
@@ -21,6 +22,9 @@ const CONFIRM_DELETE_ALL_USERS = 'DELETE ALL USERS';
 const TELEGRAM_USERNAME_MAX_LENGTH = 32;
 const WALLET_FRIENDLY_BODY_LENGTH = 12;
 const MAX_ADMIN_TOPUP_AMOUNT = 10_000_000_000;
+const MIN_TOPUP_TRANSACTION_ID_LENGTH = 12;
+const MAX_TOPUP_TRANSACTION_ID_LENGTH = 80;
+const TOPUP_TRANSACTION_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 function parseAmount(rawAmount: unknown): number | null {
     if (typeof rawAmount === 'number' && Number.isInteger(rawAmount)) {
@@ -90,6 +94,140 @@ function normalizeConfirmValue(value: unknown): string {
     }
 
     return value.trim().toUpperCase();
+}
+
+function parseTopupTransactionId(value: unknown): string | null {
+    if (typeof value !== 'string') {
+        return null;
+    }
+
+    const normalized = value.trim();
+    if (
+        normalized.length < MIN_TOPUP_TRANSACTION_ID_LENGTH
+        || normalized.length > MAX_TOPUP_TRANSACTION_ID_LENGTH
+    ) {
+        return null;
+    }
+
+    if (!TOPUP_TRANSACTION_ID_PATTERN.test(normalized)) {
+        return null;
+    }
+
+    return normalized;
+}
+
+function walletInputMatchesOperation(
+    walletInput: string,
+    operation: {
+        walletAddress: string;
+        toAddress: string | null;
+        toFriendly: string | null;
+    },
+): boolean {
+    if (/^(LV-|UZ-)/i.test(walletInput)) {
+        return Boolean(operation.toFriendly)
+            && operation.toFriendly!.toUpperCase() === walletInput.toUpperCase();
+    }
+
+    return walletInput === operation.walletAddress
+        || (Boolean(operation.toAddress) && walletInput === operation.toAddress);
+}
+
+const adminTopupReplaySelect = {
+    id: true,
+    requestId: true,
+    walletAddress: true,
+    type: true,
+    amount: true,
+    currency: true,
+    status: true,
+    fromAddress: true,
+    fromFriendly: true,
+    toAddress: true,
+    toFriendly: true,
+    memo: true,
+    feeAmount: true,
+    feeCurrency: true,
+    createdAt: true,
+    wallet: {
+        select: {
+            address: true,
+            friendlyAddress: true,
+            userId: true,
+            user: {
+                select: {
+                    id: true,
+                    username: true,
+                    firstName: true,
+                    photoUrl: true,
+                },
+            },
+        },
+    },
+} satisfies Prisma.WalletTransactionSelect;
+
+type AdminTopupReplayRow = Prisma.WalletTransactionGetPayload<{
+    select: typeof adminTopupReplaySelect;
+}>;
+
+async function loadTopupReplayByRequestId(transactionId: string): Promise<AdminTopupReplayRow | null> {
+    return prisma.walletTransaction.findUnique({
+        where: { requestId: transactionId },
+        select: adminTopupReplaySelect,
+    });
+}
+
+function buildTopupReplayResponse(operation: AdminTopupReplayRow) {
+    const walletFriendly = operation.wallet.friendlyAddress
+        || operation.toFriendly
+        || toFriendlyAddress(operation.walletAddress);
+
+    return {
+        target: {
+            walletAddress: operation.walletAddress,
+            walletFriendly,
+            user: operation.wallet.user
+                ? {
+                    id: operation.wallet.user.id,
+                    username: operation.wallet.user.username,
+                    firstName: operation.wallet.user.firstName,
+                    photoUrl: operation.wallet.user.photoUrl,
+                }
+                : null,
+        },
+        operation: {
+            id: operation.id,
+            type: operation.type,
+            amount: operation.amount,
+            currency: operation.currency,
+            status: operation.status,
+            fromAddress: operation.fromAddress,
+            fromFriendly: operation.fromFriendly,
+            toAddress: operation.toAddress,
+            toFriendly: operation.toFriendly,
+            memo: operation.memo,
+            feeAmount: operation.feeAmount,
+            feeCurrency: operation.feeCurrency,
+            createdAt: operation.createdAt.toISOString(),
+        },
+    };
+}
+
+function isRequestIdUniqueConstraintError(error: unknown): error is Prisma.PrismaClientKnownRequestError {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+        return false;
+    }
+
+    const target = error.meta?.target;
+    if (Array.isArray(target)) {
+        return target.includes('requestId');
+    }
+
+    if (typeof target === 'string') {
+        return target.includes('requestId');
+    }
+
+    return false;
 }
 
 function handleUpdateRouteError(res: Response, error: unknown, fallbackCode: string) {
@@ -458,9 +596,37 @@ router.post('/wallet/topup', strictLimit, requireAuth, requireAdmin, csrfProtect
             });
         }
 
+        const transactionId = parseTopupTransactionId(req.body?.transactionId);
+        if (!transactionId) {
+            return res.status(400).json({
+                error: 'Invalid transaction ID',
+                code: 'INVALID_TRANSACTION_ID',
+            });
+        }
+
         const actorUserId = req.authUser!.uid;
 
-        const result = await prisma.$transaction(async (tx) => {
+        const existingOperation = await loadTopupReplayByRequestId(transactionId);
+        if (existingOperation) {
+            const hasSamePayload = existingOperation.type === 'topup'
+                && existingOperation.amount === amount
+                && walletInputMatchesOperation(walletInput, existingOperation);
+
+            if (!hasSamePayload) {
+                return res.status(409).json({
+                    error: 'Transaction ID already used with different payload',
+                    code: 'TRANSACTION_ID_CONFLICT',
+                });
+            }
+
+            return res.json({
+                success: true,
+                replayed: true,
+                ...buildTopupReplayResponse(existingOperation),
+            });
+        }
+
+        const runTopupTransaction = () => prisma.$transaction(async (tx) => {
             let wallet = /^(LV-|UZ-)/i.test(walletInput)
                 ? await tx.wallet.findUnique({
                     where: { friendlyAddress: walletInput.toUpperCase() },
@@ -522,8 +688,9 @@ router.post('/wallet/topup', strictLimit, requireAuth, requireAdmin, csrfProtect
 
             const operation = await tx.walletTransaction.create({
                 data: {
+                    requestId: transactionId,
                     walletAddress: updatedWallet.address,
-                    userId: updatedWallet.userId || actorUserId,
+                    userId: updatedWallet.userId,
                     type: 'topup',
                     amount,
                     currency: 'UZS',
@@ -569,6 +736,25 @@ router.post('/wallet/topup', strictLimit, requireAuth, requireAdmin, csrfProtect
                 recipient,
             } as const;
         });
+
+        type TopupTransactionResult = Awaited<ReturnType<typeof runTopupTransaction>>;
+        let result: TopupTransactionResult;
+        try {
+            result = await runTopupTransaction();
+        } catch (error) {
+            if (isRequestIdUniqueConstraintError(error)) {
+                const replay = await loadTopupReplayByRequestId(transactionId);
+                if (replay) {
+                    return res.json({
+                        success: true,
+                        replayed: true,
+                        ...buildTopupReplayResponse(replay),
+                    });
+                }
+            }
+
+            throw error;
+        }
 
         if ('error' in result) {
             return res.status(404).json({
