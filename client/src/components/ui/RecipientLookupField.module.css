@@ -1,0 +1,172 @@
+.root {
+    display: grid;
+    gap: 10px;
+}
+
+.tabs {
+    display: flex;
+    gap: 8px;
+    background: var(--ink-alpha-30);
+    padding: 4px;
+    border-radius: 999px;
+}
+
+.tab {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.tabActive {
+    background: var(--accent-color);
+    color: var(--accent-text);
+}
+
+.fieldStack {
+    display: grid;
+    gap: 0;
+}
+
+.walletSuggestion {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    border: 1px solid var(--surface-alpha-08);
+    border-bottom: 0;
+    background: var(--ink-alpha-30);
+    border-radius: 14px 14px 0 0;
+    padding: 10px 12px;
+    color: inherit;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.walletSuggestion:active {
+    transform: translateY(1px);
+}
+
+.walletSuggestion:hover {
+    border-color: var(--surface-alpha-20);
+    background: var(--ink-alpha-40);
+}
+
+.walletSuggestionAvatarWrap {
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    border-radius: 50%;
+    background: var(--surface-alpha-10);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.walletSuggestionAvatar {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.walletSuggestionAvatarFallback {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    line-height: 1;
+}
+
+.walletSuggestionMeta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+.walletSuggestionName {
+    font-size: 12px;
+    line-height: 1.1;
+    color: var(--text-secondary);
+}
+
+.walletSuggestionAddress {
+    font-size: 13px;
+    line-height: 1.2;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 220px;
+}
+
+.inputWrap {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--ink-alpha-30);
+    border: 1px solid var(--surface-alpha-08);
+    border-radius: 14px;
+    padding: 0 16px;
+    transition: all 0.2s ease;
+}
+
+.inputWrapConnected {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+}
+
+.inputWrap:focus-within {
+    border-color: var(--accent-color);
+    background: var(--ink-alpha-40);
+}
+
+.inputPrefixSlot {
+    position: relative;
+    width: 18px;
+    min-width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 2px;
+}
+
+.inputPrefixAvatar {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid var(--surface-alpha-15);
+}
+
+.inputPrefix {
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    flex-shrink: 0;
+}
+
+.input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    height: 52px;
+    color: var(--text-primary);
+    font-size: 16px;
+    font-weight: 600;
+    outline: none;
+}
+
+.input::placeholder {
+    color: var(--surface-alpha-30);
+}

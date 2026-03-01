@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { X, Send, Check, Loader2, ArrowRight, ChevronLeft, Tag, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { DetailsTable } from '@/components/ui/DetailsTable';
-import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
+import { RecipientLookupField } from '@/components/ui/RecipientLookupField';
 import { TgsPlayer } from '@/components/ui/TgsPlayer';
 import { useTelegram } from '@/lib/context/TelegramContext';
 import { useLanguage } from '@/lib/context/LanguageContext';
@@ -782,102 +782,57 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                             <>
                                 {/* Recipient Input */}
                                 <div className={styles.inputSection}>
-                                    <SegmentedTabs
-                                        className={styles.tabs}
-                                        tabClassName={styles.tab}
-                                        activeTabClassName={styles.tabActive}
-                                        items={[
-                                            { key: 'username' as const, label: '@username' },
-                                            { key: 'wallet' as const, label: t('wallet') || 'Wallet' },
-                                        ]}
-                                        activeKey={recipientType}
-                                        onChange={(nextType) => {
+                                    <RecipientLookupField
+                                        recipientType={recipientType}
+                                        onRecipientTypeChange={(nextType) => {
                                             setRecipientType(nextType);
                                             setError('');
                                         }}
-                                    />
-
-                                    {recipientType === 'wallet' && suggestedWallet && (
-                                        <button
-                                            type="button"
-                                            className={styles.walletSuggestion}
-                                            onClick={() => {
-                                                setWalletBody(sanitizeWalletBody(suggestedWallet.replace(/^LV-/i, '')));
-                                                setError('');
-                                                haptic.selection();
-                                            }}
-                                        >
-                                            <span className={styles.walletSuggestionAvatarWrap}>
-                                                {isExactUsernameMatch && resolvedRecipient?.photoUrl ? (
-                                                    <img
-                                                        src={resolvedRecipient.photoUrl}
-                                                        alt=""
-                                                        className={styles.walletSuggestionAvatar}
-                                                        loading="lazy"
-                                                        referrerPolicy="no-referrer"
-                                                    />
-                                                ) : (
-                                                    <span className={styles.walletSuggestionAvatarFallback}>@</span>
-                                                )}
-                                            </span>
-                                            <span className={styles.walletSuggestionMeta}>
-                                                <span className={styles.walletSuggestionName}>{suggestionDisplayName}</span>
-                                                <span className={styles.walletSuggestionAddress}>{suggestedWallet}</span>
-                                            </span>
-                                        </button>
-                                    )}
-
-                                    <div className={styles.inputWrapper}>
-                                        {recipientType === 'username' && (
-                                            <span className={styles.inputPrefixSlot}>
-                                                {isExactUsernameMatch && resolvedRecipient?.photoUrl ? (
-                                                    <img
-                                                        src={resolvedRecipient.photoUrl}
-                                                        alt=""
-                                                        className={styles.inputPrefixAvatar}
-                                                        loading="lazy"
-                                                        referrerPolicy="no-referrer"
-                                                    />
-                                                ) : (
-                                                    <span className={styles.inputPrefix}>@</span>
-                                                )}
-                                            </span>
-                                        )}
-                                        {recipientType === 'wallet' && (
-                                            <span className={styles.inputPrefix}>{WALLET_PREFIX}</span>
-                                        )}
-                                        <input
-                                            type="text"
-                                            className={styles.input}
-                                            placeholder={recipientType === 'username' ? 'username' : 'XXXXXXXXXXXX'}
-                                            value={recipientType === 'wallet' ? walletBody : usernameInput}
-                                            onChange={(e) => {
-                                                if (recipientType === 'wallet') {
-                                                    setWalletBody(sanitizeWalletBody(e.target.value));
-                                                } else {
-                                                    const nextUsername = sanitizeUsernameInput(e.target.value);
-                                                    setUsernameInput(nextUsername);
-                                                    setResolvedRecipient((current) => {
-                                                        if (!current) {
-                                                            return null;
-                                                        }
-
-                                                        const currentUsername = sanitizeUsernameInput(current.username || '');
-                                                        const nextUsernameLower = nextUsername.toLowerCase();
-
-                                                        if (!nextUsernameLower || !currentUsername) {
-                                                            return null;
-                                                        }
-
-                                                        return currentUsername.toLowerCase() === nextUsernameLower
-                                                            ? current
-                                                            : null;
-                                                    });
+                                        walletTabLabel={t('wallet') || 'Wallet'}
+                                        usernameValue={usernameInput}
+                                        walletValue={walletBody}
+                                        usernamePlaceholder="username"
+                                        walletPlaceholder="XXXXXXXXXXXX"
+                                        onUsernameChange={(rawValue) => {
+                                            const nextUsername = sanitizeUsernameInput(rawValue);
+                                            setUsernameInput(nextUsername);
+                                            setResolvedRecipient((current) => {
+                                                if (!current) {
+                                                    return null;
                                                 }
-                                                setError('');
-                                            }}
-                                        />
-                                    </div>
+
+                                                const currentUsername = sanitizeUsernameInput(current.username || '');
+                                                const nextUsernameLower = nextUsername.toLowerCase();
+
+                                                if (!nextUsernameLower || !currentUsername) {
+                                                    return null;
+                                                }
+
+                                                return currentUsername.toLowerCase() === nextUsernameLower
+                                                    ? current
+                                                    : null;
+                                            });
+                                            setError('');
+                                        }}
+                                        onWalletChange={(rawValue) => {
+                                            setWalletBody(sanitizeWalletBody(rawValue));
+                                            setError('');
+                                        }}
+                                        usernameAvatarUrl={isExactUsernameMatch ? (resolvedRecipient?.photoUrl || null) : null}
+                                        walletPrefix={WALLET_PREFIX}
+                                        walletSuggestion={recipientType === 'wallet' && suggestedWallet
+                                            ? {
+                                                displayName: suggestionDisplayName,
+                                                address: suggestedWallet,
+                                                photoUrl: isExactUsernameMatch ? (resolvedRecipient?.photoUrl || null) : null,
+                                                onSelect: () => {
+                                                    setWalletBody(sanitizeWalletBody(suggestedWallet.replace(/^LV-/i, '')));
+                                                    setError('');
+                                                    haptic.selection();
+                                                },
+                                            }
+                                            : null}
+                                    />
 
                                     <div className={styles.memoField}>
                                         <div className={styles.memoInputWrap}>

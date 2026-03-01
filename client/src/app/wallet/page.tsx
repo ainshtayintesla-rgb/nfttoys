@@ -21,6 +21,7 @@ import QRCode from 'react-qr-code';
 
 import { BottomDrawer } from '@/components/ui/BottomDrawer';
 import { DetailsTable } from '@/components/ui/DetailsTable';
+import { RecipientLookupField } from '@/components/ui/RecipientLookupField';
 import { RoundIconButton } from '@/components/ui/RoundIconButton';
 import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
 import { TelegramBackButton } from '@/components/ui/TelegramBackButton';
@@ -1800,109 +1801,56 @@ export default function WalletPage() {
                         <div className={styles.drawerBody}>
                             {sendStep === 'input' ? (
                                 <>
-                                    <SegmentedTabs
-                                        className={styles.sendTabs}
-                                        tabClassName={styles.sendTab}
-                                        activeTabClassName={styles.sendTabActive}
-                                        items={[
-                                            { key: 'username' as const, label: '@username' },
-                                            { key: 'wallet' as const, label: t('wallet') || 'Wallet' },
-                                        ]}
-                                        activeKey={recipientType}
-                                        onChange={(nextType) => {
+                                    <RecipientLookupField
+                                        recipientType={recipientType}
+                                        onRecipientTypeChange={(nextType) => {
                                             setRecipientType(nextType);
                                             setDrawerError('');
                                             haptic.selection();
                                         }}
-                                    />
-
-                                    {recipientType === 'wallet' && suggestedWallet && (
-                                        <button
-                                            type="button"
-                                            className={styles.sendWalletSuggestion}
-                                            onClick={() => {
-                                                setWalletBodyInput(sanitizeFriendlyBody(suggestedWallet.replace(/^LV-/i, '')));
-                                                setDrawerError('');
-                                                haptic.selection();
-                                            }}
-                                        >
-                                            <span className={styles.sendWalletSuggestionAvatarWrap}>
-                                                {recipientLookup?.photoUrl ? (
-                                                    <img
-                                                        src={recipientLookup.photoUrl}
-                                                        alt=""
-                                                        className={styles.sendWalletSuggestionAvatar}
-                                                        loading="lazy"
-                                                        referrerPolicy="no-referrer"
-                                                    />
-                                                ) : (
-                                                    <span className={styles.sendWalletSuggestionAvatarFallback}>@</span>
-                                                )}
-                                            </span>
-                                            <span className={styles.sendWalletSuggestionMeta}>
-                                                <span className={styles.sendWalletSuggestionName}>
-                                                    {suggestionDisplayName}
-                                                </span>
-                                                <span className={styles.sendWalletSuggestionAddress}>{suggestedWallet}</span>
-                                            </span>
-                                        </button>
-                                    )}
-
-                                    <div className={styles.sendField}>
-                                        <div className={styles.sendInputWrap}>
-                                            {recipientType === 'username' ? (
-                                                <span className={styles.sendPrefixSlot}>
-                                                    {hasExactUsernameMatch && recipientLookup?.photoUrl ? (
-                                                        <img
-                                                            src={recipientLookup.photoUrl}
-                                                            alt=""
-                                                            className={styles.sendPrefixAvatar}
-                                                            loading="lazy"
-                                                            referrerPolicy="no-referrer"
-                                                        />
-                                                    ) : (
-                                                        <span className={styles.sendPrefix}>@</span>
-                                                    )}
-                                                </span>
-                                            ) : (
-                                                <span className={styles.sendPrefix}>LV-</span>
-                                            )}
-                                            <input
-                                                type="text"
-                                                className={styles.sendInput}
-                                                value={recipientType === 'username' ? usernameInput : walletBodyInput}
-                                                placeholder={
-                                                    recipientType === 'username'
-                                                        ? (t('wallet_send_username_placeholder') || 'username')
-                                                        : (t('wallet_send_wallet_placeholder') || 'XXXXXXXXXXXX')
+                                        walletTabLabel={t('wallet') || 'Wallet'}
+                                        usernameValue={usernameInput}
+                                        walletValue={walletBodyInput}
+                                        usernamePlaceholder={t('wallet_send_username_placeholder') || 'username'}
+                                        walletPlaceholder={t('wallet_send_wallet_placeholder') || 'XXXXXXXXXXXX'}
+                                        onUsernameChange={(rawValue) => {
+                                            const nextUsername = sanitizeUsernameInput(rawValue);
+                                            setUsernameInput(nextUsername);
+                                            setRecipientLookup((current) => {
+                                                if (!current) {
+                                                    return null;
                                                 }
-                                                onChange={(event) => {
-                                                    if (recipientType === 'username') {
-                                                        const nextUsername = sanitizeUsernameInput(event.target.value);
-                                                        setUsernameInput(nextUsername);
-                                                        setRecipientLookup((current) => {
-                                                            if (!current) {
-                                                                return null;
-                                                            }
 
-                                                            const currentUsername = sanitizeUsernameInput(current.username || '');
-                                                            if (!currentUsername || !nextUsername) {
-                                                                return null;
-                                                            }
+                                                const currentUsername = sanitizeUsernameInput(current.username || '');
+                                                if (!currentUsername || !nextUsername) {
+                                                    return null;
+                                                }
 
-                                                            return currentUsername.toLowerCase() === nextUsername.toLowerCase()
-                                                                ? current
-                                                                : null;
-                                                        });
-                                                    } else {
-                                                        const nextWalletBody = sanitizeFriendlyBody(event.target.value);
-                                                        setWalletBodyInput(nextWalletBody);
-                                                    }
+                                                return currentUsername.toLowerCase() === nextUsername.toLowerCase()
+                                                    ? current
+                                                    : null;
+                                            });
+                                            setDrawerError('');
+                                        }}
+                                        onWalletChange={(rawValue) => {
+                                            const nextWalletBody = sanitizeFriendlyBody(rawValue);
+                                            setWalletBodyInput(nextWalletBody);
+                                            setDrawerError('');
+                                        }}
+                                        usernameAvatarUrl={hasExactUsernameMatch ? (recipientLookup?.photoUrl || null) : null}
+                                        walletSuggestion={recipientType === 'wallet' && suggestedWallet
+                                            ? {
+                                                displayName: suggestionDisplayName,
+                                                address: suggestedWallet,
+                                                photoUrl: recipientLookup?.photoUrl || null,
+                                                onSelect: () => {
+                                                    setWalletBodyInput(sanitizeFriendlyBody(suggestedWallet.replace(/^LV-/i, '')));
                                                     setDrawerError('');
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
+                                                    haptic.selection();
+                                                },
+                                            }
+                                            : null}
+                                    />
 
                                     <div className={`${styles.sendField} ${styles.sendAmountField}`}>
                                         <div className={`${styles.sendInputWrap} ${styles.sendAmountInputWrap}`}>

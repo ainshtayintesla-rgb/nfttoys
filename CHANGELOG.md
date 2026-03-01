@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.21] - 2026-03-01
+
+### Added
+- Added reusable `RecipientLookupField` UI component (`client/src/components/ui/RecipientLookupField.tsx`) for shared `@username / wallet` recipient input with tab switch and suggestion slot.
+
+### Changed
+- Wallet `Send UZS` now uses the shared recipient lookup component while keeping existing username-lookup and wallet-fill behavior.
+- NFT `TransferModal` now uses the same shared recipient lookup component for consistent UX and reduced duplicated code.
+- Wallet suggestion block (resolved from username) now renders as a connected "open upward dropdown" style above the wallet input field.
+
 ## [0.2.20] - 2026-03-01
 
 ### Added
