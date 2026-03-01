@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.19] - 2026-03-01
+
+### Added
+- Added reusable `ActionLinkList` UI component (`client/src/components/ui/ActionLinkList.tsx`) to render joined or standalone profile/action links via props (`icon`, `label`, `subtitle`, `href`/`onClick`, `external`, `disabled`).
+
+### Changed
+- Settings page layout is now flat (no section cards/subheaders): only the main title remains, while language/toggles/notification controls render as standalone rows.
+- Profile page social/action blocks now use the shared `ActionLinkList` component instead of local duplicated markup.
+- Reordered profile action groups so `Wallet + Referrals` is shown above `Community Chat + Channel News`.
+
 ## [0.2.18] - 2026-03-01
 
 ### Added

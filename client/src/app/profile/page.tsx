@@ -6,10 +6,11 @@ import { Navigation } from '@/components/layout/Navigation';
 import { TransferModal } from '@/components/features/TransferModal';
 import { Button } from '@/components/ui/Button';
 import { TgsPlayer } from '@/components/ui/TgsPlayer';
+import { ActionLinkList } from '@/components/ui/ActionLinkList';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
 import { api } from '@/lib/api';
-import { Lock, User, Wallet, QrCode, Plus, CheckCircle, Clock, History, Settings, MessageCircle, Megaphone, ChevronRight, Gift } from 'lucide-react';
+import { Lock, User, Wallet, QrCode, Plus, CheckCircle, Clock, History, Settings, MessageCircle, Megaphone, Gift } from 'lucide-react';
 import styles from './page.module.css';
 
 interface NFTItem {
@@ -213,86 +214,67 @@ export default function ProfilePage() {
                     </span>
                 </div>
 
-                {/* Social Links Card */}
-                <div className={styles.socialCard}>
-                    <button
-                        className={styles.socialLink}
-                        onClick={(e) => {
-                            e.preventDefault();
-                            haptic.impact('light');
-                            const url = `https://t.me/${process.env.NEXT_PUBLIC_TG_GROUP || 'nfttoys_chat'}`;
-                            if (webApp?.openTelegramLink) {
-                                webApp.openTelegramLink(url);
-                            } else {
-                                window.open(url, '_blank');
-                            }
-                        }}
-                    >
-                        <div className={styles.socialLeft}>
-                            <div className={styles.socialIcon} style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}>
-                                <MessageCircle size={22} color="white" />
-                            </div>
-                            <span className={styles.socialText}>{t('community_chat') || 'Community Chat'}</span>
-                        </div>
-                        <ChevronRight size={20} className={styles.socialArrow} />
-                    </button>
-                    <div className={styles.socialDivider}></div>
-                    <button
-                        className={styles.socialLink}
-                        onClick={(e) => {
-                            e.preventDefault();
-                            haptic.impact('light');
-                            const url = `https://t.me/${process.env.NEXT_PUBLIC_TG_CHANNEL || 'nfttoys'}`;
-                            if (webApp?.openTelegramLink) {
-                                webApp.openTelegramLink(url);
-                            } else {
-                                window.open(url, '_blank');
-                            }
-                        }}
-                    >
-                        <div className={styles.socialLeft}>
-                            <div className={styles.socialIcon} style={{ background: 'linear-gradient(135deg, #f59e0b, #ef4444)' }}>
-                                <Megaphone size={22} color="white" />
-                            </div>
-                            <span className={styles.socialText}>{t('channel_news') || 'Channel News'}</span>
-                        </div>
-                        <ChevronRight size={20} className={styles.socialArrow} />
-                    </button>
-                </div>
+                <ActionLinkList
+                    joined
+                    items={[
+                        {
+                            key: 'wallet',
+                            icon: <Wallet size={22} color="white" />,
+                            label: t('wallet') || 'Wallet',
+                            iconBackground: 'linear-gradient(135deg, #22c55e, #16a34a)',
+                            onClick: () => {
+                                haptic.impact('light');
+                                router.push('/wallet');
+                            },
+                        },
+                        {
+                            key: 'referrals',
+                            icon: <Gift size={22} color="white" />,
+                            label: t('referrals') || 'Referrals',
+                            iconBackground: 'linear-gradient(135deg, #14b8a6, #22c55e)',
+                            onClick: () => {
+                                haptic.impact('light');
+                                router.push('/referrals');
+                            },
+                        },
+                    ]}
+                />
 
-                <div className={styles.socialCard}>
-                    <button
-                        className={styles.socialLink}
-                        onClick={() => {
-                            haptic.impact('light');
-                            router.push('/wallet');
-                        }}
-                    >
-                        <div className={styles.socialLeft}>
-                            <div className={styles.socialIcon} style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
-                                <Wallet size={22} color="white" />
-                            </div>
-                            <span className={styles.socialText}>{t('wallet')}</span>
-                        </div>
-                        <ChevronRight size={20} className={styles.socialArrow} />
-                    </button>
-                    <div className={styles.socialDivider}></div>
-                    <button
-                        className={styles.socialLink}
-                        onClick={() => {
-                            haptic.impact('light');
-                            router.push('/referrals');
-                        }}
-                    >
-                        <div className={styles.socialLeft}>
-                            <div className={styles.socialIcon} style={{ background: 'linear-gradient(135deg, #14b8a6, #22c55e)' }}>
-                                <Gift size={22} color="white" />
-                            </div>
-                            <span className={styles.socialText}>{t('referrals') || 'Referrals'}</span>
-                        </div>
-                        <ChevronRight size={20} className={styles.socialArrow} />
-                    </button>
-                </div>
+                <ActionLinkList
+                    joined
+                    items={[
+                        {
+                            key: 'community-chat',
+                            icon: <MessageCircle size={22} color="white" />,
+                            label: t('community_chat') || 'Community Chat',
+                            iconBackground: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                            onClick: () => {
+                                haptic.impact('light');
+                                const url = `https://t.me/${process.env.NEXT_PUBLIC_TG_GROUP || 'nfttoys_chat'}`;
+                                if (webApp?.openTelegramLink) {
+                                    webApp.openTelegramLink(url);
+                                    return;
+                                }
+                                window.open(url, '_blank');
+                            },
+                        },
+                        {
+                            key: 'channel-news',
+                            icon: <Megaphone size={22} color="white" />,
+                            label: t('channel_news') || 'Channel News',
+                            iconBackground: 'linear-gradient(135deg, #f59e0b, #ef4444)',
+                            onClick: () => {
+                                haptic.impact('light');
+                                const url = `https://t.me/${process.env.NEXT_PUBLIC_TG_CHANNEL || 'nfttoys'}`;
+                                if (webApp?.openTelegramLink) {
+                                    webApp.openTelegramLink(url);
+                                    return;
+                                }
+                                window.open(url, '_blank');
+                            },
+                        },
+                    ]}
+                />
 
                 {isAdmin && (
                     <section className={styles.adminSection}>

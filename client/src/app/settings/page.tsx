@@ -146,44 +146,45 @@ export default function SettingsPage() {
                     <h1>{t('settings') || 'Settings'}</h1>
                 </header>
 
-                <section className={styles.section}>
-                    <div className={styles.sectionHeader}>{t('language') || 'Language'}</div>
-                    <div className={styles.selectWrapper}>
-                        <button
-                            className={styles.select}
-                            onClick={() => {
-                                haptic.impact('light');
-                                setLangDropdownOpen(!langDropdownOpen);
-                            }}
-                        >
-                            <span className={styles.flag}>{currentLang.flag}</span>
-                            <span className={styles.selectValue}>{currentLang.name}</span>
-                            <ChevronDown
-                                size={18}
-                                className={`${styles.chevron} ${langDropdownOpen ? styles.rotated : ''}`}
-                            />
-                        </button>
+                <div className={styles.settingsList}>
+                    <div className={styles.settingRow}>
+                        <span className={styles.settingName}>{t('language') || 'Language'}</span>
+                        <div className={styles.selectWrapper}>
+                            <button
+                                className={styles.select}
+                                onClick={() => {
+                                    haptic.impact('light');
+                                    setLangDropdownOpen(!langDropdownOpen);
+                                }}
+                            >
+                                <span className={styles.flag}>{currentLang.flag}</span>
+                                <span className={styles.selectValue}>{currentLang.name}</span>
+                                <ChevronDown
+                                    size={18}
+                                    className={`${styles.chevron} ${langDropdownOpen ? styles.rotated : ''}`}
+                                />
+                            </button>
 
-                        {langDropdownOpen && (
-                            <div className={styles.dropdown}>
-                                {languages.map((lang) => (
-                                    <button
-                                        key={lang.code}
-                                        className={`${styles.dropdownItem} ${locale === lang.code ? styles.active : ''}`}
-                                        onClick={() => handleLanguageChange(lang.code)}
-                                    >
-                                        <span className={styles.flag}>{lang.flag}</span>
-                                        <span>{lang.name}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
+                            {langDropdownOpen && (
+                                <div className={styles.dropdown}>
+                                    {languages.map((lang) => (
+                                        <button
+                                            key={lang.code}
+                                            className={`${styles.dropdownItem} ${locale === lang.code ? styles.active : ''}`}
+                                            onClick={() => handleLanguageChange(lang.code)}
+                                        >
+                                            <span className={styles.flag}>{lang.flag}</span>
+                                            <span>{lang.name}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
-                </section>
 
-                <section className={styles.section}>
-                    <div className={styles.sectionHeader}>{t('appearance') || 'Appearance'}</div>
-                    <div className={styles.toggleRow}>
+                    <div className={styles.rowDivider}></div>
+
+                    <div className={styles.settingRow}>
                         <div className={styles.toggleLeft}>
                             <div className={styles.toggleIconBox}>
                                 <Sparkles size={18} />
@@ -195,6 +196,7 @@ export default function SettingsPage() {
                         <button
                             className={`${styles.toggle} ${animationsEnabled ? styles.toggleOn : ''}`}
                             onClick={toggleAnimations}
+                            aria-label={t('enable_animations') || 'Enable animations'}
                         >
                             <div className={styles.toggleThumb}></div>
                         </button>
@@ -202,7 +204,7 @@ export default function SettingsPage() {
 
                     <div className={styles.rowDivider}></div>
 
-                    <div className={styles.toggleRow}>
+                    <div className={styles.settingRow}>
                         <div className={styles.toggleLeft}>
                             <div className={`${styles.toggleIconBox} ${styles.themeIconBox}`}>
                                 <SunMoon size={18} />
@@ -219,41 +221,39 @@ export default function SettingsPage() {
                             <div className={styles.toggleThumb}></div>
                         </button>
                     </div>
-                </section>
 
-                <section className={styles.section}>
-                    <div className={styles.notificationCard}>
-                        <div className={styles.notificationHeader}>
-                            <div className={styles.toggleLeft}>
-                                <div className={`${styles.toggleIconBox} ${styles.notificationsIconBox}`}>
-                                    <Bell size={18} />
-                                </div>
-                                <span className={styles.toggleLabel}>
-                                    {t('notifications_all') || 'All notifications'}
-                                </span>
+                    <div className={styles.rowDivider}></div>
+
+                    <div className={styles.settingRow}>
+                        <div className={styles.toggleLeft}>
+                            <div className={`${styles.toggleIconBox} ${styles.notificationsIconBox}`}>
+                                <Bell size={18} />
                             </div>
+                            <span className={styles.toggleLabel}>
+                                {t('notifications_all') || 'All notifications'}
+                            </span>
+                        </div>
 
-                            <div className={styles.notificationControls}>
-                                <button
-                                    className={`${styles.toggle} ${notificationsEnabled ? styles.toggleOn : ''} ${(notificationsLoading || notificationsSaving || !canManageNotifications) ? styles.toggleDisabled : ''}`}
-                                    onClick={toggleAllNotifications}
-                                    disabled={notificationsLoading || notificationsSaving}
-                                    aria-label={t('notifications_all') || 'All notifications'}
-                                >
-                                    <div className={styles.toggleThumb}></div>
-                                </button>
+                        <div className={styles.notificationControls}>
+                            <button
+                                className={`${styles.toggle} ${notificationsEnabled ? styles.toggleOn : ''} ${(notificationsLoading || notificationsSaving || !canManageNotifications) ? styles.toggleDisabled : ''}`}
+                                onClick={toggleAllNotifications}
+                                disabled={notificationsLoading || notificationsSaving}
+                                aria-label={t('notifications_all') || 'All notifications'}
+                            >
+                                <div className={styles.toggleThumb}></div>
+                            </button>
 
-                                <button
-                                    className={`${styles.expandButton} ${notificationsExpanded ? styles.expanded : ''}`}
-                                    onClick={() => {
-                                        haptic.selection();
-                                        setNotificationsExpanded(!notificationsExpanded);
-                                    }}
-                                    aria-label={t('notifications') || 'Notifications'}
-                                >
-                                    <ChevronDown size={18} />
-                                </button>
-                            </div>
+                            <button
+                                className={`${styles.expandButton} ${notificationsExpanded ? styles.expanded : ''}`}
+                                onClick={() => {
+                                    haptic.selection();
+                                    setNotificationsExpanded(!notificationsExpanded);
+                                }}
+                                aria-label={t('notifications') || 'Notifications'}
+                            >
+                                <ChevronDown size={18} />
+                            </button>
                         </div>
                     </div>
 
@@ -293,7 +293,7 @@ export default function SettingsPage() {
                             )}
 
                             {!notificationsLoading && canManageNotifications && (
-                                <div className={`${styles.notificationCard} ${styles.subToggleRow}`}>
+                                <div className={`${styles.settingRow} ${styles.subToggleRow}`}>
                                     <div className={styles.toggleLeft}>
                                         <div className={`${styles.toggleIconBox} ${styles.subNotificationIconBox}`}>
                                             <Bell size={16} />
@@ -318,7 +318,7 @@ export default function SettingsPage() {
                             )}
                         </div>
                     )}
-                </section>
+                </div>
             </main>
         </div>
     );
