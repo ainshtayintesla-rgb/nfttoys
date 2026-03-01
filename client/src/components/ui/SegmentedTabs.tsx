@@ -16,6 +16,7 @@ interface SegmentedTabsProps<T extends string = string> {
     className?: string;
     tabClassName?: string;
     activeTabClassName?: string;
+    scrollable?: boolean;
 }
 
 function cx(...parts: Array<string | false | null | undefined>): string {
@@ -30,9 +31,10 @@ export function SegmentedTabs<T extends string = string>({
     className,
     tabClassName,
     activeTabClassName,
+    scrollable,
 }: SegmentedTabsProps<T>) {
     return (
-        <div className={cx(styles.root, className)} role="tablist" aria-label={ariaLabel}>
+        <div className={cx(styles.root, scrollable && styles.rootScrollable, className)} role="tablist" aria-label={ariaLabel}>
             {items.map((item) => {
                 const isActive = item.key === activeKey;
                 return (

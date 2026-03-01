@@ -10,6 +10,7 @@ import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
 import { AlertTriangle, CheckCircle, ChevronDown, Clock, Database, Eye, QrCode, Shuffle, Sparkles, Trash2, UserX, X } from 'lucide-react';
 import { TelegramBackButton } from '@/components/ui/TelegramBackButton';
+import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
 import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import { api } from '@/lib/api';
 import { AdminUpdatesTab } from './components/UpdatesTab';
@@ -509,29 +510,18 @@ export default function AdminPage() {
             <TelegramBackButton href="/profile" />
 
             <main className={styles.main}>
-                <div className={styles.tabHeader}>
-                    <button
-                        type="button"
-                        className={`${styles.tabBtn} ${activeTab === 'nft' ? styles.tabBtnActive : ''}`}
-                        onClick={() => setActiveTab('nft')}
-                    >
-                        {t('admin_tab_nft')}
-                    </button>
-                    <button
-                        type="button"
-                        className={`${styles.tabBtn} ${activeTab === 'db' ? styles.tabBtnActive : ''}`}
-                        onClick={() => setActiveTab('db')}
-                    >
-                        {t('admin_tab_db')}
-                    </button>
-                    <button
-                        type="button"
-                        className={`${styles.tabBtn} ${activeTab === 'updates' ? styles.tabBtnActive : ''}`}
-                        onClick={() => setActiveTab('updates')}
-                    >
-                        {t('admin_tab_updates')}
-                    </button>
-                </div>
+                <SegmentedTabs<AdminTab>
+                    items={[
+                        { key: 'nft', label: t('admin_tab_nft') },
+                        { key: 'db', label: t('admin_tab_db') },
+                        { key: 'updates', label: t('admin_tab_updates') },
+                    ]}
+                    activeKey={activeTab}
+                    onChange={setActiveTab}
+                    scrollable
+                    className={styles.adminTabs}
+                    ariaLabel="Admin tabs"
+                />
 
                 {activeTab === 'nft' && (
                     <>

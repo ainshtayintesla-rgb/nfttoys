@@ -10,32 +10,9 @@
     margin: 0 auto;
 }
 
-.tabHeader {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-    background: var(--surface-alpha-03);
-    border: 1px solid var(--surface-alpha-08);
-    border-radius: 16px;
-    padding: 6px;
+.adminTabs {
     margin-bottom: 18px;
-}
-
-.tabBtn {
-    height: 42px;
-    border: none;
-    border-radius: 12px;
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.tabBtnActive {
-    background: var(--accent-color);
-    color: var(--accent-text);
+    border-radius: 16px;
 }
 
 .dbSection {
@@ -837,7 +814,9 @@
 
 .bulkActions {
     display: flex;
-    gap: 10px;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 4px;
 }
 
 /* QR Result */
@@ -1335,13 +1314,8 @@
 
 /* Mobile Responsiveness for Header/Stats/Form */
 @media (max-width: 768px) {
-    .tabHeader {
+    .adminTabs {
         margin-bottom: 14px;
-    }
-
-    .tabBtn {
-        height: 40px;
-        font-size: 13px;
     }
 
     .dbStatsGrid {
@@ -1398,11 +1372,16 @@
     }
 
     .creator {
-        padding: 20px;
+        padding: 14px;
+        border-radius: 16px;
     }
 
     .formRow {
         grid-template-columns: 1fr;
+    }
+
+    .bulkGenerator {
+        padding: 12px;
     }
 
     .bulkControls {
@@ -1413,10 +1392,29 @@
         grid-template-columns: 1fr;
     }
 
+    .bulkPreviewItem {
+        padding: 6px 8px;
+    }
+
+    .bulkPreviewHeader {
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .bulkActions {
+        flex-direction: column;
+        gap: 8px;
+    }
+
     .select,
     .input {
         font-size: 16px;
         padding: 12px;
+    }
+
+    .qrList {
+        padding: 14px;
+        border-radius: 16px;
     }
 }
 

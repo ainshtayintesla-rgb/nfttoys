@@ -7,6 +7,22 @@
     padding: 4px;
 }
 
+.rootScrollable {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.rootScrollable::-webkit-scrollbar {
+    display: none;
+}
+
+.rootScrollable .tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
 .tab {
     flex: 1;
     min-width: 0;
