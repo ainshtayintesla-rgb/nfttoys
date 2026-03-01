@@ -26,6 +26,7 @@ import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
 import { TelegramBackButton } from '@/components/ui/TelegramBackButton';
 import { TgsPlayer } from '@/components/ui/TgsPlayer';
 import { TxCard } from '@/components/ui/TxCard';
+import { WalletPageSkeleton } from '@/components/ui/WalletPageSkeleton';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
@@ -1363,11 +1364,7 @@ export default function WalletPage() {
 
             <div className={styles.container}>
                 <main className={styles.main}>
-                    {isLoading && (
-                        <section className={styles.card}>
-                            <p className={styles.statusText}>{t('loading') || 'Loading...'}</p>
-                        </section>
-                    )}
+                    {isLoading && <WalletPageSkeleton variant="full" />}
 
                     {!isLoading && error && (
                         <section className={styles.card}>
@@ -1458,11 +1455,7 @@ export default function WalletPage() {
                                 {activeHistoryTab === 'feed' ? (
                                     <>
                                         {isHistoryLoading && (
-                                            <div className={styles.skeletonList}>
-                                                {[0, 1, 2, 3].map((index) => (
-                                                    <div key={index} className={styles.skeletonItem}></div>
-                                                ))}
-                                            </div>
+                                            <WalletPageSkeleton variant="feed" groupCount={2} cardsPerGroup={3} />
                                         )}
 
                                         {!isHistoryLoading && historyError && (
@@ -1534,11 +1527,7 @@ export default function WalletPage() {
                                 ) : (
                                     <>
                                         {isNftLoading && (
-                                            <section className={styles.skeletonList}>
-                                                {[0, 1, 2, 3].map((index) => (
-                                                    <div key={index} className={styles.skeletonItem}></div>
-                                                ))}
-                                            </section>
+                                            <WalletPageSkeleton variant="nft" groupCount={2} cardsPerGroup={3} />
                                         )}
 
                                         {!isNftLoading && nftError && (

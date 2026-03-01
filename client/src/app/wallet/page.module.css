@@ -19,17 +19,9 @@
     padding: 14px;
 }
 
-.statusText,
 .errorText {
     margin: 0;
     font-size: 14px;
-}
-
-.statusText {
-    color: var(--text-secondary);
-}
-
-.errorText {
     color: #ef4444;
 }
 
@@ -166,22 +158,6 @@
 .historySection {
     display: grid;
     gap: 10px;
-}
-
-.skeletonList {
-    display: grid;
-    gap: 8px;
-}
-
-.skeletonItem {
-    height: 70px;
-    border-radius: 14px;
-    border: 1px solid var(--surface-alpha-08);
-    background:
-        linear-gradient(110deg, var(--surface-alpha-04) 8%, var(--surface-alpha-12) 18%, var(--surface-alpha-04) 33%),
-        var(--bg-secondary);
-    background-size: 240% 100%;
-    animation: shimmer 1.25s linear infinite;
 }
 
 .groupList {
@@ -1349,16 +1325,6 @@
 
     to {
         transform: rotate(360deg);
-    }
-}
-
-@keyframes shimmer {
-    0% {
-        background-position: 100% 0;
-    }
-
-    100% {
-        background-position: -100% 0;
     }
 }
 

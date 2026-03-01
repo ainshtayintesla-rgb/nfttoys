@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.18] - 2026-03-01
+
+### Added
+- Added reusable global skeleton UI components: `Skeleton` and `WalletPageSkeleton` under `client/src/components/ui`.
+
+### Changed
+- Wallet page loading state now renders detailed skeletons matching the real layout (balance card, action buttons, tabs, and grouped transaction cards) instead of plain `Loading...` text.
+- Wallet `Feed` and `NFT` tab loading states now use card-level skeleton groups that mirror actual transaction history blocks.
+
 ## [0.2.17] - 2026-02-28
 
 ### Added

@@ -1,0 +1,170 @@
+.skeletonRoot {
+    display: grid;
+    gap: 12px;
+}
+
+.card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--surface-alpha-08);
+    border-radius: 18px;
+    padding: 14px;
+}
+
+.balanceCard {
+    display: grid;
+    gap: 14px;
+}
+
+.badge {
+    width: fit-content;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 999px;
+    padding: 7px 10px;
+    background: var(--surface-alpha-08);
+}
+
+.badgeText {
+    width: 74px;
+}
+
+.amountRow {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.amountValue {
+    width: min(220px, 68%);
+}
+
+.amountCurrency {
+    width: 44px;
+    margin-bottom: 5px;
+}
+
+.actionRow {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.actionTile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.actionLabel {
+    width: 54px;
+}
+
+.tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    border-radius: 999px;
+    background: var(--ink-alpha-30);
+    border: 1px solid var(--surface-alpha-08);
+    padding: 4px;
+}
+
+.tab {
+    border-radius: 999px;
+    padding: 4px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tabActive {
+    background: var(--surface-alpha-10);
+}
+
+.tabLabel {
+    width: 70px;
+}
+
+.historySection {
+    display: grid;
+    gap: 16px;
+}
+
+.group {
+    display: grid;
+    gap: 8px;
+}
+
+.groupTitle {
+    width: 116px;
+}
+
+.cards {
+    display: grid;
+    gap: 8px;
+}
+
+.txCard {
+    border: 1px solid var(--surface-alpha-05);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+}
+
+.txRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.txLeft {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.txText {
+    display: grid;
+    gap: 6px;
+}
+
+.txDirection {
+    width: 90px;
+}
+
+.txAmount {
+    width: 118px;
+}
+
+.txRight {
+    display: grid;
+    justify-items: end;
+    gap: 6px;
+}
+
+.txStatus {
+    width: 66px;
+}
+
+.txDate {
+    width: 94px;
+}
+
+.nftAsset {
+    width: 42px;
+}
+
+@media (max-width: 360px) {
+    .actionLabel {
+        width: 48px;
+    }
+
+    .txAmount {
+        width: 106px;
+    }
+}
