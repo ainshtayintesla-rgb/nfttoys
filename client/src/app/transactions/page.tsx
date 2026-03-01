@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowDownLeft, ArrowUpRight, Flame, Funnel, Sparkles } from 'lucide-react';
+import { IoArrowDown, IoArrowUp, IoFlame, IoFunnel, IoSparkles } from 'react-icons/io5';
 
 import { BottomDrawer } from '@/components/ui/BottomDrawer';
 import { DetailsTable } from '@/components/ui/DetailsTable';
@@ -502,18 +502,18 @@ export default function TransactionsPage() {
     }, []);
     const getKindIcon = useCallback((kind: TxDisplayKind, size = 18) => {
         if (kind === 'burn') {
-            return <Flame size={size} />;
+            return <IoFlame size={size} />;
         }
 
         if (kind === 'minted') {
-            return <Sparkles size={size} />;
+            return <IoSparkles size={size} />;
         }
 
         if (kind === 'received') {
-            return <ArrowDownLeft size={size} />;
+            return <IoArrowDown size={size} />;
         }
 
-        return <ArrowUpRight size={size} />;
+        return <IoArrowUp size={size} />;
     }, []);
 
     const selectedKind = selectedTransaction ? resolveDisplayKind(selectedTransaction) : null;
@@ -572,7 +572,7 @@ export default function TransactionsPage() {
     const selectedFeeValue = selectedTransaction?.fee || '741 UZS';
     const selectedNameLine = `${selectedTitle}${selectedSerial ? ` ${selectedSerial}` : ''}`;
     const selectedDateTimeLine = `${selectedDateLabel}, ${selectedTimeLabel}`;
-    const selectedIcon = selectedKind ? getKindIcon(selectedKind) : <ArrowUpRight size={18} />;
+    const selectedIcon = selectedKind ? getKindIcon(selectedKind) : <IoArrowUp size={18} />;
 
     return (
         <div className={styles.container}>
@@ -585,7 +585,7 @@ export default function TransactionsPage() {
                         onClick={openFilter}
                         aria-label={t('transactions_filter') || 'Filter'}
                     >
-                        <Funnel size={18} />
+                        <IoFunnel size={18} />
                     </button>
                 </header>
 

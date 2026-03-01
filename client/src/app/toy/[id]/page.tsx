@@ -1,32 +1,22 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 
 import { Navigation } from '@/components/layout/Navigation';
-import { Button } from '@/components/ui/Button';
 import { TransferModal } from '@/components/features/TransferModal';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
 import { mockToys, Toy } from '@/lib/mock/toys';
-import { WalletService } from '@/lib/services/WalletService';
 import { TgsPlayer } from '@/components/ui/TgsPlayer';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
-import {
-    Image as ImageIcon,
-    Share2,
-    ExternalLink,
-    Zap,
-    Send,
-    ShieldCheck
-} from 'lucide-react';
+import { IoImage, IoFlash, IoSend } from 'react-icons/io5';
 import styles from './page.module.css';
 
 
 
 export default function ToyDetailPage() {
     const params = useParams();
-    const router = useRouter();
     const { t } = useLanguage();
     const { user } = useTelegram();
     const [toy, setToy] = useState<Toy | null>(null);
@@ -36,7 +26,7 @@ export default function ToyDetailPage() {
     useEffect(() => {
         const foundToy = mockToys.find(t => t.id === params.id);
         if (foundToy) {
-            setToy(foundToy);
+            queueMicrotask(() => setToy(foundToy));
         }
     }, [params.id]);
 
@@ -62,7 +52,7 @@ export default function ToyDetailPage() {
                         />
                     ) : (
                         <div className={styles.imagePlaceholder}>
-                            <ImageIcon size={140} strokeWidth={1} color="rgba(255,255,255,0.4)" />
+                            <IoImage size={140} color="rgba(255,255,255,0.4)" />
                         </div>
                     )}
                 </div>
@@ -88,7 +78,7 @@ export default function ToyDetailPage() {
                             <span className={styles.priceLabel}>{t('owner')}</span>
                             <div className={styles.ownerRow}>
                                 <div className={styles.avatar}>
-                                    <ImageIcon size={20} />
+                                    <IoImage size={20} />
                                 </div>
                                 <span className={styles.ownerName}>User {toy.ownerId || 'System'}</span>
                             </div>
@@ -105,12 +95,12 @@ export default function ToyDetailPage() {
                     <div className={styles.actionBlock}>
                         {isOwner ? (
                             <button className={styles.buyButton} onClick={() => setTransferModalOpen(true)}>
-                                <Send size={20} />
+                                <IoSend size={20} />
                                 {t('transfer')}
                             </button>
                         ) : (
                             <button className={styles.buyButton}>
-                                <Zap size={20} fill="white" />
+                                <IoFlash size={20} />
                                 {t('buy')}
                             </button>
                         )}
@@ -128,6 +118,7 @@ export default function ToyDetailPage() {
                             <div className={styles.attrCard}>
                                 <span className={styles.attrLabel}>{t('number')}</span>
                                 <span className={styles.attrValue}>
+                                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                                     {(toy as any).serialNumber ? `#${parseInt((toy as any).serialNumber.replace('#', ''), 10)}` : '---'}
                                 </span>
                             </div>
@@ -150,6 +141,7 @@ export default function ToyDetailPage() {
                     nft={{
                         tokenId: toy.id,
                         modelName: toy.name,
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         serialNumber: parseInt(((toy as any).serialNumber || '#0').replace('#', ''), 10),
                         rarity: toy.rarity,
                         tgsUrl: toy.tgsUrl || '',

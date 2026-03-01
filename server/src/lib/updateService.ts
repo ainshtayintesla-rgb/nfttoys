@@ -10,7 +10,7 @@ const MIN_INTERVAL_MINUTES = 1;
 const MAX_INTERVAL_MINUTES = 720;
 const CHECK_TIMEOUT_MS = 2 * 60 * 1000;
 const LONG_TIMEOUT_MS = 20 * 60 * 1000;
-const DOCKER_UPDATE_TIMEOUT_MS = 45 * 60 * 1000;
+
 
 interface UpdateSettings {
     intervalMinutes: number;
@@ -34,6 +34,8 @@ interface UpdateState {
     isChecking: boolean;
     isUpdating: boolean;
     hasUpdate: boolean;
+    buildPending: boolean;
+    updatePhase: string | null;
     current: CommitSnapshot;
     remote: CommitSnapshot;
     changelog: ChangelogSummary;
@@ -112,9 +114,6 @@ function isGitAuthError(message: string): boolean {
         || lowered.includes('repository not found');
 }
 
-function quoteForShell(value: string): string {
-    return `'${value.replace(/'/g, `'\\''`)}'`;
-}
 
 function runCommand(command: string, args: string[], cwd: string, timeoutMs = CHECK_TIMEOUT_MS): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -195,6 +194,12 @@ class UpdateService {
 
     private readonly settingsPath: string;
 
+    private readonly progressPath: string;
+
+    private readonly buildMarkerPath: string;
+
+    private readonly runnerScript: string;
+
     private branch = '';
 
     private initialized = false;
@@ -209,6 +214,8 @@ class UpdateService {
         isChecking: false,
         isUpdating: false,
         hasUpdate: false,
+        buildPending: false,
+        updatePhase: null,
         current: {
             full: null,
             short: null,
@@ -238,6 +245,9 @@ class UpdateService {
         this.serverRoot = process.cwd();
         this.repoRoot = path.resolve(this.serverRoot, '..');
         this.settingsPath = path.resolve(this.serverRoot, 'data', 'update-settings.json');
+        this.progressPath = path.resolve(this.serverRoot, 'data', 'update-progress.json');
+        this.buildMarkerPath = path.resolve(this.serverRoot, 'data', 'last-built-commit.txt');
+        this.runnerScript = path.resolve(this.repoRoot, 'scripts', 'prod-update-runner.sh');
 
         this.settings = {
             intervalMinutes: DEFAULT_INTERVAL_MINUTES,
@@ -251,6 +261,7 @@ class UpdateService {
 
     async getStatus(): Promise<UpdateStatusPayload> {
         await this.ensureInitialized();
+        this.syncFromProgressFile();
         return this.snapshot();
     }
 
@@ -298,6 +309,14 @@ class UpdateService {
             throw new UpdateServiceError('Update is already running.', 'UPDATE_IN_PROGRESS', 409);
         }
 
+        // Check if a background update is already running
+        const progress = this.readProgressFile();
+        if (progress && ['pulling', 'building', 'restarting', 'health_check', 'cleaning'].includes(progress.phase)) {
+            this.state.isUpdating = true;
+            this.state.updatePhase = progress.phase;
+            throw new UpdateServiceError('Background update is already running.', 'UPDATE_IN_PROGRESS', 409);
+        }
+
         this.state.isUpdating = true;
         this.state.lastError = null;
 
@@ -305,12 +324,22 @@ class UpdateService {
             const branch = await this.resolveBranch();
             await this.refreshRemoteSnapshot();
 
-            if (!this.state.hasUpdate) {
+            if (!this.state.hasUpdate && !this.state.buildPending) {
+                this.state.isUpdating = false;
                 return this.snapshot();
             }
 
             await this.ensureCleanWorktree();
-            const shouldQueuePm2Restart = await this.runUpdatePipeline(branch);
+
+            if (this.runMode === 'production') {
+                // Production: spawn detached runner script
+                this.spawnUpdateRunner(branch);
+                this.state.updatePhase = 'pulling';
+                return this.snapshot();
+            }
+
+            // Development: run pipeline synchronously
+            await this.runUpdatePipeline(branch);
             await this.refreshLocalSnapshot();
 
             this.state.lastUpdatedAt = nowIso();
@@ -318,13 +347,17 @@ class UpdateService {
                 this.state.lastAutoUpdatedAt = this.state.lastUpdatedAt;
             }
 
-            if (shouldQueuePm2Restart) {
-                this.queuePm2Restart();
-            }
+            this.state.isUpdating = false;
             return this.snapshot();
         } catch (error) {
+            this.state.isUpdating = false;
+            this.state.updatePhase = null;
             const message = toErrorMessage(error);
             this.state.lastError = message;
+
+            if (error instanceof UpdateServiceError) {
+                throw error;
+            }
 
             if (isGitAuthError(message)) {
                 throw new UpdateServiceError(
@@ -343,8 +376,6 @@ class UpdateService {
             }
 
             throw new UpdateServiceError(message || 'Update failed.', 'UPDATE_APPLY_FAILED', 500);
-        } finally {
-            this.state.isUpdating = false;
         }
     }
 
@@ -387,6 +418,7 @@ class UpdateService {
         this.runMode = normalizeRunMode(process.env.RUN_MODE);
         await this.loadSettings();
         await this.refreshLocalSnapshot();
+        this.syncFromProgressFile();
         this.restartScheduler();
         this.initialized = true;
     }
@@ -536,6 +568,9 @@ class UpdateService {
         this.state.hasUpdate = false;
         this.state.changelog = this.readLocalChangelog();
         this.branch = branch;
+
+        // Check build marker: if HEAD doesn't match last built commit, build is pending
+        this.state.buildPending = this.isBuildPending();
     }
 
     private async refreshRemoteSnapshot(): Promise<void> {
@@ -551,7 +586,8 @@ class UpdateService {
 
         this.state.current = current;
         this.state.remote = remote;
-        this.state.hasUpdate = Boolean(current.full && remote.full && current.full !== remote.full);
+        this.state.hasUpdate = Boolean(current.full && remote.full && current.full !== remote.full)
+            || this.isBuildPending();
 
         if (this.state.hasUpdate) {
             try {
@@ -571,22 +607,12 @@ class UpdateService {
         }
     }
 
-    private async runUpdatePipeline(branch: string): Promise<boolean> {
+    private async runUpdatePipeline(branch: string): Promise<void> {
         const serverDir = path.resolve(this.repoRoot, 'server');
         const clientDir = path.resolve(this.repoRoot, 'client');
         const botDir = path.resolve(this.repoRoot, 'bot');
 
         await runCommand('git', ['pull', '--ff-only', 'origin', branch], this.repoRoot, LONG_TIMEOUT_MS);
-
-        if (this.runMode === 'production') {
-            const dockerUpdateScript = path.resolve(this.repoRoot, 'scripts', 'prod-update-docker.sh');
-            if (!fs.existsSync(dockerUpdateScript)) {
-                throw new Error(`Docker update script not found: ${dockerUpdateScript}`);
-            }
-
-            await runCommand('bash', [dockerUpdateScript], this.repoRoot, DOCKER_UPDATE_TIMEOUT_MS);
-            return false;
-        }
 
         if (fs.existsSync(clientDir)) {
             await runCommand('npm', ['ci'], clientDir, LONG_TIMEOUT_MS);
@@ -620,46 +646,119 @@ class UpdateService {
             }
         }
 
-        return true;
+        // Write build marker for development mode
+        this.writeBuildMarker();
     }
 
-    private getPm2Apps(): string[] {
-        const fromEnv = String(process.env.PM2_UPDATE_APPS || '')
-            .split(',')
-            .map((item) => item.trim())
-            .filter(Boolean);
-
-        if (fromEnv.length > 0) {
-            return fromEnv;
+    private spawnUpdateRunner(branch: string): void {
+        if (!fs.existsSync(this.runnerScript)) {
+            throw new UpdateServiceError(
+                `Update runner script not found: ${this.runnerScript}`,
+                'RUNNER_NOT_FOUND',
+                500,
+            );
         }
 
-        if (this.runMode === 'production') {
-            return ['nfttoys-prod-api', 'nfttoys-prod-web', 'nfttoys-prod-bot'];
-        }
+        const logFile = path.resolve(this.serverRoot, 'data', 'update-runner.log');
+        const logFd = fs.openSync(logFile, 'a');
 
-        return ['nfttoys-dev-api', 'nfttoys-dev-web', 'nfttoys-dev-bot'];
-    }
-
-    private queuePm2Restart(): void {
-        const apps = this.getPm2Apps();
-        if (apps.length === 0) {
-            return;
-        }
-
-        const restartCommands = apps
-            .map((appName) => `pm2 restart ${quoteForShell(appName)} || true`)
-            .join('; ');
-
-        const command = `${restartCommands}; pm2 save || true`;
-
-        const child = spawn('bash', ['-lc', command], {
+        const child = spawn('bash', [this.runnerScript, branch], {
             cwd: this.repoRoot,
             detached: true,
-            stdio: 'ignore',
+            stdio: ['ignore', logFd, logFd],
             env: process.env,
         });
 
         child.unref();
+        fs.closeSync(logFd);
+    }
+
+    private readProgressFile(): { phase: string; error?: string; commit?: string; updatedAt?: string } | null {
+        if (!fs.existsSync(this.progressPath)) {
+            return null;
+        }
+
+        try {
+            const raw = fs.readFileSync(this.progressPath, 'utf8').trim();
+            if (!raw) return null;
+            return JSON.parse(raw) as { phase: string; error?: string; commit?: string; updatedAt?: string };
+        } catch {
+            return null;
+        }
+    }
+
+    private clearProgressFile(): void {
+        try {
+            if (fs.existsSync(this.progressPath)) {
+                fs.unlinkSync(this.progressPath);
+            }
+        } catch {
+            // Ignore
+        }
+    }
+
+    private isBuildPending(): boolean {
+        if (this.runMode !== 'production') return false;
+
+        const currentCommit = this.state.current.full;
+        if (!currentCommit) return false;
+
+        if (!fs.existsSync(this.buildMarkerPath)) return true;
+
+        try {
+            const marker = fs.readFileSync(this.buildMarkerPath, 'utf8').trim();
+            return marker !== currentCommit;
+        } catch {
+            return true;
+        }
+    }
+
+    private writeBuildMarker(): void {
+        const commit = this.state.current.full;
+        if (!commit) return;
+
+        const dirPath = path.dirname(this.buildMarkerPath);
+        fs.mkdirSync(dirPath, { recursive: true });
+        fs.writeFileSync(this.buildMarkerPath, commit);
+    }
+
+    private syncFromProgressFile(): void {
+        const progress = this.readProgressFile();
+        if (!progress) {
+            if (this.state.isUpdating && this.runMode === 'production') {
+                // No progress file but we thought update was running — it may have completed/failed
+                this.state.isUpdating = false;
+                this.state.updatePhase = null;
+            }
+            return;
+        }
+
+        const { phase } = progress;
+
+        if (phase === 'done') {
+            this.state.isUpdating = false;
+            this.state.updatePhase = null;
+            this.state.lastUpdatedAt = progress.updatedAt || nowIso();
+            this.state.lastError = null;
+            this.state.buildPending = false;
+            this.clearProgressFile();
+
+            // Refresh local snapshot to show updated version
+            void this.refreshLocalSnapshot().catch(() => { });
+            return;
+        }
+
+        if (phase === 'failed') {
+            this.state.isUpdating = false;
+            this.state.updatePhase = null;
+            this.state.lastError = progress.error || 'Update failed';
+            this.clearProgressFile();
+            return;
+        }
+
+        // Active phases: pulling, building, restarting, health_check, cleaning
+        this.state.isUpdating = true;
+        this.state.updatePhase = phase;
     }
 
     private restartScheduler(): void {
@@ -684,9 +783,15 @@ class UpdateService {
             return;
         }
 
+        // Check progress file first — runner might still be active
+        this.syncFromProgressFile();
+        if (this.state.isUpdating) {
+            return;
+        }
+
         try {
             await this.checkForUpdates('auto');
-            if (this.state.hasUpdate) {
+            if (this.state.hasUpdate || this.state.buildPending) {
                 await this.applyUpdate('auto');
             }
         } catch (error) {

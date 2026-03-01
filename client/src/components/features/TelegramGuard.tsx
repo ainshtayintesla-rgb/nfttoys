@@ -21,7 +21,7 @@ export const TelegramGuard = ({ children }: TelegramGuardProps) => {
     useEffect(() => {
         // Skip check for public paths
         if (PUBLIC_PATHS.some(path => pathname.startsWith(path))) {
-            setStatus('ok');
+            queueMicrotask(() => setStatus('ok'));
             return;
         }
 
@@ -34,10 +34,12 @@ export const TelegramGuard = ({ children }: TelegramGuardProps) => {
 
         if (!isTelegram) {
             // Not in Telegram - redirect to info page
-            setStatus('redirecting');
-            router.replace('/not-telegram');
+            queueMicrotask(() => {
+                setStatus('redirecting');
+                router.replace('/not-telegram');
+            });
         } else {
-            setStatus('ok');
+            queueMicrotask(() => setStatus('ok'));
         }
     }, [ready, webApp, pathname, router]);
 

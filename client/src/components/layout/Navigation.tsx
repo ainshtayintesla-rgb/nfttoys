@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
-import { Home, Scan, User } from 'lucide-react';
+import { IoHome, IoScan, IoPerson } from 'react-icons/io5';
 import styles from './Navigation.module.css';
 
 export const Navigation = () => {
@@ -14,9 +14,9 @@ export const Navigation = () => {
     const { haptic } = useTelegram();
 
     const navItems = [
-        { href: '/', label: 'home', Icon: Home },
-        { href: '/scan', label: 'scan', Icon: Scan },
-        { href: '/profile', label: 'profile', Icon: User },
+        { href: '/', label: 'home', Icon: IoHome },
+        { href: '/scan', label: 'scan', Icon: IoScan },
+        { href: '/profile', label: 'profile', Icon: IoPerson },
     ];
 
     if (pathname.startsWith('/scan/')) return null; // Hide nav on scan result page if desired
@@ -37,7 +37,8 @@ export const Navigation = () => {
                             className={`${styles.item} ${isActive ? styles.active : ''}`}
                             onClick={handleNavClick}
                         >
-                            <item.Icon size={24} strokeWidth={isActive ? 2.5 : 2} className={styles.icon} />
+                            <item.Icon size={24} className={styles.icon} />
+                            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                             <span className={styles.label}>{t(item.label as any)}</span>
                         </Link>
                     );

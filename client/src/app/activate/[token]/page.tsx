@@ -8,7 +8,8 @@ import { Navigation } from '@/components/layout/Navigation';
 import { Button } from '@/components/ui/Button';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
-import { Zap, AlertTriangle, Home, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { IoWarning, IoHome, IoFlash } from 'react-icons/io5';
 import { TgsPlayer } from '@/components/ui/TgsPlayer';
 import { api } from '@/lib/api';
 import styles from './page.module.css';
@@ -82,12 +83,13 @@ export default function ActivatePage() {
                     status: 'available',
                 });
                 setStatus('valid');
-            } catch (error: any) {
+            } catch (error: unknown) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
                 console.error('Error checking QR:', error);
-                if (error.message?.includes('INVALID_TOKEN')) {
+                if (errorMsg?.includes('INVALID_TOKEN')) {
                     setStatus('invalid_token');
                     setErrorMessage('Invalid token');
-                } else if (error.message?.includes('NOT_FOUND')) {
+                } else if (errorMsg?.includes('NOT_FOUND')) {
                     setStatus('toy_not_found');
                     setErrorMessage('QR code not found');
                 } else {
@@ -103,7 +105,7 @@ export default function ActivatePage() {
     // Track local JWT auth state - once authenticated, allow activation
     useEffect(() => {
         if (authUser) {
-            setIsAuthenticating(false);
+            queueMicrotask(() => setIsAuthenticating(false));
             console.log('✅ Local auth complete, activation enabled');
         } else if (webApp && !isAuthenticated) {
             // Still waiting for auth
@@ -285,11 +287,11 @@ export default function ActivatePage() {
         if (status === 'invalid_token' || status === 'toy_not_found') {
             return (
                 <div className={styles.errorContainer}>
-                    <AlertTriangle size={64} className={styles.errorIcon} />
+                    <IoWarning size={64} className={styles.errorIcon} />
                     <h3 className={styles.errorTitle}>{t('not_found') || 'Invalid Link'}</h3>
                     <p className={styles.errorDesc}>{errorMessage}</p>
                     <Button onClick={() => router.push('/')} variant="secondary" fullWidth className={styles.homeBtn}>
-                        <Home size={18} />
+                        <IoHome size={18} />
                         {t('home') || 'Home'}
                     </Button>
                 </div>
@@ -300,7 +302,7 @@ export default function ActivatePage() {
             return (
                 <div className={styles.alreadyUsedContainer}>
                     <div className={styles.alreadyUsedIcon}>
-                        <AlertTriangle size={48} />
+                        <IoWarning size={48} />
                     </div>
                     <h3 className={styles.alreadyUsedTitle}>{t('already_activated') || 'Already Activated'}</h3>
                     <p className={styles.alreadyUsedDesc}>{t('nft_has_owner') || 'This NFT already has an owner'}</p>
@@ -334,7 +336,7 @@ export default function ActivatePage() {
                     )}
 
                     <Button onClick={handleHomeClick} variant="secondary" fullWidth className={styles.homeBtn}>
-                        <Home size={18} />
+                        <IoHome size={18} />
                         {t('home') || 'Home'}
                     </Button>
                 </div>
@@ -393,6 +395,7 @@ export default function ActivatePage() {
                     </div>
                     <div className={styles.infoCard}>
                         <span className={styles.infoLabel}>{t('number') || 'Number'}</span>
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                         <span className={styles.infoValue}>{(toy as any).serialNumber || '#'}</span>
                     </div>
                 </div>
@@ -412,7 +415,7 @@ export default function ActivatePage() {
                         </>
                     ) : (
                         <>
-                            <Zap size={18} fill="white" />
+                            <IoFlash size={18} />
                             {t('activate') || 'Activate'}
                         </>
                     )}

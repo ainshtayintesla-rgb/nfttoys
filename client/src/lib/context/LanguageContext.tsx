@@ -9,6 +9,7 @@ export type { Locale };
 const STORAGE_KEY = 'user_locale';
 
 // Helper to check if CloudStorage is available (requires TG WebApp 6.9+)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const isCloudStorageAvailable = (webApp: any): boolean => {
     if (!webApp) return false;
     const version = parseFloat(webApp.version || '0');

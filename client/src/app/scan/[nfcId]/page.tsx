@@ -8,7 +8,7 @@ import { Navigation } from '@/components/layout/Navigation';
 import { Button } from '@/components/ui/Button';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
-import { Zap } from 'lucide-react';
+
 import { TgsPlayer } from '@/components/ui/TgsPlayer';
 import { api } from '@/lib/api';
 import styles from './page.module.css';
@@ -75,9 +75,10 @@ export default function ScanResultPage() {
                     setStatus('error');
                     setErrorMessage(data.error || 'Activation failed');
                 }
-            } catch (error: any) {
+            } catch (error: unknown) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
                 console.error('Activation error:', error);
-                if (error.message?.includes('ALREADY_USED')) {
+                if (errorMsg?.includes('ALREADY_USED')) {
                     setStatus('already_used');
                     setErrorMessage('This QR code has already been activated.');
                 } else {

@@ -110,7 +110,7 @@ export const QRScanner = ({ onScan, onError }: QRScannerProps) => {
     }, [onError]);
 
     useEffect(() => {
-        checkCameraSupport();
+        queueMicrotask(() => checkCameraSupport());
     }, [checkCameraSupport]);
 
     const handleRetry = () => {

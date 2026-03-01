@@ -3,20 +3,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ArrowRight,
-    ArrowDownLeft,
-    ArrowDownToLine,
-    ArrowUpFromLine,
-    ArrowUpRight,
     Check,
     Copy,
-    Flame,
     Loader2,
-    QrCode,
-    Send,
-    Share2,
-    Sparkles,
-    Wallet as WalletIcon,
 } from 'lucide-react';
+import {
+    IoArrowDown,
+    IoArrowUp,
+    IoCash,
+    IoFlame,
+    IoQrCode,
+    IoSend,
+    IoShareSocial,
+    IoSparkles,
+    IoWallet,
+} from 'react-icons/io5';
 import QRCode from 'react-qr-code';
 
 import { BottomDrawer } from '@/components/ui/BottomDrawer';
@@ -590,7 +591,7 @@ export default function WalletPage() {
 
         return parsedAmount + WALLET_SEND_FEE;
     }, [parsedAmount]);
-    const sendRecipientByUsername = recipientType === 'username' ? normalizedUsername : '';
+
     const sendRecipientByWallet = recipientType === 'wallet' ? normalizedWalletBody : '';
     const hasSendRecipient = recipientType === 'wallet'
         ? sendRecipientByWallet.length > 0
@@ -724,18 +725,18 @@ export default function WalletPage() {
 
     const getNftKindIcon = useCallback((kind: NftTxDisplayKind, size = 18) => {
         if (kind === 'burn') {
-            return <Flame size={size} />;
+            return <IoFlame size={size} />;
         }
 
         if (kind === 'minted') {
-            return <Sparkles size={size} />;
+            return <IoSparkles size={size} />;
         }
 
         if (kind === 'received') {
-            return <ArrowDownLeft size={size} />;
+            return <IoArrowDown size={size} />;
         }
 
-        return <ArrowUpRight size={size} />;
+        return <IoArrowUp size={size} />;
     }, []);
 
     const closeNftDetails = useCallback(() => {
@@ -856,7 +857,7 @@ export default function WalletPage() {
     );
     const selectedNftNameLine = `${selectedNftTitle}${selectedNftSerial ? ` ${selectedNftSerial}` : ''}`;
     const selectedNftDateTimeLine = `${selectedNftDateLabel}, ${selectedNftTimeLabel}`;
-    const selectedNftIcon = selectedNftKind ? getNftKindIcon(selectedNftKind) : <ArrowUpRight size={18} />;
+    const selectedNftIcon = selectedNftKind ? getNftKindIcon(selectedNftKind) : <IoArrowUp size={18} />;
 
     const ownWalletAddress = wallet?.address || user?.walletAddress || null;
     const ownWalletFriendly = wallet?.friendlyAddress || user?.walletFriendly || null;
@@ -877,8 +878,8 @@ export default function WalletPage() {
         : false;
     const selectedWalletKindClass = selectedWalletIsIncoming ? styles.kindReceived : styles.kindSent;
     const selectedWalletIcon = selectedWalletIsIncoming
-        ? <ArrowDownLeft size={22} />
-        : <ArrowUpRight size={22} />;
+        ? <IoArrowDown size={22} />
+        : <IoArrowUp size={22} />;
     const selectedWalletDateLabel = selectedWalletTransaction
         ? formatDetailsDate(selectedWalletTransaction.createdAt, locale)
         : '—';
@@ -964,7 +965,7 @@ export default function WalletPage() {
         setAmountInput(formatAmountInput(String(defaultAmount)));
     };
 
-    const closeDrawer = (force = false) => {
+    const closeDrawer = useCallback((force = false) => {
         if (isSubmitting && !force) {
             return;
         }
@@ -981,7 +982,7 @@ export default function WalletPage() {
             setAmountInput('');
             setSelectedQuick(null);
         }
-    };
+    }, [drawerMode, isSubmitting]);
 
     const writeToClipboard = useCallback(async (value: string) => {
         if (navigator.clipboard?.writeText) {
@@ -1377,7 +1378,7 @@ export default function WalletPage() {
                         <>
                             <section className={`${styles.card} ${styles.balanceCard}`}>
                                 <div className={styles.balanceBadge}>
-                                    <WalletIcon size={16} />
+                                    <IoWallet size={16} />
                                     <span>{t('wallet_balance_label') || 'Balance'}</span>
                                 </div>
 
@@ -1393,7 +1394,7 @@ export default function WalletPage() {
                                         onClick={() => openDrawer('topup')}
                                     >
                                         <RoundIconButton as="span" size={50} className={`${styles.actionIcon} ${styles.actionIconTopup}`}>
-                                            <ArrowDownToLine size={20} />
+                                            <IoWallet size={20} />
                                         </RoundIconButton>
                                         <span className={styles.actionLabel}>{t('wallet_topup') || 'Top up'}</span>
                                     </button>
@@ -1405,7 +1406,7 @@ export default function WalletPage() {
                                         disabled={wallet.balance <= 0}
                                     >
                                         <RoundIconButton as="span" size={50} className={`${styles.actionIcon} ${styles.actionIconWithdraw}`}>
-                                            <ArrowUpFromLine size={20} />
+                                            <IoCash size={20} />
                                         </RoundIconButton>
                                         <span className={styles.actionLabel}>{t('wallet_withdraw') || 'Withdraw'}</span>
                                     </button>
@@ -1417,7 +1418,7 @@ export default function WalletPage() {
                                         disabled={!copyValue}
                                     >
                                         <RoundIconButton as="span" size={50} className={`${styles.actionIcon} ${styles.actionIconReceive}`}>
-                                            <QrCode size={20} />
+                                            <IoQrCode size={20} />
                                         </RoundIconButton>
                                         <span className={styles.actionLabel}>{t('wallet_receive') || 'Receive'}</span>
                                     </button>
@@ -1429,7 +1430,7 @@ export default function WalletPage() {
                                         disabled={wallet.balance <= WALLET_SEND_FEE}
                                     >
                                         <RoundIconButton as="span" size={50} className={`${styles.actionIcon} ${styles.actionIconSend}`}>
-                                            <Send size={20} />
+                                            <IoSend size={20} />
                                         </RoundIconButton>
                                         <span className={styles.actionLabel}>{t('wallet_send') || t('send') || 'Send'}</span>
                                     </button>
@@ -1486,7 +1487,7 @@ export default function WalletPage() {
                                                                         key={item.id}
                                                                         className={styles.cardHistoryItem}
                                                                         onClick={() => handleWalletCardClick(item)}
-                                                                        icon={isIncoming ? <ArrowDownLeft size={22} /> : <ArrowUpRight size={22} />}
+                                                                        icon={isIncoming ? <IoArrowDown size={22} /> : <IoArrowUp size={22} />}
                                                                         iconWrapClassName={`${styles.kindIcon} ${kindClass}`}
                                                                         title={getOperationTitle(item.type)}
                                                                         subtitle={amountLine}
@@ -1792,7 +1793,7 @@ export default function WalletPage() {
                                         disabled={!copyValue}
                                         aria-label={t('wallet_share') || 'Share address'}
                                     >
-                                        <Share2 size={16} />
+                                        <IoShareSocial size={16} />
                                     </RoundIconButton>
                                 </div>
                             </div>

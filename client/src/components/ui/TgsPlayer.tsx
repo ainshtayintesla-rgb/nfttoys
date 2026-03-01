@@ -170,7 +170,7 @@ export const TgsPlayer = React.memo(
             if (typeof window === "undefined" || !("IntersectionObserver" in window)) {
                 isVisibleRef.current = true;
                 shouldLoadRef.current = true;
-                setShouldLoad(true);
+                queueMicrotask(() => setShouldLoad(true));
                 return;
             }
 

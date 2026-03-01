@@ -80,6 +80,7 @@ export interface IWebApp {
     disable: VoidFunction;
     showProgress: (leave: boolean) => void;
     hideProgress: VoidFunction;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setParams: (params: any) => void;
   };
   HapticFeedback: {
@@ -253,7 +254,7 @@ const mockWebApp: IWebApp = {
     console.log('[Mock] Show Confirm:', msg);
     cb(true);
   },
-  showScanQrPopup: (params: { text?: string }, cb: (text: string) => boolean | void) => {
+  showScanQrPopup: (params: { text?: string }, _cb: (text: string) => boolean | void) => {
     console.log('[Mock] Show QR Scanner:', params.text);
     // For mock, we just log - real TG will show native scanner
   },
@@ -271,8 +272,8 @@ const mockWebApp: IWebApp = {
 };
 
 export const getTelegramWebApp = (): IWebApp | null => {
-  if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp) {
-    return (window as any).Telegram.WebApp;
+  if (typeof window !== 'undefined' && (window as unknown as Record<string, { WebApp?: IWebApp }>).Telegram?.WebApp) {
+    return (window as unknown as Record<string, { WebApp: IWebApp }>).Telegram.WebApp;
   }
   // In development, return mock for testing
   // In production, return null (browser visitors will be redirected to Telegram)

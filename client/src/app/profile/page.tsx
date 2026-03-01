@@ -10,7 +10,7 @@ import { ActionLinkList } from '@/components/ui/ActionLinkList';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
 import { api } from '@/lib/api';
-import { Lock, User, Wallet, QrCode, Plus, CheckCircle, Clock, History, Settings, MessageCircle, Megaphone, Gift } from 'lucide-react';
+import { IoLockClosed, IoPerson, IoWallet, IoQrCode, IoAdd, IoCheckmarkCircle, IoTime, IoSettings, IoChatbubbles, IoMegaphone, IoGift } from 'react-icons/io5';
 import styles from './page.module.css';
 
 interface NFTItem {
@@ -140,7 +140,7 @@ export default function ProfilePage() {
                 <main className={styles.main}>
                     <div className={styles.loginCard}>
                         <div className={styles.loginIcon}>
-                            <Lock size={32} />
+                            <IoLockClosed size={32} />
                         </div>
                         <h2 className={styles.loginTitle}>{t('login_required')}</h2>
                         <p className={styles.loginDesc}>{t('login_desc')}</p>
@@ -160,7 +160,7 @@ export default function ProfilePage() {
                                 fullWidth
                                 onClick={() => window.location.href = '/admin'}
                             >
-                                <QrCode size={18} />
+                                <IoQrCode size={18} />
                                 Admin Panel
                             </Button>
                         </div>
@@ -182,7 +182,7 @@ export default function ProfilePage() {
                         router.push('/transactions');
                     }}
                 >
-                    <History size={22} />
+                    <IoTime size={22} />
                 </button>
                 <button
                     className={styles.settingsBtn}
@@ -191,7 +191,7 @@ export default function ProfilePage() {
                         router.push('/settings');
                     }}
                 >
-                    <Settings size={22} />
+                    <IoSettings size={22} />
                 </button>
             </div>
 
@@ -206,7 +206,7 @@ export default function ProfilePage() {
                                 className={styles.avatarImage}
                             />
                         ) : (
-                            user.first_name?.[0] || <User size={32} />
+                            user.first_name?.[0] || <IoPerson size={32} />
                         )}
                     </div>
                     <span className={styles.username}>
@@ -219,7 +219,7 @@ export default function ProfilePage() {
                     items={[
                         {
                             key: 'wallet',
-                            icon: <Wallet size={22} color="white" />,
+                            icon: <IoWallet size={22} color="white" />,
                             label: t('wallet') || 'Wallet',
                             iconBackground: 'linear-gradient(135deg, #22c55e, #16a34a)',
                             onClick: () => {
@@ -229,7 +229,7 @@ export default function ProfilePage() {
                         },
                         {
                             key: 'referrals',
-                            icon: <Gift size={22} color="white" />,
+                            icon: <IoGift size={22} color="white" />,
                             label: t('referrals') || 'Referrals',
                             iconBackground: 'linear-gradient(135deg, #14b8a6, #22c55e)',
                             onClick: () => {
@@ -245,7 +245,7 @@ export default function ProfilePage() {
                     items={[
                         {
                             key: 'community-chat',
-                            icon: <MessageCircle size={22} color="white" />,
+                            icon: <IoChatbubbles size={22} color="white" />,
                             label: t('community_chat') || 'Community Chat',
                             iconBackground: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
                             onClick: () => {
@@ -260,7 +260,7 @@ export default function ProfilePage() {
                         },
                         {
                             key: 'channel-news',
-                            icon: <Megaphone size={22} color="white" />,
+                            icon: <IoMegaphone size={22} color="white" />,
                             label: t('channel_news') || 'Channel News',
                             iconBackground: 'linear-gradient(135deg, #f59e0b, #ef4444)',
                             onClick: () => {
@@ -282,7 +282,7 @@ export default function ProfilePage() {
                         <div className={styles.statsGrid}>
                             <div className={styles.statCard}>
                                 <div className={styles.statIcon} style={{ background: 'rgba(59, 130, 246, 0.2)' }}>
-                                    <QrCode size={20} color="#3b82f6" />
+                                    <IoQrCode size={20} color="#3b82f6" />
                                 </div>
                                 <div className={styles.statInfo}>
                                     <span className={styles.statValue}>{stats.total}</span>
@@ -291,7 +291,7 @@ export default function ProfilePage() {
                             </div>
                             <div className={styles.statCard}>
                                 <div className={styles.statIcon} style={{ background: 'rgba(251, 191, 36, 0.2)' }}>
-                                    <Clock size={20} color="#fbbf24" />
+                                    <IoTime size={20} color="#fbbf24" />
                                 </div>
                                 <div className={styles.statInfo}>
                                     <span className={styles.statValue}>{stats.created}</span>
@@ -300,7 +300,7 @@ export default function ProfilePage() {
                             </div>
                             <div className={styles.statCard}>
                                 <div className={styles.statIcon} style={{ background: 'rgba(34, 197, 94, 0.2)' }}>
-                                    <CheckCircle size={20} color="#22c55e" />
+                                    <IoCheckmarkCircle size={20} color="#22c55e" />
                                 </div>
                                 <div className={styles.statInfo}>
                                     <span className={styles.statValue}>{stats.used}</span>
@@ -315,7 +315,7 @@ export default function ProfilePage() {
                             onClick={() => window.location.href = '/admin'}
                             className={styles.createBtn}
                         >
-                            <Plus size={18} />
+                            <IoAdd size={18} />
                             {t('create_new_qr')}
                         </Button>
                     </section>

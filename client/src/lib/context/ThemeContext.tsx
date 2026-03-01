@@ -20,6 +20,7 @@ const ThemeContext = createContext<ThemeContextType>({
     isLoading: true,
 });
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const isCloudStorageAvailable = (webApp: any): boolean => {
     if (!webApp) return false;
     const version = Number.parseFloat(webApp.version || '0');
@@ -78,6 +79,7 @@ const applyTheme = (theme: ThemeMode) => {
     }
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const applyTelegramChromeTheme = (webApp: any, theme: ThemeMode) => {
     if (!webApp || typeof document === 'undefined') {
         return;

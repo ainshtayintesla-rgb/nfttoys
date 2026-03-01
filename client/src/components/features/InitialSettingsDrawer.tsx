@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Bell, ChevronDown, SunMoon } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
+import { IoMoon, IoNotifications } from 'react-icons/io5';
 import { useTelegram } from '@/lib/context/TelegramContext';
 import { useLanguage, Locale } from '@/lib/context/LanguageContext';
 import { useTheme } from '@/lib/context/ThemeContext';
@@ -18,7 +19,13 @@ const languages: { code: Locale; name: string; flag: string }[] = [
     { code: 'en', name: 'English', flag: '🇺🇸' },
 ];
 
-const isCloudStorageAvailable = (webApp: any): boolean => {
+interface WebAppLike {
+    version?: string;
+    CloudStorage?: unknown;
+    initData?: string;
+}
+
+const isCloudStorageAvailable = (webApp: WebAppLike | null | undefined): boolean => {
     if (!webApp) return false;
     const version = Number.parseFloat(webApp.version || '0');
     return version >= 6.9 && !!webApp.CloudStorage;
@@ -72,8 +79,10 @@ export const InitialSettingsDrawer = () => {
         }
 
         if (!webApp?.initData) {
-            setIsVisible(false);
-            setIsChecking(false);
+            queueMicrotask(() => {
+                setIsVisible(false);
+                setIsChecking(false);
+            });
             return;
         }
 
@@ -81,27 +90,36 @@ export const InitialSettingsDrawer = () => {
         const localDone = readLocalFlag();
 
         if (localDone) {
-            setIsVisible(false);
-            setIsChecking(false);
+            queueMicrotask(() => {
+                setIsVisible(false);
+                setIsChecking(false);
+            });
             return;
         }
 
         if (!isCloudStorageAvailable(webApp)) {
-            setIsVisible(true);
-            setIsChecking(false);
+            queueMicrotask(() => {
+                setIsVisible(true);
+                setIsChecking(false);
+            });
             return;
         }
 
         try {
-            webApp!.CloudStorage.getItem(INITIAL_SETTINGS_KEY, (error: Error | null, value?: string) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (webApp as any).CloudStorage.getItem(INITIAL_SETTINGS_KEY, (error: Error | null, value?: string) => {
                 if (cancelled) return;
                 const cloudDone = !error && value === '1';
-                setIsVisible(!cloudDone);
-                setIsChecking(false);
+                queueMicrotask(() => {
+                    setIsVisible(!cloudDone);
+                    setIsChecking(false);
+                });
             });
         } catch {
-            setIsVisible(true);
-            setIsChecking(false);
+            queueMicrotask(() => {
+                setIsVisible(true);
+                setIsChecking(false);
+            });
         }
 
         return () => {
@@ -219,7 +237,7 @@ export const InitialSettingsDrawer = () => {
                     <div className={styles.toggleRow}>
                         <div className={styles.toggleLeft}>
                             <div className={styles.toggleIconBox}>
-                                <SunMoon size={18} />
+                                <IoMoon size={18} />
                             </div>
                             <span className={styles.toggleLabel}>{t('dark_mode') || 'Dark mode'}</span>
                         </div>
@@ -237,7 +255,7 @@ export const InitialSettingsDrawer = () => {
                     <div className={styles.toggleRow}>
                         <div className={styles.toggleLeft}>
                             <div className={`${styles.toggleIconBox} ${styles.notificationsIconBox}`}>
-                                <Bell size={18} />
+                                <IoNotifications size={18} />
                             </div>
                             <span className={styles.toggleLabel}>{t('notifications_all') || 'All notifications'}</span>
                         </div>

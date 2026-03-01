@@ -198,6 +198,7 @@ const requestAppFullscreen = (app: IWebApp) => {
 
 interface TelegramContextType {
     webApp: IWebApp | null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     user: any;
     authUser: AuthUser | null;
     ready: boolean;
@@ -253,6 +254,7 @@ export const TelegramProvider = ({ children }: { children: React.ReactNode }) =>
     }, []);
 
     // State for extended user info (including wallet and photo_url)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [extendedUser, setExtendedUser] = useState<any>(null);
 
     // Initialize Telegram WebApp
@@ -386,6 +388,7 @@ export const TelegramProvider = ({ children }: { children: React.ReactNode }) =>
                             try {
                                 const cachedUser = JSON.parse(value);
                                 // Only use cache if we don't have extended user yet
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                 setExtendedUser((prev: any) => prev || cachedUser);
                                 console.log('📦 Loaded cached user profile');
                             } catch {

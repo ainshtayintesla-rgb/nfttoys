@@ -67,7 +67,7 @@ class WalletServiceImpl {
         return tx;
     }
 
-    getHistory(username?: string): Transaction[] {
+    getHistory(_username?: string): Transaction[] {
         // In a real app, filter by user. For mock, return all.
         return this.transactions;
     }

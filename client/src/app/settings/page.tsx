@@ -2,7 +2,8 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bell, ChevronDown, Languages, Sparkles, SunMoon } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
+import { IoLanguage, IoSparkles, IoMoon, IoNotifications, IoDiamond } from 'react-icons/io5';
 
 import { SettingActionItem } from '@/components/ui/SettingActionItem';
 import { useTelegram } from '@/lib/context/TelegramContext';
@@ -151,7 +152,7 @@ export default function SettingsPage() {
                 <div className={styles.settingsList}>
                     <SettingActionItem
                         mode="select"
-                        icon={<Languages size={22} color="white" />}
+                        icon={<IoLanguage size={22} color="white" />}
                         iconBackground="linear-gradient(135deg, #3b82f6, #2563eb)"
                         label={t('language') || 'Language'}
                         value={(
@@ -180,7 +181,7 @@ export default function SettingsPage() {
 
                     <SettingActionItem
                         mode="toggle"
-                        icon={<Sparkles size={22} color="white" />}
+                        icon={<IoSparkles size={22} color="white" />}
                         iconBackground="linear-gradient(135deg, #f59e0b, #f97316)"
                         label={t('enable_animations') || 'Enable animations'}
                         checked={animationsEnabled}
@@ -192,7 +193,7 @@ export default function SettingsPage() {
 
                     <SettingActionItem
                         mode="toggle"
-                        icon={<SunMoon size={22} color="white" />}
+                        icon={<IoMoon size={22} color="white" />}
                         iconBackground="linear-gradient(135deg, #6366f1, #3b82f6)"
                         label={t('dark_mode') || 'Dark mode'}
                         checked={darkModeEnabled}
@@ -204,7 +205,7 @@ export default function SettingsPage() {
 
                     <SettingActionItem
                         mode="toggle"
-                        icon={<Bell size={22} color="white" />}
+                        icon={<IoNotifications size={22} color="white" />}
                         iconBackground="linear-gradient(135deg, #22c55e, #16a34a)"
                         label={t('notifications_all') || 'All notifications'}
                         checked={notificationsEnabled}
@@ -269,7 +270,7 @@ export default function SettingsPage() {
                             {!notificationsLoading && canManageNotifications && (
                                 <SettingActionItem
                                     mode="toggle"
-                                    icon={<Bell size={22} color="white" />}
+                                    icon={<IoDiamond size={22} color="white" />}
                                     iconBackground="linear-gradient(135deg, #0ea5e9, #0284c7)"
                                     label={t('notifications_nft_received') || 'NFT received'}
                                     checked={nftReceivedEnabled}

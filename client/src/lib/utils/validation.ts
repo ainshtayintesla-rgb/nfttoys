@@ -20,6 +20,7 @@ export function sanitizeString(input: string): string {
  * Validate required fields
  */
 export function validateRequired(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: Record<string, any>,
     requiredFields: string[]
 ): { valid: boolean; missing: string[] } {
@@ -54,6 +55,7 @@ export function validateLength(
  * Validate numeric value
  */
 export function validateNumber(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     value: any,
     min?: number,
     max?: number
@@ -69,6 +71,7 @@ export function validateNumber(
  * Validate enum value
  */
 export function validateEnum<T extends string>(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     value: any,
     allowedValues: T[]
 ): value is T {
@@ -89,7 +92,9 @@ export function validationError(message: string, fields?: string[]) {
 /**
  * Sanitize object values
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function sanitizeObject<T extends Record<string, any>>(obj: T): T {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sanitized = { ...obj } as Record<string, any>;
 
     for (const key of Object.keys(sanitized)) {

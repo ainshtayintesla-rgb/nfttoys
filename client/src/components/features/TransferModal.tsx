@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { X, Send, Check, Loader2, ArrowRight, ChevronLeft, Tag, Sparkles } from 'lucide-react';
+import { X, Loader2, ArrowRight, ChevronLeft } from 'lucide-react';
+import { IoSend, IoCheckmark, IoPricetag, IoSparkles } from 'react-icons/io5';
 import { Button } from '@/components/ui/Button';
 import { DetailsTable } from '@/components/ui/DetailsTable';
 import { RecipientLookupField } from '@/components/ui/RecipientLookupField';
@@ -422,6 +423,74 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
         };
     }, [recalculateSwipeBounds, step]);
 
+    const submitTransfer = useCallback(async (): Promise<boolean> => {
+        if (!authUser?.uid) {
+            return false;
+        }
+
+        setError('');
+
+        try {
+            const transferData: {
+                tokenId: string;
+                initData?: string;
+                toAddress?: string;
+                toUsername?: string;
+                memo?: string;
+            } = {
+                tokenId: nft!.tokenId,
+                initData: webApp?.initData,
+            };
+
+            if (recipientType === 'wallet') {
+                transferData.toAddress = normalizeWalletRecipient(walletRecipient);
+            } else {
+                transferData.toUsername = username;
+            }
+
+            const normalizedMemo = memoInput.trim();
+            if (normalizedMemo) {
+                transferData.memo = normalizedMemo;
+            }
+
+            await api.nft.transfer(transferData);
+            return true;
+        } catch (err: unknown) {
+            if (err instanceof Error) {
+                setError(err.message || 'Transfer failed');
+            } else {
+                setError('Transfer failed');
+            }
+            return false;
+        }
+    }, [authUser?.uid, memoInput, nft?.tokenId, recipientType, username, walletRecipient, webApp?.initData]);
+
+    const confirmSwipeTransfer = useCallback(async () => {
+        if (isTransferSubmitting) {
+            return;
+        }
+
+        setIsTransferSubmitting(true);
+        setSwipeResult(null);
+        haptic.impact('heavy');
+        setSwipeOffset(swipeMaxOffset);
+
+        const isSuccess = await submitTransfer();
+        if (isSuccess) {
+            haptic.impact('medium');
+            setSwipeResult('success');
+            clearDraft();
+            onSuccess?.();
+            setIsTransferSubmitting(false);
+            return;
+        }
+
+        haptic.error();
+        setSwipeResult('error');
+        setSwipeOffset(0);
+        setIsTransferSubmitting(false);
+    }, [clearDraft, haptic, isTransferSubmitting, onSuccess, submitTransfer, swipeMaxOffset]);
+
     if (!nft || (!isOpen && !visible)) return null;
 
     const canContinue = recipientType === 'wallet'
@@ -489,74 +558,6 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
         setError('');
         setViewMode('info');
     };
-
-    const submitTransfer = useCallback(async (): Promise<boolean> => {
-        if (!authUser?.uid) {
-            return false;
-        }
-
-        setError('');
-
-        try {
-            const transferData: {
-                tokenId: string;
-                initData?: string;
-                toAddress?: string;
-                toUsername?: string;
-                memo?: string;
-            } = {
-                tokenId: nft.tokenId,
-                initData: webApp?.initData,
-            };
-
-            if (recipientType === 'wallet') {
-                transferData.toAddress = normalizeWalletRecipient(walletRecipient);
-            } else {
-                transferData.toUsername = username;
-            }
-
-            const normalizedMemo = memoInput.trim();
-            if (normalizedMemo) {
-                transferData.memo = normalizedMemo;
-            }
-
-            await api.nft.transfer(transferData);
-            return true;
-        } catch (err: unknown) {
-            if (err instanceof Error) {
-                setError(err.message || 'Transfer failed');
-            } else {
-                setError('Transfer failed');
-            }
-            return false;
-        }
-    }, [authUser?.uid, memoInput, nft?.tokenId, recipientType, username, walletRecipient, webApp?.initData]);
-
-    const confirmSwipeTransfer = useCallback(async () => {
-        if (isTransferSubmitting) {
-            return;
-        }
-
-        setIsTransferSubmitting(true);
-        setSwipeResult(null);
-        haptic.impact('heavy');
-        setSwipeOffset(swipeMaxOffset);
-
-        const isSuccess = await submitTransfer();
-        if (isSuccess) {
-            haptic.impact('medium');
-            setSwipeResult('success');
-            clearDraft();
-            onSuccess?.();
-            setIsTransferSubmitting(false);
-            return;
-        }
-
-        haptic.error();
-        setSwipeResult('error');
-        setSwipeOffset(0);
-        setIsTransferSubmitting(false);
-    }, [clearDraft, haptic, isTransferSubmitting, onSuccess, submitTransfer, swipeMaxOffset]);
 
     const handleSwipePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
         if (step !== 'confirm' || swipeMaxOffset <= 0 || isTransferSubmitting || swipeResult === 'success') {
@@ -703,7 +704,7 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                                 disabled
                                 aria-disabled="true"
                             >
-                                <Tag size={19} className={styles.modeActionIcon} />
+                                <IoPricetag size={19} className={styles.modeActionIcon} />
                                 <span className={styles.modeActionLabel}>
                                     {t('transfer_modal_sell') || 'Sell'}
                                 </span>
@@ -717,7 +718,7 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                                     setError('');
                                 }}
                             >
-                                <Send size={19} className={styles.modeActionIcon} />
+                                <IoSend size={19} className={styles.modeActionIcon} />
                                 <span className={styles.modeActionLabel}>
                                     {t('transfer_modal_transfer') || t('transfer') || 'Transfer'}
                                 </span>
@@ -728,7 +729,7 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                                 disabled
                                 aria-disabled="true"
                             >
-                                <Sparkles size={19} className={styles.modeActionIcon} />
+                                <IoSparkles size={19} className={styles.modeActionIcon} />
                                 <span className={styles.modeActionLabel}>
                                     {t('transfer_modal_upgrade') || 'Upgrade'}
                                 </span>
@@ -958,11 +959,10 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                             {swipeResult && (
                                 <div className={styles.swipeResultRow}>
                                     <span
-                                        className={`${styles.swipeResultIcon} ${
-                                            swipeResult === 'success' ? styles.swipeResultSuccess : styles.swipeResultError
-                                        }`}
+                                        className={`${styles.swipeResultIcon} ${swipeResult === 'success' ? styles.swipeResultSuccess : styles.swipeResultError
+                                            }`}
                                     >
-                                        {swipeResult === 'success' ? <Check size={12} strokeWidth={3} /> : <X size={12} strokeWidth={3} />}
+                                        {swipeResult === 'success' ? <IoCheckmark size={12} /> : <X size={12} strokeWidth={3} />}
                                     </span>
                                 </div>
                             )}

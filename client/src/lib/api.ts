@@ -10,6 +10,7 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost
 /**
  * Make API request
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function apiFetch<T = any>(
     endpoint: string,
     options: RequestInit = {}

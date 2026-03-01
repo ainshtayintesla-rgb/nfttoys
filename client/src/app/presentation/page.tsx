@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Smartphone, Scan, Zap, Shield, Users, Gift, Eye, EyeOff } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ChevronLeft, ChevronRight, Scan, Eye } from 'lucide-react';
 import { TgsPlayer } from '@/components/ui/TgsPlayer';
 import styles from './page.module.css';
 
@@ -52,17 +52,27 @@ export default function PresentationPage() {
     const [currentSlide, setCurrentSlide] = useState(0);
     const [isAnimating, setIsAnimating] = useState(false);
 
+    const goToSlide = useCallback((index: number, slideCount: number) => {
+        if (isAnimating) return;
+        if (index < 0 || index >= slideCount) return;
+        if (index === currentSlide) return;
+
+        setIsAnimating(true);
+        setCurrentSlide(index);
+        setTimeout(() => setIsAnimating(false), 300);
+    }, [currentSlide, isAnimating]);
+
     const slides: Slide[] = [
         {
             id: 0,
             title: "NFT Toys",
-            subtitle: "Kolleksion NFT o'yinchoqlar",
+            subtitle: "Kolleksion NFT o&apos;yinchoqlar",
             content: (
                 <div className={styles.heroContent}>
                     <div className={styles.heroAnimation}>
                         <TgsPlayer src="/models/raphael.tgs" style={{ width: 200, height: 200 }} loop autoplay />
                     </div>
-                    <p className={styles.tagline}>Jismoniy o'yinchoq + Raqamli NFT</p>
+                    <p className={styles.tagline}>Jismoniy o&apos;yinchoq + Raqamli NFT</p>
                 </div>
             )
         },
@@ -72,10 +82,10 @@ export default function PresentationPage() {
             icon: <span className={styles.emoji}>🤔</span>,
             content: (
                 <ul className={styles.bulletList}>
-                    <li>Soxta kolleksion o'yinchoqlar</li>
-                    <li>Haqiqiylikni tasdiqlash yo'q</li>
+                    <li>Soxta kolleksion o&apos;yinchoqlar</li>
+                    <li>Haqiqiylikni tasdiqlash yo&apos;q</li>
                     <li>Qayta sotish qiyinchiligi</li>
-                    <li>Egalik tarixi yo'q</li>
+                    <li>Egalik tarixi yo&apos;q</li>
                 </ul>
             )
         },
@@ -85,7 +95,7 @@ export default function PresentationPage() {
             icon: <span className={styles.emoji}>💡</span>,
             content: (
                 <ul className={styles.bulletList}>
-                    <li><strong>NFC chip</strong> har bir o'yinchoqda</li>
+                    <li><strong>NFC chip</strong> har bir o&apos;yinchoqda</li>
                     <li><strong>NFT token</strong> egalikni tasdiqlaydi</li>
                     <li><strong>QR kod</strong> aktivlashtirish uchun</li>
                     <li><strong>Blockchain</strong> egalik tarixi</li>
@@ -101,7 +111,7 @@ export default function PresentationPage() {
                     <div className={styles.stepsGrid}>
                         <div className={styles.step}>
                             <span className={styles.stepNum}>1</span>
-                            <p>O'yinchoq sotib olish</p>
+                            <p>O&apos;yinchoq sotib olish</p>
                         </div>
                         <div className={styles.step}>
                             <span className={styles.stepNum}>2</span>
@@ -117,7 +127,7 @@ export default function PresentationPage() {
                         </div>
                     </div>
                     <a href="/admin" className={styles.demoBtn} target="_blank">
-                        Demo ko'rish →
+                        Demo ko&apos;rish →
                     </a>
                 </div>
             )
@@ -129,15 +139,15 @@ export default function PresentationPage() {
             content: (
                 <div className={styles.visionContent}>
                     <p className={styles.visionText}>
-                        <strong>O'zbekistonni raqamlashtirish</strong> — bizning asosiy maqsadimiz.
-                        Jismoniy narsalardan raqamli texnologiyalarga o'tish — bu kelajak.
+                        <strong>O&apos;zbekistonni raqamlashtirish</strong> — bizning asosiy maqsadimiz.
+                        Jismoniy narsalardan raqamli texnologiyalarga o&apos;tish — bu kelajak.
                     </p>
                     <div className={styles.comparisonGrid}>
                         <div className={styles.comparisonItem}>
                             <span className={styles.comparisonIcon}>📦</span>
                             <span className={styles.comparisonTitle}>Jismoniy</span>
                             <ul className={styles.comparisonList}>
-                                <li>❌ Nusxa ko'chirish mumkin</li>
+                                <li>❌ Nusxa ko&apos;chirish mumkin</li>
                                 <li>❌ Soxtalash oson</li>
                                 <li>❌ Buzilishi mumkin</li>
                             </ul>
@@ -146,7 +156,7 @@ export default function PresentationPage() {
                             <span className={styles.comparisonIcon}>💎</span>
                             <span className={styles.comparisonTitle}>Raqamli</span>
                             <ul className={styles.comparisonList}>
-                                <li>✅ Nusxa ko'chirib bo'lmaydi</li>
+                                <li>✅ Nusxa ko&apos;chirib bo&apos;lmaydi</li>
                                 <li>✅ Soxtalash imkonsiz</li>
                                 <li>✅ Abadiy saqlanadi</li>
                             </ul>
@@ -191,7 +201,7 @@ export default function PresentationPage() {
                         </div>
                         <div className={styles.calcRow}>
                             <span className={styles.calcLabel}>Partiyalar:</span>
-                            <span className={styles.calcValue}>25 × 4 = <strong>100 ta</strong> o'yinchoq</span>
+                            <span className={styles.calcValue}>25 × 4 = <strong>100 ta</strong> o&apos;yinchoq</span>
                         </div>
                         <div className={styles.calcDivider} />
                         <div className={styles.rarityBreakdown}>
@@ -212,10 +222,10 @@ export default function PresentationPage() {
 
                     <button
                         className={styles.showModelsBtn}
-                        onClick={() => goToSlide(currentSlide + 1)}
+                        onClick={() => goToSlide(currentSlide + 1, 10)}
                     >
                         <Eye size={18} />
-                        Modellarni ko'rish →
+                        Modellarni ko&apos;rish →
                     </button>
                 </div>
             )
@@ -271,7 +281,7 @@ export default function PresentationPage() {
                 <div className={styles.packagingFlow}>
                     <div className={styles.packagingItem}>
                         <TgsPlayer src="/models/midas_pepe.tgs" style={{ width: 100, height: 100 }} loop autoplay />
-                        <span>O'yinchoq</span>
+                        <span>O&apos;yinchoq</span>
                     </div>
                     <div className={styles.packagingArrow}>
                         <svg width="100" height="50" viewBox="0 0 100 50">
@@ -312,17 +322,8 @@ export default function PresentationPage() {
         }
     ];
 
-    const goToSlide = (index: number) => {
-        if (isAnimating || index === currentSlide) return;
-        if (index < 0 || index >= slides.length) return;
-
-        setIsAnimating(true);
-        setCurrentSlide(index);
-        setTimeout(() => setIsAnimating(false), 300);
-    };
-
-    const nextSlide = () => goToSlide(currentSlide + 1);
-    const prevSlide = () => goToSlide(currentSlide - 1);
+    const nextSlide = useCallback(() => goToSlide(currentSlide + 1, slides.length), [currentSlide, goToSlide, slides.length]);
+    const prevSlide = useCallback(() => goToSlide(currentSlide - 1, slides.length), [currentSlide, goToSlide, slides.length]);
 
     // Keyboard navigation
     useEffect(() => {
@@ -338,7 +339,7 @@ export default function PresentationPage() {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [currentSlide, isAnimating]);
+    }, [nextSlide, prevSlide]);
 
     const slide = slides[currentSlide];
 
@@ -378,7 +379,7 @@ export default function PresentationPage() {
                         <button
                             key={idx}
                             className={`${styles.dot} ${idx === currentSlide ? styles.activeDot : ''}`}
-                            onClick={() => goToSlide(idx)}
+                            onClick={() => goToSlide(idx, slides.length)}
                         />
                     ))}
                 </div>

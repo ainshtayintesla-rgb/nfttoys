@@ -2,7 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, Share2, Users, User } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
+import { IoShareSocial, IoPeople, IoPerson } from 'react-icons/io5';
 
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/context/LanguageContext';
@@ -148,7 +149,7 @@ export default function ReferralsPage() {
                 <section className={styles.heroCard}>
                     <div className={styles.heroTop}>
                         <div className={styles.heroBadge}>
-                            <Users size={18} />
+                            <IoPeople size={18} />
                             <span>{t('referrals_total') || 'Joined by your link'}</span>
                         </div>
                         <strong className={styles.totalValue}>{overview?.total ?? 0}</strong>
@@ -160,7 +161,7 @@ export default function ReferralsPage() {
                         onClick={handleShare}
                         disabled={!referralLink || isSharing || isLoading}
                     >
-                        <Share2 size={18} />
+                        <IoShareSocial size={18} />
                         <span>{t('referrals_share') || 'Share referral link'}</span>
                     </button>
                 </section>
@@ -205,7 +206,7 @@ export default function ReferralsPage() {
                                                 {user.photoUrl ? (
                                                     <img src={user.photoUrl} alt={displayName} />
                                                 ) : (
-                                                    <User size={16} />
+                                                    <IoPerson size={16} />
                                                 )}
                                             </div>
 

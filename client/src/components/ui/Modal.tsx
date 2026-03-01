@@ -15,7 +15,7 @@ export const Modal = ({ isOpen, onClose, title, children }: ModalProps) => {
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
-        setMounted(true);
+        queueMicrotask(() => setMounted(true));
         if (isOpen) {
             document.body.style.overflow = 'hidden';
         }

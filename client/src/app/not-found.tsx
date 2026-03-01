@@ -5,7 +5,7 @@ import Link from 'next/link';
 
 import { Navigation } from '@/components/layout/Navigation';
 import { Button } from '@/components/ui/Button';
-import { Home, Search } from 'lucide-react';
+import { IoHome, IoSearch } from 'react-icons/io5';
 import styles from './not-found.module.css';
 
 export default function NotFound() {
@@ -23,19 +23,19 @@ export default function NotFound() {
 
                     <h1 className={styles.title}>Page Not Found</h1>
                     <p className={styles.description}>
-                        Oops! The page you're looking for doesn't exist or has been moved.
+                        Oops! The page you&apos;re looking for doesn&apos;t exist or has been moved.
                     </p>
 
                     <div className={styles.actions}>
                         <Link href="/">
                             <Button variant="primary">
-                                <Home size={18} />
+                                <IoHome size={18} />
                                 Go Home
                             </Button>
                         </Link>
                         <Link href="/scan">
                             <Button variant="secondary">
-                                <Search size={18} />
+                                <IoSearch size={18} />
                                 Scan QR
                             </Button>
                         </Link>

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, ChevronDown, Sparkles, SunMoon } from 'lucide-react';
+import { X, ChevronDown } from 'lucide-react';
+import { IoSparkles, IoMoon } from 'react-icons/io5';
 import { useTelegram } from '@/lib/context/TelegramContext';
 import { useLanguage, Locale } from '@/lib/context/LanguageContext';
 import { useAnimations } from '@/lib/context/AnimationContext';
@@ -32,7 +33,7 @@ export const SettingsDrawer = ({ isOpen, onClose }: SettingsDrawerProps) => {
 
     useEffect(() => {
         if (isOpen) {
-            setVisible(true);
+            queueMicrotask(() => setVisible(true));
         }
     }, [isOpen]);
 
@@ -125,7 +126,7 @@ export const SettingsDrawer = ({ isOpen, onClose }: SettingsDrawerProps) => {
                     <div className={styles.toggleRow}>
                         <div className={styles.toggleLeft}>
                             <div className={styles.toggleIconBox}>
-                                <Sparkles size={18} />
+                                <IoSparkles size={18} />
                             </div>
                             <span className={styles.toggleLabel}>
                                 {t('enable_animations') || 'Enable animations'}
@@ -145,7 +146,7 @@ export const SettingsDrawer = ({ isOpen, onClose }: SettingsDrawerProps) => {
                     <div className={styles.toggleRow}>
                         <div className={styles.toggleLeft}>
                             <div className={`${styles.toggleIconBox} ${styles.themeIconBox}`}>
-                                <SunMoon size={18} />
+                                <IoMoon size={18} />
                             </div>
                             <span className={styles.toggleLabel}>
                                 {t('theme') || 'Theme'}: {lightThemeEnabled ? (t('light_mode') || 'Light mode') : (t('dark_mode') || 'Dark mode')}

@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useLanguage } from '@/lib/context/LanguageContext';
-import { ChevronDown, Globe } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import styles from './LanguageSelector.module.css';
 
 const LANGUAGES = [

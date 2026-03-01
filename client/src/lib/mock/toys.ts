@@ -1,4 +1,4 @@
-import { PEPE_MODELS, PepeModel } from '@/lib/data/pepe_models';
+import { PEPE_MODELS } from '@/lib/data/pepe_models';
 
 export interface Toy {
     id: string;

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Toy } from '@/lib/mock/toys';
 import styles from './ToyCard.module.css';
 import { useLanguage } from '@/lib/context/LanguageContext';
-import { Image as ImageIcon, Zap, Tag, CheckCircle2, Send } from 'lucide-react';
+import { IoImage, IoFlash, IoCheckmarkCircle, IoSend } from 'react-icons/io5';
 import { TgsPlayer } from '@/components/ui/TgsPlayer';
 
 interface ToyCardProps {
@@ -47,7 +47,7 @@ export const ToyCard = ({ toy, onBuy, onClick, onTransfer, isOwner = false, acti
                     </div>
                 ) : (
                     <div className={`${styles.imagePlaceholder} ${styles[toy.rarity]}`}>
-                        <ImageIcon size={48} strokeWidth={1} className={styles.placeholderIcon} />
+                        <IoImage size={48} className={styles.placeholderIcon} />
                     </div>
                 )}
             </div>
@@ -55,8 +55,10 @@ export const ToyCard = ({ toy, onBuy, onClick, onTransfer, isOwner = false, acti
             <div className={styles.content}>
                 <div className={styles.header}>
                     <h3 className={styles.name}>{toy.name}</h3>
+                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                     {(toy as any).serialNumber && (
                         <span className={styles.serialNumber}>
+                            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                             #{parseInt((toy as any).serialNumber.replace('#', ''), 10)}
                         </span>
                     )}
@@ -84,7 +86,7 @@ export const ToyCard = ({ toy, onBuy, onClick, onTransfer, isOwner = false, acti
                                 onTransfer?.(toy);
                             }}
                         >
-                            <Send size={14} />
+                            <IoSend size={14} />
                             {t('transfer') || 'Transfer'}
                         </Button>
                     ) : toy.status === 'available' ? (
@@ -96,12 +98,12 @@ export const ToyCard = ({ toy, onBuy, onClick, onTransfer, isOwner = false, acti
                                 onBuy?.(toy);
                             }}
                         >
-                            <Zap size={14} fill="currentColor" />
+                            <IoFlash size={14} />
                             {t('buy')}
                         </Button>
                     ) : (
                         <div className={styles.statusBadge}>
-                            <CheckCircle2 size={14} />
+                            <IoCheckmarkCircle size={14} />
                             <span>{t('activated')}</span>
                         </div>
                     )}

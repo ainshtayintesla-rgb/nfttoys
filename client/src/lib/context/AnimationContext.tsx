@@ -6,6 +6,7 @@ import { useTelegram } from './TelegramContext';
 const ANIMATION_STORAGE_KEY = 'animations_enabled';
 
 // Helper to check if CloudStorage is available (requires TG WebApp 6.9+)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const isCloudStorageAvailable = (webApp: any): boolean => {
     if (!webApp) return false;
     const version = parseFloat(webApp.version || '0');
@@ -43,11 +44,11 @@ export const AnimationProvider = ({ children }: { children: React.ReactNode }) =
                 });
             } else {
                 // No CloudStorage available (browser or old TG version), use default
-                setIsLoading(false);
+                queueMicrotask(() => setIsLoading(false));
             }
         } catch (error) {
             console.warn('CloudStorage not available:', error);
-            setIsLoading(false);
+            queueMicrotask(() => setIsLoading(false));
         }
     }, [webApp]);
 

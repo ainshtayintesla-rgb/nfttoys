@@ -7,7 +7,7 @@ interface AppLoaderProps {
     message?: string;
 }
 
-export const AppLoader = ({ message = 'Loading...' }: AppLoaderProps) => {
+export const AppLoader = (_props: AppLoaderProps) => {
     return (
         <div className={styles.container}>
             <div className={styles.content}>

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.22] - 2026-03-01
+
+### Changed
+- Replaced ~50 outline icons across 16 files with filled Ionicons 5 (`react-icons/io5`) for better visual consistency and action semantics.
+- Wallet action buttons now use semantically correct filled icons (`IoWallet`, `IoCash`, `IoQrCode`, `IoSend`).
+- Profile, settings, transactions, transfer modal, toy card, and navigation icons updated to filled variants.
+
+### Fixed
+- Production auto-update no longer kills the API server mid-update. Updates now run as a detached background process (`prod-update-runner.sh`).
+- Added build marker tracking (`last-built-commit.txt`) to detect incomplete builds after failed updates.
+- Admin panel correctly reports update progress phases (pulling, building, restarting, etc.) via status file polling.
+- Old Docker images, deploy backups (keeps last 2), and npm cache are now cleaned after each update to prevent disk bloat.
+
 ## [0.2.21] - 2026-03-01
 
 ### Added

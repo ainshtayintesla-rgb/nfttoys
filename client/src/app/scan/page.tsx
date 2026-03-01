@@ -7,7 +7,7 @@ import { Navigation } from '@/components/layout/Navigation';
 import { Button } from '@/components/ui/Button';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
-import { Scan, Camera } from 'lucide-react';
+import { IoScan, IoCamera } from 'react-icons/io5';
 import { QRScanner } from '@/components/features/QRScanner';
 import styles from './page.module.css';
 
@@ -212,7 +212,7 @@ export default function ScanPage() {
 
                         {useTelegramScanner && isScanning && (
                             <div className={styles.telegramScannerHint}>
-                                <Camera size={48} className={styles.scanIcon} />
+                                <IoCamera size={48} className={styles.scanIcon} />
                                 <p>{t('scanning') || 'Scanning...'}</p>
                             </div>
                         )}
@@ -226,7 +226,7 @@ export default function ScanPage() {
 
                         {!isScanning && (
                             <div className={styles.iconOverlay}>
-                                <Scan size={48} className={styles.scanIcon} strokeWidth={1} />
+                                <IoScan size={48} className={styles.scanIcon} />
                             </div>
                         )}
                     </div>
