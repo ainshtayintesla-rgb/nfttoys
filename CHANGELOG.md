@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.23] - 2026-03-01
+
+### Added
+- Added a new Admin tab for manual wallet balance top up by Telegram user ID, with debounced user lookup, quick amount presets, and a swipe confirmation drawer.
+- Added reusable UI component SwipeConfirmAction (client/src/components/ui/SwipeConfirmAction.tsx) for slider-style confirmation actions.
+- Added admin backend endpoints: GET /admin/users/lookup and POST /admin/wallet/topup.
+- Added locale strings for the new admin top up flow in en/ru/uz.
+
+### Changed
+- Admin page now uses extracted AdminCustomSelect and keeps the new top-up flow in dedicated BalanceTopupTab component to reduce page complexity.
+- Added typed client API methods: api.admin.lookupUserById and api.admin.topupUserWallet.
+
 ## [0.2.22] - 2026-03-01
 
 ### Changed

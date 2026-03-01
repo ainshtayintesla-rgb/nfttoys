@@ -8,11 +8,13 @@ import { Button } from '@/components/ui/Button';
 import { PEPE_MODELS } from '@/lib/data/pepe_models';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
-import { AlertTriangle, CheckCircle, ChevronDown, Clock, Database, Eye, QrCode, Shuffle, Sparkles, Trash2, UserX, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, Database, Eye, QrCode, Shuffle, Sparkles, Trash2, UserX, X } from 'lucide-react';
 import { TelegramBackButton } from '@/components/ui/TelegramBackButton';
 import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
 import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import { api } from '@/lib/api';
+import { BalanceTopupTab } from './components/BalanceTopupTab';
+import { AdminCustomSelect } from './components/AdminCustomSelect';
 import { AdminUpdatesTab } from './components/UpdatesTab';
 import styles from './page.module.css';
 
@@ -20,17 +22,8 @@ import styles from './page.module.css';
 const ADMIN_IDS = process.env.NEXT_PUBLIC_ADMIN_IDS?.split(',') || [];
 const MAX_BULK_GENERATION = 500;
 
-type AdminTab = 'nft' | 'db' | 'updates';
+type AdminTab = 'nft' | 'db' | 'topup' | 'updates';
 type DbActionType = 'purgeNfts' | 'purgeUsers';
-
-interface CustomSelectProps {
-    value: string;
-    options: { value: string; label: string }[];
-    onChange: (value: string) => void;
-    placeholder?: string;
-    disabled?: boolean;
-    error?: boolean;
-}
 
 interface QRCodeData {
     id: string;
@@ -63,54 +56,6 @@ interface DbActionConfig {
     confirmPhrase?: string;
     danger: boolean;
 }
-
-const CustomSelect = ({ value, options, onChange, placeholder, disabled, error }: CustomSelectProps) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const containerRef = React.useRef<HTMLDivElement>(null);
-
-    React.useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-            }
-        };
-
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
-    const selectedOption = options.find((opt) => opt.value === value);
-
-    return (
-        <div className={styles.selectContainer} ref={containerRef}>
-            <button
-                className={`${styles.selectTrigger} ${isOpen ? styles.active : ''} ${disabled ? styles.disabled : ''} ${error ? styles.inputError : ''}`}
-                onClick={() => !disabled && setIsOpen(!isOpen)}
-                disabled={disabled}
-            >
-                <span>{selectedOption ? selectedOption.label : placeholder}</span>
-                <ChevronDown size={16} className={`${styles.chevron} ${isOpen ? styles.rotate : ''}`} />
-            </button>
-
-            {isOpen && (
-                <div className={`${styles.selectDropdown} ${isOpen ? styles.open : ''}`}>
-                    {options.map((option) => (
-                        <button
-                            key={option.value}
-                            className={`${styles.selectOption} ${value === option.value ? styles.selected : ''}`}
-                            onClick={() => {
-                                onChange(option.value);
-                                setIsOpen(false);
-                            }}
-                        >
-                            {option.label}
-                        </button>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-};
 
 function getMaxSerialNumber(items: QRCodeData[]): number {
     return items.reduce((max, item) => {
@@ -514,6 +459,7 @@ export default function AdminPage() {
                     items={[
                         { key: 'nft', label: t('admin_tab_nft') },
                         { key: 'db', label: t('admin_tab_db') },
+                        { key: 'topup', label: t('admin_tab_topup') },
                         { key: 'updates', label: t('admin_tab_updates') },
                     ]}
                     activeKey={activeTab}
@@ -560,7 +506,7 @@ export default function AdminPage() {
                                 <div className={styles.formRow}>
                                     <div className={styles.field}>
                                         <label>{t('rarity')}</label>
-                                        <CustomSelect
+                                        <AdminCustomSelect
                                             value={selectedRarity}
                                             options={[
                                                 { value: '', label: t('all') },
@@ -580,7 +526,7 @@ export default function AdminPage() {
 
                                     <div className={styles.field}>
                                         <label>{t('model')}</label>
-                                        <CustomSelect
+                                        <AdminCustomSelect
                                             value={selectedModel}
                                             options={PEPE_MODELS
                                                 .filter((model) => !selectedRarity || model.rarity === selectedRarity)
@@ -858,6 +804,9 @@ export default function AdminPage() {
                             </div>
                         </div>
                     </div>
+                )}
+                {activeTab === 'topup' && (
+                    <BalanceTopupTab />
                 )}
 
                 {activeTab === 'updates' && (

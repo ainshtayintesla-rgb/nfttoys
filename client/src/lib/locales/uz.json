@@ -271,5 +271,22 @@
     "wallet_history_operation_withdraw": "Yechish",
     "wallet_history_operation_send": "Yuborish",
     "wallet_history_operation_receive": "Qabul qilish",
-    "wallet_history_status_completed": "Bajarildi"
+    "wallet_history_status_completed": "Bajarildi",
+    "admin_tab_topup": "Toldirish",
+    "admin_topup_confirm_title": "Toldirishni tasdiqlash",
+    "admin_topup_user": "Foydalanuvchi",
+    "admin_topup_wallet": "Hamyon",
+    "admin_topup_balance_current": "Joriy balans",
+    "admin_topup_balance_next": "Toldirgandan keyingi balans",
+    "admin_topup_invalid_state": "Avval foydalanuvchi va summani tanlang",
+    "admin_topup_title": "Balansni qolda toldirish",
+    "admin_topup_desc": "Foydalanuvchini Telegram ID orqali toping va UZS ni qolda qoshing.",
+    "admin_topup_user_id": "User ID",
+    "admin_topup_user_id_placeholder": "123456789",
+    "admin_topup_user_id_hint": "Telegram foydalanuvchi raqamli ID sini kiriting",
+    "admin_topup_searching": "Foydalanuvchi qidirilmoqda...",
+    "admin_topup_not_found": "Foydalanuvchi topilmadi",
+    "admin_topup_wallet_missing": "Foydalanuvchida hozircha hamyon yoq",
+    "admin_topup_confirm_desc": "Quyidagi malumotlarni tekshiring va swipe bilan tasdiqlang.",
+    "admin_topup_success": "Balans toldirildi"
 }

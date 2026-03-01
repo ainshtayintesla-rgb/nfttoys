@@ -79,6 +79,33 @@ export interface AdminUpdateStatusResponse {
     };
 }
 
+interface AdminLookupWalletSummary {
+    address: string;
+    friendlyAddress: string;
+    balance: number;
+    nftCount: number;
+    createdAt: string | null;
+}
+
+interface AdminLookupUserSummary {
+    id: string;
+    telegramId: string | null;
+    username: string | null;
+    firstName: string | null;
+    photoUrl: string | null;
+    wallet: AdminLookupWalletSummary | null;
+}
+
+interface AdminLookupUserResponse {
+    success: boolean;
+    user: AdminLookupUserSummary | null;
+}
+
+interface AdminTopupUserWalletResponse extends WalletMutationResponse {
+    user: AdminLookupUserSummary;
+}
+
+
 interface WalletSummary {
     address: string;
     friendlyAddress: string;
@@ -382,6 +409,20 @@ export const api = {
             apiFetch<AdminUpdateStatusResponse>('/admin/updates/settings', {
                 method: 'POST',
                 body: JSON.stringify(data),
+            }),
+
+        lookupUserById: (userId: string) => {
+            const query = new URLSearchParams({ userId });
+            return apiFetch<AdminLookupUserResponse>('/admin/users/lookup?' + query.toString());
+        },
+
+        topupUserWallet: (data: { userId: string; amount: number }) =>
+            apiFetch<AdminTopupUserWalletResponse>('/admin/wallet/topup', {
+                method: 'POST',
+                body: JSON.stringify({
+                    userId: data.userId,
+                    amount: data.amount,
+                }),
             }),
     },
 
