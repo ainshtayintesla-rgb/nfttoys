@@ -1,0 +1,239 @@
+.item {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--surface-alpha-05);
+    border-radius: var(--radius-lg);
+    background: var(--bg-secondary);
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+}
+
+.item:hover {
+    background: var(--surface-alpha-03);
+}
+
+.item:active {
+    transform: scale(0.99);
+}
+
+.itemDisabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.left {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.iconWrap {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+}
+
+.content {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.label {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.subtitle {
+    font-size: 12px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.right {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-shrink: 0;
+}
+
+.arrow {
+    color: var(--text-secondary);
+    opacity: 0.5;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.item:hover .arrow {
+    opacity: 1;
+    transform: translateX(2px);
+}
+
+.arrowExpanded {
+    transform: rotate(90deg);
+}
+
+.controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.afterControl {
+    display: inline-flex;
+    align-items: center;
+}
+
+.toggle {
+    width: 52px;
+    height: 28px;
+    border-radius: 14px;
+    background: var(--surface-alpha-15);
+    border: none;
+    padding: 2px;
+    cursor: pointer;
+    transition: background 0.2s ease, opacity 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+}
+
+.toggleOn {
+    background: var(--accent-color);
+}
+
+.toggleDisabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.toggleThumb {
+    width: 24px;
+    height: 24px;
+    border-radius: 12px;
+    background: var(--accent-text);
+    box-shadow: 0 2px 4px var(--surface-alpha-20);
+    transition: transform 0.2s ease;
+}
+
+.toggleOn .toggleThumb {
+    transform: translateX(24px);
+}
+
+.selectWrap {
+    position: relative;
+}
+
+.selectButton {
+    min-width: 164px;
+    max-width: min(56vw, 240px);
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--surface-alpha-10);
+    border-radius: 999px;
+    background: var(--surface-alpha-05);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.selectButton:hover {
+    background: var(--surface-alpha-08);
+    border-color: var(--surface-alpha-15);
+}
+
+.selectValue {
+    flex: 1;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
+    font-size: 14px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chevron {
+    color: var(--text-secondary);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+}
+
+.chevronOpen {
+    transform: rotate(180deg);
+}
+
+.dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 200px;
+    max-width: min(78vw, 280px);
+    padding: 6px;
+    border: 1px solid var(--surface-alpha-10);
+    border-radius: 12px;
+    background: var(--bg-secondary);
+    box-shadow: 0 10px 40px var(--overlay-soft, var(--ink-alpha-40));
+    z-index: 50;
+    animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.dropdownItem {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s ease;
+}
+
+.dropdownItem:hover {
+    background: var(--surface-alpha-08);
+}
+
+.dropdownItemActive {
+    background: rgba(59, 130, 246, 0.15);
+    color: #3b82f6;
+}

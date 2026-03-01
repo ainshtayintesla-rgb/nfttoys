@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.20] - 2026-03-01
+
+### Added
+- Added reusable `SettingActionItem` UI component (`client/src/components/ui/SettingActionItem.tsx`) with three modes: `toggle`, `disclosure`, and `select`.
+
+### Changed
+- Settings rows now use a unified profile-like button style with consistent icon shells and spacing instead of the previous flat line layout.
+- Language selector in Settings now uses the shared `select` row pattern (icon + value + dropdown) matching the same visual style as other settings actions.
+- Notifications rows in Settings now use the shared setting action component, while preserving existing notification permission and toggle logic.
+
 ## [0.2.19] - 2026-03-01
 
 ### Added

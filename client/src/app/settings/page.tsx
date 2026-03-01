@@ -2,7 +2,9 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bell, ChevronDown, Sparkles, SunMoon } from 'lucide-react';
+import { Bell, ChevronDown, Languages, Sparkles, SunMoon } from 'lucide-react';
+
+import { SettingActionItem } from '@/components/ui/SettingActionItem';
 import { useTelegram } from '@/lib/context/TelegramContext';
 import { useLanguage, Locale } from '@/lib/context/LanguageContext';
 import { useAnimations } from '@/lib/context/AnimationContext';
@@ -147,104 +149,74 @@ export default function SettingsPage() {
                 </header>
 
                 <div className={styles.settingsList}>
-                    <div className={styles.settingRow}>
-                        <span className={styles.settingName}>{t('language') || 'Language'}</span>
-                        <div className={styles.selectWrapper}>
-                            <button
-                                className={styles.select}
-                                onClick={() => {
-                                    haptic.impact('light');
-                                    setLangDropdownOpen(!langDropdownOpen);
-                                }}
-                            >
+                    <SettingActionItem
+                        mode="select"
+                        icon={<Languages size={22} color="white" />}
+                        iconBackground="linear-gradient(135deg, #3b82f6, #2563eb)"
+                        label={t('language') || 'Language'}
+                        value={(
+                            <>
                                 <span className={styles.flag}>{currentLang.flag}</span>
-                                <span className={styles.selectValue}>{currentLang.name}</span>
-                                <ChevronDown
-                                    size={18}
-                                    className={`${styles.chevron} ${langDropdownOpen ? styles.rotated : ''}`}
-                                />
-                            </button>
+                                <span>{currentLang.name}</span>
+                            </>
+                        )}
+                        open={langDropdownOpen}
+                        onToggleOpen={() => {
+                            haptic.impact('light');
+                            setLangDropdownOpen((prev) => !prev);
+                        }}
+                        options={languages.map((lang) => ({
+                            key: lang.code,
+                            active: locale === lang.code,
+                            onSelect: () => handleLanguageChange(lang.code),
+                            label: (
+                                <>
+                                    <span className={styles.flag}>{lang.flag}</span>
+                                    <span>{lang.name}</span>
+                                </>
+                            ),
+                        }))}
+                    />
 
-                            {langDropdownOpen && (
-                                <div className={styles.dropdown}>
-                                    {languages.map((lang) => (
-                                        <button
-                                            key={lang.code}
-                                            className={`${styles.dropdownItem} ${locale === lang.code ? styles.active : ''}`}
-                                            onClick={() => handleLanguageChange(lang.code)}
-                                        >
-                                            <span className={styles.flag}>{lang.flag}</span>
-                                            <span>{lang.name}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                    <SettingActionItem
+                        mode="toggle"
+                        icon={<Sparkles size={22} color="white" />}
+                        iconBackground="linear-gradient(135deg, #f59e0b, #f97316)"
+                        label={t('enable_animations') || 'Enable animations'}
+                        checked={animationsEnabled}
+                        onCheckedChange={() => {
+                            void toggleAnimations();
+                        }}
+                        ariaLabel={t('enable_animations') || 'Enable animations'}
+                    />
 
-                    <div className={styles.rowDivider}></div>
+                    <SettingActionItem
+                        mode="toggle"
+                        icon={<SunMoon size={22} color="white" />}
+                        iconBackground="linear-gradient(135deg, #6366f1, #3b82f6)"
+                        label={t('dark_mode') || 'Dark mode'}
+                        checked={darkModeEnabled}
+                        onCheckedChange={() => {
+                            void toggleDarkMode();
+                        }}
+                        ariaLabel={t('dark_mode') || 'Dark mode'}
+                    />
 
-                    <div className={styles.settingRow}>
-                        <div className={styles.toggleLeft}>
-                            <div className={styles.toggleIconBox}>
-                                <Sparkles size={18} />
-                            </div>
-                            <span className={styles.toggleLabel}>
-                                {t('enable_animations') || 'Enable animations'}
-                            </span>
-                        </div>
-                        <button
-                            className={`${styles.toggle} ${animationsEnabled ? styles.toggleOn : ''}`}
-                            onClick={toggleAnimations}
-                            aria-label={t('enable_animations') || 'Enable animations'}
-                        >
-                            <div className={styles.toggleThumb}></div>
-                        </button>
-                    </div>
-
-                    <div className={styles.rowDivider}></div>
-
-                    <div className={styles.settingRow}>
-                        <div className={styles.toggleLeft}>
-                            <div className={`${styles.toggleIconBox} ${styles.themeIconBox}`}>
-                                <SunMoon size={18} />
-                            </div>
-                            <span className={styles.toggleLabel}>
-                                {t('dark_mode') || 'Dark mode'}
-                            </span>
-                        </div>
-                        <button
-                            className={`${styles.toggle} ${darkModeEnabled ? styles.toggleOn : ''}`}
-                            onClick={toggleDarkMode}
-                            aria-label={t('dark_mode') || 'Dark mode'}
-                        >
-                            <div className={styles.toggleThumb}></div>
-                        </button>
-                    </div>
-
-                    <div className={styles.rowDivider}></div>
-
-                    <div className={styles.settingRow}>
-                        <div className={styles.toggleLeft}>
-                            <div className={`${styles.toggleIconBox} ${styles.notificationsIconBox}`}>
-                                <Bell size={18} />
-                            </div>
-                            <span className={styles.toggleLabel}>
-                                {t('notifications_all') || 'All notifications'}
-                            </span>
-                        </div>
-
-                        <div className={styles.notificationControls}>
+                    <SettingActionItem
+                        mode="toggle"
+                        icon={<Bell size={22} color="white" />}
+                        iconBackground="linear-gradient(135deg, #22c55e, #16a34a)"
+                        label={t('notifications_all') || 'All notifications'}
+                        checked={notificationsEnabled}
+                        onCheckedChange={() => {
+                            void toggleAllNotifications();
+                        }}
+                        ariaLabel={t('notifications_all') || 'All notifications'}
+                        disabled={notificationsLoading || notificationsSaving}
+                        controlMuted={!canManageNotifications}
+                        afterControl={(
                             <button
-                                className={`${styles.toggle} ${notificationsEnabled ? styles.toggleOn : ''} ${(notificationsLoading || notificationsSaving || !canManageNotifications) ? styles.toggleDisabled : ''}`}
-                                onClick={toggleAllNotifications}
-                                disabled={notificationsLoading || notificationsSaving}
-                                aria-label={t('notifications_all') || 'All notifications'}
-                            >
-                                <div className={styles.toggleThumb}></div>
-                            </button>
-
-                            <button
+                                type="button"
                                 className={`${styles.expandButton} ${notificationsExpanded ? styles.expanded : ''}`}
                                 onClick={() => {
                                     haptic.selection();
@@ -254,8 +226,8 @@ export default function SettingsPage() {
                             >
                                 <ChevronDown size={18} />
                             </button>
-                        </div>
-                    </div>
+                        )}
+                    />
 
                     {notificationsExpanded && (
                         <div className={styles.notificationBody}>
@@ -273,6 +245,7 @@ export default function SettingsPage() {
 
                                     <div className={styles.permissionActions}>
                                         <button
+                                            type="button"
                                             className={styles.permissionPrimary}
                                             onClick={handleRequestWriteAccess}
                                             disabled={isRequestingAccess}
@@ -283,6 +256,7 @@ export default function SettingsPage() {
                                         </button>
 
                                         <button
+                                            type="button"
                                             className={styles.permissionGhost}
                                             onClick={handleOpenBot}
                                         >
@@ -293,24 +267,18 @@ export default function SettingsPage() {
                             )}
 
                             {!notificationsLoading && canManageNotifications && (
-                                <div className={`${styles.settingRow} ${styles.subToggleRow}`}>
-                                    <div className={styles.toggleLeft}>
-                                        <div className={`${styles.toggleIconBox} ${styles.subNotificationIconBox}`}>
-                                            <Bell size={16} />
-                                        </div>
-                                        <span className={styles.toggleLabel}>
-                                            {t('notifications_nft_received') || 'NFT received'}
-                                        </span>
-                                    </div>
-                                    <button
-                                        className={`${styles.toggle} ${nftReceivedEnabled ? styles.toggleOn : ''} ${!notificationsEnabled ? styles.toggleDisabled : ''}`}
-                                        onClick={toggleNftNotifications}
-                                        disabled={!notificationsEnabled || notificationsSaving}
-                                        aria-label={t('notifications_nft_received') || 'NFT received'}
-                                    >
-                                        <div className={styles.toggleThumb}></div>
-                                    </button>
-                                </div>
+                                <SettingActionItem
+                                    mode="toggle"
+                                    icon={<Bell size={22} color="white" />}
+                                    iconBackground="linear-gradient(135deg, #0ea5e9, #0284c7)"
+                                    label={t('notifications_nft_received') || 'NFT received'}
+                                    checked={nftReceivedEnabled}
+                                    onCheckedChange={() => {
+                                        void toggleNftNotifications();
+                                    }}
+                                    ariaLabel={t('notifications_nft_received') || 'NFT received'}
+                                    disabled={!notificationsEnabled || notificationsSaving}
+                                />
                             )}
 
                             {notificationsError && (
