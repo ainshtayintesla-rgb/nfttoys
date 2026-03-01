@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowRight, Check, Loader2, X } from 'lucide-react';
+import { ArrowRight, Loader2 } from 'lucide-react';
 
 import styles from './SwipeConfirmAction.module.css';
 
@@ -9,14 +9,12 @@ const SWIPE_TRACK_HORIZONTAL_PADDING = 6;
 const SWIPE_HANDLE_SIZE = 44;
 const SWIPE_COMPLETE_THRESHOLD = 0.92;
 
-type SwipeResult = 'success' | 'error' | null;
-
 interface SwipeConfirmActionProps {
     label: string;
-    onConfirm: () => Promise<boolean> | boolean;
+    onConfirm: () => void | Promise<void>;
     disabled?: boolean;
     loading?: boolean;
-    resetKey?: string | number;
+    resetKey?: string | number | null;
     className?: string;
 }
 
@@ -24,45 +22,44 @@ function cx(...parts: Array<string | false | null | undefined>): string {
     return parts.filter(Boolean).join(' ');
 }
 
-export const SwipeConfirmAction = ({
+export function SwipeConfirmAction({
     label,
     onConfirm,
     disabled = false,
     loading = false,
     resetKey,
     className,
-}: SwipeConfirmActionProps) => {
+}: SwipeConfirmActionProps) {
     const trackRef = useRef<HTMLDivElement | null>(null);
     const pointerIdRef = useRef<number | null>(null);
-    const pointerStartXRef = useRef(0);
-    const pointerStartOffsetRef = useRef(0);
+    const startXRef = useRef(0);
+    const startOffsetRef = useRef(0);
 
     const [offset, setOffset] = useState(0);
     const [maxOffset, setMaxOffset] = useState(0);
     const [isSwiping, setIsSwiping] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [result, setResult] = useState<SwipeResult>(null);
+    const [isTriggering, setIsTriggering] = useState(false);
 
-    const isBusy = loading || isSubmitting;
-
-    const recalculateBounds = useCallback(() => {
+    const recalculateSwipeBounds = useCallback(() => {
         const trackElement = trackRef.current;
-
         if (!trackElement) {
+            setMaxOffset(0);
             return;
         }
 
-        const trackWidth = trackElement.getBoundingClientRect().width;
-        const nextMaxOffset = Math.max(0, trackWidth - SWIPE_HANDLE_SIZE - (SWIPE_TRACK_HORIZONTAL_PADDING * 2));
+        const nextMaxOffset = Math.max(
+            0,
+            trackElement.clientWidth - (SWIPE_TRACK_HORIZONTAL_PADDING * 2) - SWIPE_HANDLE_SIZE,
+        );
 
         setMaxOffset(nextMaxOffset);
         setOffset((current) => Math.min(current, nextMaxOffset));
     }, []);
 
     useEffect(() => {
-        const frameId = window.requestAnimationFrame(recalculateBounds);
+        const frameId = window.requestAnimationFrame(recalculateSwipeBounds);
         const handleResize = () => {
-            recalculateBounds();
+            recalculateSwipeBounds();
         };
 
         window.addEventListener('resize', handleResize);
@@ -71,61 +68,47 @@ export const SwipeConfirmAction = ({
             window.cancelAnimationFrame(frameId);
             window.removeEventListener('resize', handleResize);
         };
-    }, [recalculateBounds]);
+    }, [recalculateSwipeBounds]);
 
     useEffect(() => {
         pointerIdRef.current = null;
-        pointerStartXRef.current = 0;
-        pointerStartOffsetRef.current = 0;
         setOffset(0);
         setIsSwiping(false);
-        setResult(null);
     }, [resetKey]);
 
-    const runConfirm = useCallback(async () => {
-        setIsSubmitting(true);
-        setResult(null);
-
-        try {
-            const success = await onConfirm();
-
-            if (success) {
-                setResult('success');
-                setOffset(maxOffset);
-                return;
-            }
-
-            setResult('error');
-            setOffset(0);
-        } catch {
-            setResult('error');
-            setOffset(0);
-        } finally {
-            setIsSubmitting(false);
+    const resetPointerState = (target?: EventTarget | null, pointerId?: number) => {
+        if (
+            target
+            && typeof pointerId === 'number'
+            && target instanceof Element
+            && target.hasPointerCapture(pointerId)
+        ) {
+            target.releasePointerCapture(pointerId);
         }
-    }, [maxOffset, onConfirm]);
+
+        pointerIdRef.current = null;
+        setIsSwiping(false);
+    };
 
     const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-        if (disabled || isBusy || maxOffset <= 0) {
+        if (disabled || loading || isTriggering || maxOffset <= 0) {
             return;
         }
 
         pointerIdRef.current = event.pointerId;
-        pointerStartXRef.current = event.clientX;
-        pointerStartOffsetRef.current = offset;
+        startXRef.current = event.clientX;
+        startOffsetRef.current = offset;
         setIsSwiping(true);
-        setResult(null);
-
         event.currentTarget.setPointerCapture(event.pointerId);
     };
 
     const handlePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
-        if (pointerIdRef.current !== event.pointerId || isBusy) {
+        if (pointerIdRef.current !== event.pointerId || disabled || loading || isTriggering) {
             return;
         }
 
-        const deltaX = event.clientX - pointerStartXRef.current;
-        const nextOffset = Math.min(maxOffset, Math.max(0, pointerStartOffsetRef.current + deltaX));
+        const deltaX = event.clientX - startXRef.current;
+        const nextOffset = Math.min(maxOffset, Math.max(0, startOffsetRef.current + deltaX));
         setOffset(nextOffset);
     };
 
@@ -134,29 +117,28 @@ export const SwipeConfirmAction = ({
             return;
         }
 
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-            event.currentTarget.releasePointerCapture(event.pointerId);
-        }
+        resetPointerState(event.currentTarget, event.pointerId);
 
-        pointerIdRef.current = null;
-        pointerStartXRef.current = 0;
-        pointerStartOffsetRef.current = 0;
-        setIsSwiping(false);
-
-        if (disabled || isBusy) {
+        if (disabled || loading || isTriggering) {
             setOffset(0);
             return;
         }
 
         const reachedEnd = maxOffset > 0 && offset >= (maxOffset * SWIPE_COMPLETE_THRESHOLD);
-
         if (!reachedEnd) {
             setOffset(0);
             return;
         }
 
         setOffset(maxOffset);
-        await runConfirm();
+        setIsTriggering(true);
+
+        try {
+            await onConfirm();
+        } finally {
+            setIsTriggering(false);
+            setOffset(0);
+        }
     };
 
     const handlePointerCancel = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -164,59 +146,36 @@ export const SwipeConfirmAction = ({
             return;
         }
 
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-            event.currentTarget.releasePointerCapture(event.pointerId);
-        }
-
-        pointerIdRef.current = null;
-        pointerStartXRef.current = 0;
-        pointerStartOffsetRef.current = 0;
-        setIsSwiping(false);
-
-        if (!isBusy) {
-            setOffset(0);
-        }
+        resetPointerState(event.currentTarget, event.pointerId);
+        setOffset(0);
     };
 
     return (
-        <div className={cx(styles.swipeConfirm, className)}>
-            <div className={styles.swipeTrack} ref={trackRef}>
+        <div className={cx(styles.root, className)}>
+            <div className={styles.track} ref={trackRef}>
                 <div
-                    className={styles.swipeFill}
+                    className={styles.fill}
                     style={{ width: `${SWIPE_HANDLE_SIZE + offset + (SWIPE_TRACK_HORIZONTAL_PADDING * 2)}px` }}
                 />
-                <span className={styles.swipeLabel}>{label}</span>
+                <span className={styles.label}>{label}</span>
                 <button
                     type="button"
-                    className={cx(styles.swipeHandle, isSwiping && styles.swipeHandleActive)}
+                    className={cx(styles.handle, isSwiping && styles.handleActive)}
                     style={{ transform: `translateX(${offset}px)` }}
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
                     onPointerUp={finalizeSwipe}
                     onPointerCancel={handlePointerCancel}
-                    disabled={disabled || isBusy}
+                    disabled={disabled || loading || isTriggering || maxOffset <= 0}
                     aria-label={label}
                 >
-                    {isBusy ? (
-                        <Loader2 size={20} className={styles.swipeSpinner} />
+                    {loading ? (
+                        <Loader2 size={20} className={styles.spinner} />
                     ) : (
                         <ArrowRight size={20} />
                     )}
                 </button>
             </div>
-
-            {result && (
-                <div className={styles.swipeResultRow}>
-                    <span
-                        className={cx(
-                            styles.swipeResultIcon,
-                            result === 'success' ? styles.swipeResultSuccess : styles.swipeResultError,
-                        )}
-                    >
-                        {result === 'success' ? <Check size={12} /> : <X size={12} strokeWidth={3} />}
-                    </span>
-                </div>
-            )}
         </div>
     );
-};
+}

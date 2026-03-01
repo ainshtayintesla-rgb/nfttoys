@@ -10,7 +10,6 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost
 /**
  * Make API request
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function apiFetch<T = any>(
     endpoint: string,
     options: RequestInit = {}
@@ -79,32 +78,29 @@ export interface AdminUpdateStatusResponse {
     };
 }
 
-interface AdminLookupWalletSummary {
-    address: string;
-    friendlyAddress: string;
-    balance: number;
-    nftCount: number;
-    createdAt: string | null;
-}
-
-interface AdminLookupUserSummary {
+export interface AdminWalletLookupUser {
     id: string;
-    telegramId: string | null;
     username: string | null;
     firstName: string | null;
     photoUrl: string | null;
-    wallet: AdminLookupWalletSummary | null;
 }
 
-interface AdminLookupUserResponse {
+export interface AdminWalletLookupTarget {
+    walletAddress: string;
+    walletFriendly: string;
+    user: AdminWalletLookupUser | null;
+}
+
+interface AdminWalletLookupResponse {
     success: boolean;
-    user: AdminLookupUserSummary | null;
+    target: AdminWalletLookupTarget | null;
 }
 
-interface AdminTopupUserWalletResponse extends WalletMutationResponse {
-    user: AdminLookupUserSummary;
+interface AdminWalletTopupResponse {
+    success: boolean;
+    target: AdminWalletLookupTarget;
+    operation: WalletOperationItem;
 }
-
 
 interface WalletSummary {
     address: string;
@@ -411,18 +407,21 @@ export const api = {
                 body: JSON.stringify(data),
             }),
 
-        lookupUserById: (userId: string) => {
-            const query = new URLSearchParams({ userId });
-            return apiFetch<AdminLookupUserResponse>('/admin/users/lookup?' + query.toString());
+        lookupWalletRecipient: (params: { username?: string; wallet?: string }) => {
+            const query = new URLSearchParams();
+            if (params.username) query.set('username', params.username);
+            if (params.wallet) query.set('wallet', params.wallet);
+            const queryString = query.toString();
+
+            return apiFetch<AdminWalletLookupResponse>(
+                `/admin/wallet/recipient/search${queryString ? `?${queryString}` : ''}`,
+            );
         },
 
-        topupUserWallet: (data: { userId: string; amount: number }) =>
-            apiFetch<AdminTopupUserWalletResponse>('/admin/wallet/topup', {
+        topupWallet: (data: { amount: number; wallet: string }) =>
+            apiFetch<AdminWalletTopupResponse>('/admin/wallet/topup', {
                 method: 'POST',
-                body: JSON.stringify({
-                    userId: data.userId,
-                    amount: data.amount,
-                }),
+                body: JSON.stringify(data),
             }),
     },
 

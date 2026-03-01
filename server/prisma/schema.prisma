@@ -52,7 +52,7 @@ model Wallet {
 model WalletTransaction {
   id            String   @id @default(cuid())
   walletAddress String
-  userId        String
+  userId        String?
   type          String
   amount        Int
   currency      String   @default("UZS")
@@ -66,7 +66,7 @@ model WalletTransaction {
   feeCurrency   String?
   createdAt     DateTime @default(now())
   wallet        Wallet   @relation(fields: [walletAddress], references: [address], onDelete: Cascade, onUpdate: Cascade)
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([userId, createdAt])
   @@index([walletAddress, createdAt])

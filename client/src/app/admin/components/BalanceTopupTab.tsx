@@ -1,46 +1,53 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Search, UserRound, Wallet } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, UserRound, Wallet } from 'lucide-react';
 
 import { BottomDrawer } from '@/components/ui/BottomDrawer';
 import { Button } from '@/components/ui/Button';
 import { DetailsTable } from '@/components/ui/DetailsTable';
+import { RecipientLookupField, type RecipientLookupType } from '@/components/ui/RecipientLookupField';
 import { SwipeConfirmAction } from '@/components/ui/SwipeConfirmAction';
-import { api } from '@/lib/api';
+import { api, type AdminWalletLookupTarget } from '@/lib/api';
 import { useLanguage } from '@/lib/context/LanguageContext';
+import { useTelegram } from '@/lib/context/TelegramContext';
+import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 
 import styles from './BalanceTopupTab.module.css';
 
-const LOOKUP_DEBOUNCE_MS = 380;
-const MAX_AMOUNT_INPUT_DIGITS = 11;
-const MAX_USER_ID_INPUT_DIGITS = 20;
-const QUICK_AMOUNTS = [1000, 5000, 10000, 50000, 100000];
+const TELEGRAM_USERNAME_MAX_LENGTH = 32;
+const WALLET_FRIENDLY_BODY_LENGTH = 12;
+const LOOKUP_DEBOUNCE_MS = 320;
+const MAX_AMOUNT_INPUT_DIGITS = 10;
+const QUICK_AMOUNTS = [1000, 5000, 10_000, 50_000, 100_000] as const;
 
-interface LookupWalletSummary {
-    address: string;
-    friendlyAddress: string;
-    balance: number;
-    nftCount: number;
-    createdAt: string | null;
+interface ConfirmTopupPayload {
+    amount: number;
+    sourceType: RecipientLookupType;
+    target: AdminWalletLookupTarget;
 }
 
-interface LookupUser {
-    id: string;
-    telegramId: string | null;
-    username: string | null;
-    firstName: string | null;
-    photoUrl: string | null;
-    wallet: LookupWalletSummary | null;
+function sanitizeUsernameInput(value: string): string {
+    return value
+        .trim()
+        .replace(/^@+/, '')
+        .replace(/[^a-zA-Z0-9_]/g, '')
+        .slice(0, TELEGRAM_USERNAME_MAX_LENGTH);
 }
 
-function formatIntegerWithSpaces(value: number): string {
-    return String(Math.max(0, Math.trunc(value))).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+function sanitizeFriendlyBody(value: string): string {
+    return value
+        .trim()
+        .replace(/^LV-/i, '')
+        .replace(/^UZ-/i, '')
+        .replace(/[^a-zA-Z0-9_]/g, '')
+        .toUpperCase()
+        .slice(0, WALLET_FRIENDLY_BODY_LENGTH);
 }
 
 function normalizeAmountDigits(value: string): string {
-    const digits = value.replace(/[^0-9]/g, '').slice(0, MAX_AMOUNT_INPUT_DIGITS);
-    return digits.replace(/^0+(?=\d)/, '');
+    const digitsOnly = value.replace(/[^0-9]/g, '').slice(0, MAX_AMOUNT_INPUT_DIGITS);
+    return digitsOnly.replace(/^0+(?=\d)/, '');
 }
 
 function formatAmountInput(value: string): string {
@@ -52,115 +59,156 @@ function formatAmountInput(value: string): string {
     return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 }
 
-function parseAmountInput(value: string): number | null {
-    const digits = normalizeAmountDigits(value);
-    if (!digits) {
-        return null;
-    }
-
-    const parsed = Number.parseInt(digits, 10);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-        return null;
-    }
-
-    return parsed;
+function formatAmountValue(value: number): string {
+    return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 }
 
-function sanitizeTelegramIdInput(value: string): string {
-    return value.replace(/[^0-9]/g, '').slice(0, MAX_USER_ID_INPUT_DIGITS);
-}
-
-function getDisplayName(user: LookupUser): string {
-    if (user.username) {
-        return `@${user.username}`;
+function safeErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) {
+        return error.message;
     }
 
-    if (user.firstName) {
-        return user.firstName;
-    }
-
-    return user.id;
+    return '';
 }
 
-function getTelegramNumericId(user: LookupUser): string {
-    if (user.telegramId) {
-        return user.telegramId;
+function resolveTargetDisplayName(target: AdminWalletLookupTarget | null, fallback: string): string {
+    if (!target?.user) {
+        return fallback;
     }
 
-    return user.id.replace(/^telegram_/i, '');
+    const username = sanitizeUsernameInput(target.user.username || '');
+    if (username) {
+        return `@${username}`;
+    }
+
+    const firstName = (target.user.firstName || '').trim();
+    if (firstName) {
+        return firstName;
+    }
+
+    return fallback;
 }
 
-export const BalanceTopupTab = () => {
+export function BalanceTopupTab() {
     const { t } = useLanguage();
+    const { haptic } = useTelegram();
 
-    const [userIdInput, setUserIdInput] = useState('');
-    const [targetUser, setTargetUser] = useState<LookupUser | null>(null);
-    const [lookupError, setLookupError] = useState('');
-    const [isLookupLoading, setIsLookupLoading] = useState(false);
+    const [recipientType, setRecipientType] = useState<RecipientLookupType>('username');
+    const [usernameInput, setUsernameInput] = useState('');
+    const [walletBodyInput, setWalletBodyInput] = useState('');
+
+    const [usernameTarget, setUsernameTarget] = useState<AdminWalletLookupTarget | null>(null);
+    const [walletTarget, setWalletTarget] = useState<AdminWalletLookupTarget | null>(null);
+    const [isUsernameLookupLoading, setIsUsernameLookupLoading] = useState(false);
+    const [isWalletLookupLoading, setIsWalletLookupLoading] = useState(false);
 
     const [amountInput, setAmountInput] = useState('');
     const [selectedQuickAmount, setSelectedQuickAmount] = useState<number | null>(null);
-    const [actionError, setActionError] = useState('');
-    const [successMessage, setSuccessMessage] = useState('');
+
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
 
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-    const [confirmResetKey, setConfirmResetKey] = useState(0);
+    const [confirmPayload, setConfirmPayload] = useState<ConfirmTopupPayload | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const lookupSeqRef = useRef(0);
+    const usernameLookupSeqRef = useRef(0);
+    const walletLookupSeqRef = useRef(0);
 
-    const parsedAmount = useMemo(() => parseAmountInput(amountInput), [amountInput]);
-    const hasWallet = Boolean(targetUser?.wallet);
-    const canContinue = Boolean(targetUser && hasWallet && parsedAmount && parsedAmount > 0);
+    useBodyScrollLock(isConfirmOpen);
 
-    const currentBalance = targetUser?.wallet?.balance || 0;
-    const nextBalance = currentBalance + (parsedAmount || 0);
+    const normalizedUsername = useMemo(() => sanitizeUsernameInput(usernameInput), [usernameInput]);
+    const normalizedWalletBody = useMemo(() => sanitizeFriendlyBody(walletBodyInput), [walletBodyInput]);
+    const normalizedWalletFriendly = useMemo(() => (
+        normalizedWalletBody ? `LV-${normalizedWalletBody}` : ''
+    ), [normalizedWalletBody]);
+
+    const parsedAmount = useMemo(() => {
+        const normalized = normalizeAmountDigits(amountInput);
+        if (!normalized) {
+            return null;
+        }
+
+        const parsed = Number.parseInt(normalized, 10);
+        if (!Number.isInteger(parsed) || parsed <= 0) {
+            return null;
+        }
+
+        return parsed;
+    }, [amountInput]);
+
+    const lookupTarget = useCallback(async (params: { username?: string; wallet?: string }) => {
+        const response = await api.admin.lookupWalletRecipient(params);
+        return response?.target || null;
+    }, []);
+
+    const resolvedLookupUsername = useMemo(
+        () => sanitizeUsernameInput(usernameTarget?.user?.username || ''),
+        [usernameTarget?.user?.username],
+    );
+
+    const hasExactUsernameMatch = useMemo(() => {
+        if (!normalizedUsername || !resolvedLookupUsername) {
+            return false;
+        }
+
+        return normalizedUsername.toLowerCase() === resolvedLookupUsername.toLowerCase();
+    }, [normalizedUsername, resolvedLookupUsername]);
+
+    const suggestedWallet = useMemo(() => {
+        if (!hasExactUsernameMatch) {
+            return '';
+        }
+
+        const source = sanitizeFriendlyBody(usernameTarget?.walletFriendly || '');
+        if (!source) {
+            return '';
+        }
+
+        return `LV-${source}`;
+    }, [hasExactUsernameMatch, usernameTarget?.walletFriendly]);
+
+    const usernameDisplayName = useMemo(() => (
+        resolveTargetDisplayName(usernameTarget, t('wallet_send_to_label') || 'Recipient')
+    ), [t, usernameTarget]);
 
     useEffect(() => {
-        const trimmed = userIdInput.trim();
-
-        if (!trimmed) {
-            setTargetUser(null);
-            setLookupError('');
-            setIsLookupLoading(false);
+        if (recipientType !== 'username') {
+            usernameLookupSeqRef.current += 1;
+            setIsUsernameLookupLoading(false);
             return;
         }
 
-        if (trimmed.length < 4) {
-            setTargetUser(null);
-            setLookupError('');
-            setIsLookupLoading(false);
+        if (normalizedUsername.length < 2) {
+            usernameLookupSeqRef.current += 1;
+            setUsernameTarget(null);
+            setIsUsernameLookupLoading(false);
             return;
         }
 
-        const lookupSeq = ++lookupSeqRef.current;
+        const lookupSeq = ++usernameLookupSeqRef.current;
+        setIsUsernameLookupLoading(true);
 
         const timeoutId = window.setTimeout(async () => {
-            setIsLookupLoading(true);
-            setLookupError('');
-
             try {
-                const response = await api.admin.lookupUserById(trimmed);
-
-                if (lookupSeqRef.current !== lookupSeq) {
+                const target = await lookupTarget({ username: normalizedUsername });
+                if (usernameLookupSeqRef.current !== lookupSeq) {
                     return;
                 }
 
-                const nextUser = response?.user || null;
-                setTargetUser(nextUser);
-
-                if (!nextUser) {
-                    setLookupError(t('admin_topup_not_found') || 'User not found');
+                const targetUsername = sanitizeUsernameInput(target?.user?.username || '');
+                if (target && targetUsername && targetUsername.toLowerCase() === normalizedUsername.toLowerCase()) {
+                    setUsernameTarget(target);
+                } else {
+                    setUsernameTarget(null);
                 }
-            } catch (error) {
-                if (lookupSeqRef.current !== lookupSeq) {
-                    return;
+            } catch {
+                if (usernameLookupSeqRef.current === lookupSeq) {
+                    setUsernameTarget(null);
                 }
-
-                setTargetUser(null);
-                setLookupError(error instanceof Error ? error.message : (t('error_occurred') || 'Request failed'));
             } finally {
-                if (lookupSeqRef.current === lookupSeq) {
-                    setIsLookupLoading(false);
+                if (usernameLookupSeqRef.current === lookupSeq) {
+                    setIsUsernameLookupLoading(false);
                 }
             }
         }, LOOKUP_DEBOUNCE_MS);
@@ -168,235 +216,338 @@ export const BalanceTopupTab = () => {
         return () => {
             window.clearTimeout(timeoutId);
         };
-    }, [t, userIdInput]);
+    }, [lookupTarget, normalizedUsername, recipientType]);
 
-    const handleOpenConfirm = () => {
-        if (!canContinue) {
+    useEffect(() => {
+        if (recipientType !== 'wallet') {
+            walletLookupSeqRef.current += 1;
+            setIsWalletLookupLoading(false);
             return;
         }
 
-        setActionError('');
-        setSuccessMessage('');
-        setConfirmResetKey((current) => current + 1);
+        if (!normalizedWalletFriendly || normalizedWalletBody.length < 4) {
+            walletLookupSeqRef.current += 1;
+            setWalletTarget(null);
+            setIsWalletLookupLoading(false);
+            return;
+        }
+
+        const lookupSeq = ++walletLookupSeqRef.current;
+        setIsWalletLookupLoading(true);
+
+        const timeoutId = window.setTimeout(async () => {
+            try {
+                const target = await lookupTarget({ wallet: normalizedWalletFriendly });
+                if (walletLookupSeqRef.current !== lookupSeq) {
+                    return;
+                }
+
+                setWalletTarget(target);
+            } catch {
+                if (walletLookupSeqRef.current === lookupSeq) {
+                    setWalletTarget(null);
+                }
+            } finally {
+                if (walletLookupSeqRef.current === lookupSeq) {
+                    setIsWalletLookupLoading(false);
+                }
+            }
+        }, LOOKUP_DEBOUNCE_MS);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [lookupTarget, normalizedWalletBody.length, normalizedWalletFriendly, recipientType]);
+
+    const canContinue = Boolean(
+        parsedAmount
+        && (recipientType === 'username' ? hasExactUsernameMatch : Boolean(walletTarget)),
+    );
+
+    const handleContinue = async () => {
+        setError('');
+        setSuccess('');
+
+        if (!parsedAmount) {
+            setError(t('admin_topup_invalid_amount') || 'Enter valid amount');
+            return;
+        }
+
+        let nextTarget: AdminWalletLookupTarget | null = null;
+
+        if (recipientType === 'username') {
+            if (!hasExactUsernameMatch || !usernameTarget) {
+                setError(t('admin_topup_username_not_found') || 'User not found');
+                return;
+            }
+
+            nextTarget = usernameTarget;
+        } else {
+            if (!normalizedWalletFriendly) {
+                setError(t('admin_topup_wallet_not_found') || 'Wallet not found');
+                return;
+            }
+
+            nextTarget = walletTarget;
+
+            if (!nextTarget || nextTarget.walletFriendly.toUpperCase() !== normalizedWalletFriendly.toUpperCase()) {
+                try {
+                    nextTarget = await lookupTarget({ wallet: normalizedWalletFriendly });
+                    setWalletTarget(nextTarget);
+                } catch {
+                    nextTarget = null;
+                }
+            }
+
+            if (!nextTarget) {
+                setError(t('admin_topup_wallet_not_found') || 'Wallet not found');
+                return;
+            }
+        }
+
+        setConfirmPayload({
+            amount: parsedAmount,
+            sourceType: recipientType,
+            target: nextTarget,
+        });
         setIsConfirmOpen(true);
     };
 
-    const handleSubmitTopup = useCallback(async () => {
-        if (!targetUser || !targetUser.wallet || !parsedAmount) {
-            setActionError(t('admin_topup_invalid_state') || 'Choose user and amount first');
-            return false;
+    const handleConfirmTopup = async () => {
+        if (!confirmPayload || isSubmitting) {
+            return;
         }
 
-        setActionError('');
+        setIsSubmitting(true);
+        setError('');
+        setSuccess('');
 
         try {
-            const response = await api.admin.topupUserWallet({
-                userId: userIdInput,
-                amount: parsedAmount,
+            const response = await api.admin.topupWallet({
+                amount: confirmPayload.amount,
+                wallet: confirmPayload.target.walletFriendly,
             });
 
-            const refreshedUser = response?.user || null;
-            if (refreshedUser) {
-                setTargetUser(refreshedUser);
-            }
+            const resolvedTarget = response?.target || confirmPayload.target;
 
-            setSuccessMessage(`${t('admin_topup_success') || 'Balance topped up'} +${formatIntegerWithSpaces(parsedAmount)} UZS`);
+            setWalletBodyInput(sanitizeFriendlyBody(resolvedTarget.walletFriendly));
+            setWalletTarget(resolvedTarget);
+            setIsConfirmOpen(false);
+            setConfirmPayload(null);
             setAmountInput('');
             setSelectedQuickAmount(null);
-            setIsConfirmOpen(false);
-            return true;
-        } catch (error) {
-            setActionError(error instanceof Error ? error.message : (t('error_occurred') || 'Request failed'));
-            return false;
+            setSuccess(`${t('admin_topup_success') || 'Balance topped up'}: ${resolvedTarget.walletFriendly}`);
+            haptic.success();
+        } catch (submitError) {
+            setError(safeErrorMessage(submitError) || t('error_occurred'));
+            haptic.error();
+        } finally {
+            setIsSubmitting(false);
         }
-    }, [parsedAmount, t, targetUser, userIdInput]);
+    };
 
     return (
-        <div className={styles.root}>
+        <section className={styles.root}>
             <div className={styles.card}>
-                <div className={styles.headline}>
+                <div className={styles.header}>
                     <h3>{t('admin_topup_title') || 'Manual balance top up'}</h3>
-                    <p>{t('admin_topup_desc') || 'Find user by Telegram ID and add UZS manually.'}</p>
+                    <p>{t('admin_topup_subtitle') || 'Find recipient wallet by username or wallet address and add UZS manually.'}</p>
                 </div>
 
-                <label className={styles.label} htmlFor="admin-topup-user-id">
-                    {t('admin_topup_user_id') || 'User ID'}
-                </label>
-                <div className={styles.userIdInputWrap}>
-                    <Search size={16} className={styles.inputIcon} />
-                    <input
-                        id="admin-topup-user-id"
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={userIdInput}
-                        onChange={(event) => {
-                            setUserIdInput(sanitizeTelegramIdInput(event.target.value));
-                            setActionError('');
-                            setSuccessMessage('');
-                        }}
-                        placeholder={t('admin_topup_user_id_placeholder') || '123456789'}
-                        className={styles.userIdInput}
-                    />
+                <RecipientLookupField
+                    recipientType={recipientType}
+                    onRecipientTypeChange={(nextType) => {
+                        setRecipientType(nextType);
+                        setError('');
+                        setSuccess('');
+                        haptic.selection();
+                    }}
+                    walletTabLabel={t('wallet') || 'Wallet'}
+                    usernameValue={usernameInput}
+                    walletValue={walletBodyInput}
+                    usernamePlaceholder={t('wallet_send_username_placeholder') || 'username'}
+                    walletPlaceholder={t('wallet_send_wallet_placeholder') || 'XXXXXXXXXXXX'}
+                    onUsernameChange={(rawValue) => {
+                        const nextUsername = sanitizeUsernameInput(rawValue);
+                        setUsernameInput(nextUsername);
+                        setUsernameTarget((current) => {
+                            if (!current) {
+                                return null;
+                            }
+
+                            const currentUsername = sanitizeUsernameInput(current.user?.username || '');
+                            if (!currentUsername || !nextUsername) {
+                                return null;
+                            }
+
+                            return currentUsername.toLowerCase() === nextUsername.toLowerCase()
+                                ? current
+                                : null;
+                        });
+                        setError('');
+                        setSuccess('');
+                    }}
+                    onWalletChange={(rawValue) => {
+                        setWalletBodyInput(sanitizeFriendlyBody(rawValue));
+                        setError('');
+                        setSuccess('');
+                    }}
+                    usernameAvatarUrl={hasExactUsernameMatch ? (usernameTarget?.user?.photoUrl || null) : null}
+                    walletSuggestion={recipientType === 'wallet' && suggestedWallet
+                        ? {
+                            displayName: usernameDisplayName,
+                            address: suggestedWallet,
+                            photoUrl: usernameTarget?.user?.photoUrl || null,
+                            onSelect: () => {
+                                setWalletBodyInput(sanitizeFriendlyBody(suggestedWallet));
+                                setError('');
+                                haptic.selection();
+                            },
+                        }
+                        : null}
+                />
+
+                <div className={styles.lookupState}>
+                    {recipientType === 'username' ? (
+                        isUsernameLookupLoading ? (
+                            <span className={styles.lookupHint}><Loader2 size={14} className={styles.spin} /> {t('admin_topup_lookup_loading') || 'Searching...'}</span>
+                        ) : hasExactUsernameMatch && usernameTarget ? (
+                            <span className={styles.lookupSuccess}><CheckCircle2 size={14} /> {resolveTargetDisplayName(usernameTarget, t('wallet_send_to_label') || 'Recipient')} - {usernameTarget.walletFriendly}</span>
+                        ) : normalizedUsername.length >= 2 ? (
+                            <span className={styles.lookupError}><AlertTriangle size={14} /> {t('admin_topup_username_not_found') || 'User not found'}</span>
+                        ) : (
+                            <span className={styles.lookupHint}><UserRound size={14} /> {t('admin_topup_username_hint') || 'Enter username to find recipient wallet'}</span>
+                        )
+                    ) : (
+                        isWalletLookupLoading ? (
+                            <span className={styles.lookupHint}><Loader2 size={14} className={styles.spin} /> {t('admin_topup_lookup_loading') || 'Searching...'}</span>
+                        ) : walletTarget ? (
+                            <span className={styles.lookupSuccess}><CheckCircle2 size={14} /> {resolveTargetDisplayName(walletTarget, t('admin_topup_unlinked_user') || 'No linked Telegram account')} - {walletTarget.walletFriendly}</span>
+                        ) : normalizedWalletBody.length >= 4 ? (
+                            <span className={styles.lookupError}><AlertTriangle size={14} /> {t('admin_topup_wallet_not_found') || 'Wallet not found'}</span>
+                        ) : (
+                            <span className={styles.lookupHint}><Wallet size={14} /> {t('admin_topup_wallet_hint') || 'Enter wallet to continue'}</span>
+                        )
+                    )}
                 </div>
-                <p className={styles.caption}>
-                    {t('admin_topup_user_id_hint') || 'Enter numeric Telegram user ID'}
-                </p>
 
-                {isLookupLoading && (
-                    <p className={styles.lookupState}>{t('admin_topup_searching') || 'Searching user...'}</p>
-                )}
+                <div className={styles.amountBlock}>
+                    <label htmlFor="admin-topup-amount">{t('admin_topup_amount_label') || 'Amount'}</label>
+                    <div className={styles.amountInputWrap}>
+                        <input
+                            id="admin-topup-amount"
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9 ]*"
+                            value={amountInput}
+                            placeholder={t('admin_topup_amount_placeholder') || '1 000'}
+                            onChange={(event) => {
+                                setSelectedQuickAmount(null);
+                                setAmountInput(formatAmountInput(event.target.value));
+                                setError('');
+                                setSuccess('');
+                            }}
+                            className={styles.amountInput}
+                        />
+                        <span className={styles.amountSuffix}>UZS</span>
+                    </div>
 
-                {lookupError && !isLookupLoading && (
-                    <p className={styles.errorText}>{lookupError}</p>
-                )}
+                    <div className={styles.quickGrid}>
+                        {QUICK_AMOUNTS.map((value) => (
+                            <button
+                                key={value}
+                                type="button"
+                                className={`${styles.quickButton} ${selectedQuickAmount === value ? styles.quickButtonActive : ''}`}
+                                onClick={() => {
+                                    setSelectedQuickAmount(value);
+                                    setAmountInput(formatAmountInput(String(value)));
+                                    setError('');
+                                    setSuccess('');
+                                    haptic.selection();
+                                }}
+                            >
+                                {formatAmountValue(value)} UZS
+                            </button>
+                        ))}
+                    </div>
+                </div>
 
-                {targetUser && (
-                    <div className={styles.userCard}>
-                        <div className={styles.userAvatar}>
-                            {targetUser.photoUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={targetUser.photoUrl} alt={getDisplayName(targetUser)} />
-                            ) : (
-                                <UserRound size={18} />
-                            )}
-                        </div>
-
-                        <div className={styles.userMeta}>
-                            <strong>{getDisplayName(targetUser)}</strong>
-                            <span>ID: {getTelegramNumericId(targetUser)}</span>
-                            <span>{targetUser.wallet?.friendlyAddress || (t('admin_topup_wallet_missing') || 'Wallet is missing')}</span>
-                        </div>
-
-                        <div className={styles.balanceBadge}>
-                            <Wallet size={14} />
-                            <span>{formatIntegerWithSpaces(targetUser.wallet?.balance || 0)} UZS</span>
-                        </div>
+                {error && (
+                    <div className={styles.errorBox}>
+                        <AlertTriangle size={16} />
+                        <span>{error}</span>
                     </div>
                 )}
 
-                <label className={styles.label} htmlFor="admin-topup-amount">
-                    {t('wallet_amount_label') || 'Amount'}
-                </label>
-                <div className={styles.amountInputWrap}>
-                    <input
-                        id="admin-topup-amount"
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9 ]*"
-                        value={amountInput}
-                        onChange={(event) => {
-                            setSelectedQuickAmount(null);
-                            setAmountInput(formatAmountInput(event.target.value));
-                            setActionError('');
-                            setSuccessMessage('');
-                        }}
-                        placeholder="1 000"
-                        className={styles.amountInput}
-                    />
-                    <span className={styles.currency}>UZS</span>
-                </div>
-
-                <div className={styles.quickGrid}>
-                    {QUICK_AMOUNTS.map((amount) => (
-                        <button
-                            key={amount}
-                            type="button"
-                            className={`${styles.quickButton} ${selectedQuickAmount === amount ? styles.quickButtonActive : ''}`}
-                            onClick={() => {
-                                setSelectedQuickAmount(amount);
-                                setAmountInput(formatAmountInput(String(amount)));
-                                setActionError('');
-                                setSuccessMessage('');
-                            }}
-                        >
-                            {formatIntegerWithSpaces(amount)} UZS
-                        </button>
-                    ))}
-                </div>
-
-                {!hasWallet && targetUser && (
-                    <p className={styles.errorText}>{t('admin_topup_wallet_missing') || 'User does not have wallet yet'}</p>
+                {success && (
+                    <div className={styles.successBox}>
+                        <CheckCircle2 size={16} />
+                        <span>{success}</span>
+                    </div>
                 )}
 
-                {actionError && !isConfirmOpen && (
-                    <p className={styles.errorText}>{actionError}</p>
-                )}
-
-                {successMessage && (
-                    <p className={styles.successText}>{successMessage}</p>
-                )}
-
-                <Button type="button" fullWidth onClick={handleOpenConfirm} disabled={!canContinue}>
+                <Button
+                    type="button"
+                    fullWidth
+                    onClick={handleContinue}
+                    disabled={!canContinue || isSubmitting}
+                >
                     {t('continue') || 'Continue'}
                 </Button>
             </div>
 
             <BottomDrawer
                 open={isConfirmOpen}
-                onClose={() => setIsConfirmOpen(false)}
+                onClose={() => {
+                    if (!isSubmitting) {
+                        setIsConfirmOpen(false);
+                    }
+                }}
                 title={t('admin_topup_confirm_title') || 'Confirm top up'}
-                closeAriaLabel="Close"
+                closeAriaLabel={t('transactions_close') || 'Close'}
                 bodyClassName={styles.drawerBody}
             >
-                {targetUser?.wallet && (
+                {confirmPayload && (
                     <div className={styles.confirmContent}>
-                        <p className={styles.confirmText}>
-                            {t('admin_topup_confirm_desc') || 'Review details below and swipe to confirm.'}
-                        </p>
-
                         <DetailsTable
                             className={styles.confirmTable}
-                            rowClassName={styles.confirmRow}
-                            keyClassName={styles.confirmKey}
-                            valueClassName={styles.confirmValue}
                             rows={[
                                 {
-                                    id: 'user',
-                                    label: t('admin_topup_user') || 'User',
-                                    value: getDisplayName(targetUser),
+                                    id: 'mode',
+                                    label: t('admin_topup_confirm_mode') || 'Search mode',
+                                    value: confirmPayload.sourceType === 'username'
+                                        ? (t('admin_topup_mode_username') || 'Username')
+                                        : (t('admin_topup_mode_wallet') || 'Wallet'),
                                 },
                                 {
-                                    id: 'userId',
-                                    label: t('admin_topup_user_id') || 'User ID',
-                                    value: getTelegramNumericId(targetUser),
+                                    id: 'recipient',
+                                    label: t('admin_topup_confirm_recipient') || 'Recipient',
+                                    value: resolveTargetDisplayName(confirmPayload.target, t('admin_topup_unlinked_user') || 'No linked Telegram account'),
                                 },
                                 {
                                     id: 'wallet',
-                                    label: t('admin_topup_wallet') || 'Wallet',
-                                    value: targetUser.wallet.friendlyAddress,
-                                },
-                                {
-                                    id: 'balanceCurrent',
-                                    label: t('admin_topup_balance_current') || 'Current balance',
-                                    value: `${formatIntegerWithSpaces(currentBalance)} UZS`,
+                                    label: t('wallet') || 'Wallet',
+                                    value: confirmPayload.target.walletFriendly,
+                                    mono: true,
                                 },
                                 {
                                     id: 'amount',
-                                    label: t('wallet_amount_label') || 'Amount',
-                                    value: parsedAmount ? `${formatIntegerWithSpaces(parsedAmount)} UZS` : '—',
-                                },
-                                {
-                                    id: 'balanceNext',
-                                    label: t('admin_topup_balance_next') || 'Balance after top up',
-                                    value: parsedAmount ? `${formatIntegerWithSpaces(nextBalance)} UZS` : '—',
+                                    label: t('admin_topup_amount_label') || 'Amount',
+                                    value: `${formatAmountValue(confirmPayload.amount)} UZS`,
                                 },
                             ]}
                         />
 
-                        {actionError && (
-                            <p className={styles.errorText}>{actionError}</p>
-                        )}
-
                         <SwipeConfirmAction
                             label={t('transfer_swipe_confirm') || 'Confirm'}
-                            onConfirm={handleSubmitTopup}
-                            disabled={!canContinue}
-                            resetKey={confirmResetKey}
+                            onConfirm={handleConfirmTopup}
+                            disabled={isSubmitting}
+                            loading={isSubmitting}
+                            resetKey={`${isConfirmOpen}-${confirmPayload.target.walletFriendly}-${confirmPayload.amount}`}
                         />
                     </div>
                 )}
             </BottomDrawer>
-        </div>
+        </section>
     );
-};
+}

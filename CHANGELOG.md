@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.24] - 2026-03-01
+
+### Changed
+- Reworked `Admin -> Top up` recipient flow from `userId` lookup to shared `Username/Wallet` recipient selector using global `RecipientLookupField`.
+- Added wallet suggestion behavior in admin top-up that matches wallet send UX (connected dropdown-up block above wallet input).
+- Wallet-mode top-up now allows address-only targets (wallet exists without linked Telegram user), with confirmation drawer showing wallet details and swipe confirmation.
+- Admin backend top-up API now supports recipient lookup by `username` or `wallet` via `GET /admin/wallet/recipient/search`.
+
+### Added
+- Added migration `20260301195500_wallet_transaction_nullable_userid` and schema update to allow nullable `WalletTransaction.userId` for address-only wallet operations.
+
 ## [0.2.23] - 2026-03-01
 
 ### Added
