@@ -7,7 +7,7 @@ import { BottomDrawer } from '@/components/ui/BottomDrawer';
 import { Button } from '@/components/ui/Button';
 import { DetailsTable } from '@/components/ui/DetailsTable';
 import { RecipientLookupField, type RecipientLookupType } from '@/components/ui/RecipientLookupField';
-import { SwipeConfirmAction } from '@/components/ui/SwipeConfirmAction';
+import { SwipeConfirmWithSuccess } from '@/components/ui/SwipeConfirmWithSuccess';
 import { api, type AdminWalletLookupTarget } from '@/lib/api';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
@@ -123,7 +123,6 @@ export function BalanceTopupTab() {
 
     const usernameLookupSeqRef = useRef(0);
     const walletLookupSeqRef = useRef(0);
-    const confirmAutoCloseTimerRef = useRef<number | null>(null);
 
     useBodyScrollLock(isConfirmOpen);
 
@@ -181,17 +180,6 @@ export function BalanceTopupTab() {
     const usernameDisplayName = useMemo(() => (
         resolveTargetDisplayName(usernameTarget, t('wallet_send_to_label') || 'Recipient')
     ), [t, usernameTarget]);
-
-    const clearConfirmAutoCloseTimer = useCallback(() => {
-        if (confirmAutoCloseTimerRef.current !== null) {
-            window.clearTimeout(confirmAutoCloseTimerRef.current);
-            confirmAutoCloseTimerRef.current = null;
-        }
-    }, []);
-
-    useEffect(() => () => {
-        clearConfirmAutoCloseTimer();
-    }, [clearConfirmAutoCloseTimer]);
 
     useEffect(() => {
         if (recipientType !== 'username') {
@@ -276,11 +264,10 @@ export function BalanceTopupTab() {
             return;
         }
 
-        clearConfirmAutoCloseTimer();
         setIsConfirmOpen(false);
         setConfirmPayload(null);
         setIsConfirmSucceeded(false);
-    }, [clearConfirmAutoCloseTimer, isSubmitting]);
+    }, [isSubmitting]);
 
     const handleContinue = async () => {
         setError('');
@@ -334,7 +321,6 @@ export function BalanceTopupTab() {
             })()
             : nextTarget.walletFriendly;
 
-        clearConfirmAutoCloseTimer();
         setIsConfirmSucceeded(false);
         setConfirmPayload({
             amount: parsedAmount,
@@ -371,14 +357,6 @@ export function BalanceTopupTab() {
             setSuccess(`${t('admin_topup_success') || 'Balance topped up'}: ${resolvedTarget.walletFriendly}`);
             setIsConfirmSucceeded(true);
             haptic.success();
-
-            clearConfirmAutoCloseTimer();
-            confirmAutoCloseTimerRef.current = window.setTimeout(() => {
-                setIsConfirmOpen(false);
-                setConfirmPayload(null);
-                setIsConfirmSucceeded(false);
-                confirmAutoCloseTimerRef.current = null;
-            }, 5000);
         } catch (submitError) {
             setError(safeErrorMessage(submitError) || t('error_occurred'));
             haptic.error();
@@ -535,19 +513,14 @@ export function BalanceTopupTab() {
                         />
 
                         <div className={styles.confirmSwipeSection}>
-                            <SwipeConfirmAction
+                            <SwipeConfirmWithSuccess
                                 label={t('transfer_swipe_confirm') || 'Confirm'}
                                 onConfirm={handleConfirmTopup}
-                                disabled={isSubmitting || isConfirmSucceeded}
-                                loading={isSubmitting}
+                                isSubmitting={isSubmitting}
+                                isSuccess={isConfirmSucceeded}
+                                onSuccessAutoClose={closeConfirmDrawer}
                                 resetKey={`${isConfirmOpen}-${confirmPayload.target.walletFriendly}-${confirmPayload.amount}-${isConfirmSucceeded}`}
                             />
-
-                            {isConfirmSucceeded && (
-                                <div className={styles.confirmSuccessIcon} aria-hidden="true">
-                                    <CheckCircle2 size={18} />
-                                </div>
-                            )}
                         </div>
                     </div>
                 )}

@@ -1,0 +1,17 @@
+.root {
+    width: 100%;
+    display: grid;
+    gap: 8px;
+}
+
+.successIcon {
+    min-height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #22c55e;
+}
+
+.successIcon svg {
+    filter: drop-shadow(0 3px 8px rgba(34, 197, 94, 0.35));
+}

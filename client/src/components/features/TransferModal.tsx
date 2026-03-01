@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { X, Loader2, ArrowRight, ChevronLeft } from 'lucide-react';
-import { IoSend, IoCheckmark, IoPricetag, IoSparkles } from 'react-icons/io5';
+import { X, ArrowRight, ChevronLeft } from 'lucide-react';
+import { IoSend, IoPricetag, IoSparkles } from 'react-icons/io5';
 import { Button } from '@/components/ui/Button';
 import { DetailsTable } from '@/components/ui/DetailsTable';
 import { RecipientLookupField } from '@/components/ui/RecipientLookupField';
+import { SwipeConfirmWithSuccess } from '@/components/ui/SwipeConfirmWithSuccess';
 import { TgsPlayer } from '@/components/ui/TgsPlayer';
 import { useTelegram } from '@/lib/context/TelegramContext';
 import { useLanguage } from '@/lib/context/LanguageContext';
@@ -56,9 +57,6 @@ const USER_LOOKUP_DEBOUNCE_MS = 420;
 const TRANSFER_DRAFT_STORAGE_PREFIX = 'transfer_modal_draft_v2';
 const TRANSFER_MEMO_MAX_LENGTH = 120;
 const TRANSFER_FEE_AMOUNT_TEXT = '741 UZS';
-const SWIPE_HANDLE_SIZE = 44;
-const SWIPE_TRACK_HORIZONTAL_PADDING = 6;
-const SWIPE_COMPLETE_THRESHOLD = 0.96;
 
 const stripUsernameTransportPrefix = (value: string): string => {
     return value.trim().replace(/^@+/, '');
@@ -154,17 +152,10 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
     const [, setIsSearchingRecipient] = useState(false);
     const [error, setError] = useState('');
     const [visible, setVisible] = useState(false);
-    const [swipeOffset, setSwipeOffset] = useState(0);
-    const [swipeMaxOffset, setSwipeMaxOffset] = useState(0);
-    const [isSwiping, setIsSwiping] = useState(false);
     const [isTransferSubmitting, setIsTransferSubmitting] = useState(false);
-    const [swipeResult, setSwipeResult] = useState<'success' | 'error' | null>(null);
+    const [isConfirmSucceeded, setIsConfirmSucceeded] = useState(false);
 
     const lookupSeqRef = useRef(0);
-    const swipeTrackRef = useRef<HTMLDivElement | null>(null);
-    const swipePointerIdRef = useRef<number | null>(null);
-    const swipeStartXRef = useRef(0);
-    const swipeStartOffsetRef = useRef(0);
 
     useBodyScrollLock(Boolean(nft && isOpen && visible));
 
@@ -242,14 +233,8 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
         setResolvedRecipient(null);
         setIsSearchingRecipient(false);
         setError('');
-        setSwipeOffset(0);
-        setSwipeMaxOffset(0);
-        setIsSwiping(false);
         setIsTransferSubmitting(false);
-        setSwipeResult(null);
-        swipePointerIdRef.current = null;
-        swipeStartXRef.current = 0;
-        swipeStartOffsetRef.current = 0;
+        setIsConfirmSucceeded(false);
     }, []);
 
     const closeModal = useCallback((options?: { reset?: boolean; clearDraft?: boolean }) => {
@@ -372,20 +357,6 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
         };
     }, [authInitData, isOpen, nft, recipientType, step, username, usernameLookup, viewMode]);
 
-    const recalculateSwipeBounds = useCallback(() => {
-        const trackElement = swipeTrackRef.current;
-
-        if (!trackElement) {
-            return;
-        }
-
-        const trackWidth = trackElement.getBoundingClientRect().width;
-        const maxOffset = Math.max(0, trackWidth - SWIPE_HANDLE_SIZE - (SWIPE_TRACK_HORIZONTAL_PADDING * 2));
-
-        setSwipeMaxOffset(maxOffset);
-        setSwipeOffset((current) => Math.min(current, maxOffset));
-    }, []);
-
     useEffect(() => {
         const viewportContent = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
         let viewportMeta = document.querySelector('meta[name="viewport"]');
@@ -398,30 +369,6 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
 
         viewportMeta.setAttribute('content', viewportContent);
     }, []);
-
-    useEffect(() => {
-        if (step !== 'confirm') {
-            setSwipeOffset(0);
-            setSwipeMaxOffset(0);
-            setIsSwiping(false);
-            setIsTransferSubmitting(false);
-            setSwipeResult(null);
-            swipePointerIdRef.current = null;
-            return;
-        }
-
-        const frameId = window.requestAnimationFrame(recalculateSwipeBounds);
-        const handleResize = () => {
-            recalculateSwipeBounds();
-        };
-
-        window.addEventListener('resize', handleResize);
-
-        return () => {
-            window.cancelAnimationFrame(frameId);
-            window.removeEventListener('resize', handleResize);
-        };
-    }, [recalculateSwipeBounds, step]);
 
     const submitTransfer = useCallback(async (): Promise<boolean> => {
         if (!authUser?.uid) {
@@ -465,31 +412,31 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
         }
     }, [authUser?.uid, memoInput, nft?.tokenId, recipientType, username, walletRecipient, webApp?.initData]);
 
-    const confirmSwipeTransfer = useCallback(async () => {
-        if (isTransferSubmitting) {
-            return;
+    const confirmSwipeTransfer = useCallback(async (): Promise<boolean> => {
+        if (isTransferSubmitting || isConfirmSucceeded) {
+            return false;
         }
 
         setIsTransferSubmitting(true);
-        setSwipeResult(null);
+        setIsConfirmSucceeded(false);
         haptic.impact('heavy');
-        setSwipeOffset(swipeMaxOffset);
 
-        const isSuccess = await submitTransfer();
-        if (isSuccess) {
+        try {
+            const isSuccess = await submitTransfer();
+            if (!isSuccess) {
+                haptic.error();
+                return false;
+            }
+
             haptic.impact('medium');
-            setSwipeResult('success');
+            setIsConfirmSucceeded(true);
             clearDraft();
             onSuccess?.();
+            return true;
+        } finally {
             setIsTransferSubmitting(false);
-            return;
         }
-
-        haptic.error();
-        setSwipeResult('error');
-        setSwipeOffset(0);
-        setIsTransferSubmitting(false);
-    }, [clearDraft, haptic, isTransferSubmitting, onSuccess, submitTransfer, swipeMaxOffset]);
+    }, [clearDraft, haptic, isConfirmSucceeded, isTransferSubmitting, onSuccess, submitTransfer]);
 
     if (!nft || (!isOpen && !visible)) return null;
 
@@ -517,8 +464,7 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
             }
 
             haptic.impact('light');
-            setSwipeOffset(0);
-            setSwipeResult(null);
+            setIsConfirmSucceeded(false);
             setStep('confirm');
             return;
         }
@@ -535,13 +481,12 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
 
         setUsernameInput(username);
         haptic.impact('light');
-        setSwipeOffset(0);
-        setSwipeResult(null);
+        setIsConfirmSucceeded(false);
         setStep('confirm');
     };
 
     const handleBackToInfo = () => {
-        if (isTransferSubmitting) {
+        if (isTransferSubmitting || isConfirmSucceeded) {
             return;
         }
 
@@ -549,8 +494,7 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
         if (step === 'confirm') {
             setStep('input');
             setError('');
-            setSwipeOffset(0);
-            setSwipeResult(null);
+            setIsConfirmSucceeded(false);
             return;
         }
 
@@ -559,78 +503,9 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
         setViewMode('info');
     };
 
-    const handleSwipePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-        if (step !== 'confirm' || swipeMaxOffset <= 0 || isTransferSubmitting || swipeResult === 'success') {
-            return;
-        }
-
-        event.preventDefault();
-        swipePointerIdRef.current = event.pointerId;
-        swipeStartXRef.current = event.clientX;
-        swipeStartOffsetRef.current = swipeOffset;
-        setIsSwiping(true);
-        setSwipeResult(null);
-        event.currentTarget.setPointerCapture(event.pointerId);
-    };
-
-    const handleSwipePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
-        if (swipePointerIdRef.current !== event.pointerId || isTransferSubmitting) {
-            return;
-        }
-
-        event.preventDefault();
-        const deltaX = event.clientX - swipeStartXRef.current;
-        const nextOffset = Math.min(swipeMaxOffset, Math.max(0, swipeStartOffsetRef.current + deltaX));
-        setSwipeOffset(nextOffset);
-    };
-
-    const finalizeSwipe = async (event: React.PointerEvent<HTMLButtonElement>) => {
-        if (swipePointerIdRef.current !== event.pointerId) {
-            return;
-        }
-
-        try {
-            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-                event.currentTarget.releasePointerCapture(event.pointerId);
-            }
-        } catch {
-            // Pointer capture might already be released by the browser.
-        }
-
-        swipePointerIdRef.current = null;
-        setIsSwiping(false);
-
-        if (isTransferSubmitting) {
-            return;
-        }
-
-        const reachedEnd = swipeMaxOffset > 0 && swipeOffset >= (swipeMaxOffset * SWIPE_COMPLETE_THRESHOLD);
-        if (!reachedEnd) {
-            haptic.selection();
-            setSwipeOffset(0);
-            return;
-        }
-
-        setSwipeOffset(swipeMaxOffset);
-        await confirmSwipeTransfer();
-    };
-
-    const handleSwipePointerCancel = (event: React.PointerEvent<HTMLButtonElement>) => {
-        if (swipePointerIdRef.current !== event.pointerId) {
-            return;
-        }
-
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-            event.currentTarget.releasePointerCapture(event.pointerId);
-        }
-
-        swipePointerIdRef.current = null;
-        setIsSwiping(false);
-        if (isTransferSubmitting) {
-            return;
-        }
-        setSwipeOffset(0);
-    };
+    const handleConfirmAutoClose = useCallback(() => {
+        closeModal({ reset: true, clearDraft: true });
+    }, [closeModal]);
 
     const displayRecipient = recipientType === 'username'
         ? `@${(isExactUsernameMatch && resolvedUsername) ? resolvedUsername : username}`
@@ -656,7 +531,8 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
     const availabilityText = `${collectionActiveCount}/${collectionMintedCount} ${t('transfer_modal_issued') || 'issued'}`;
     const collectionTitle = (nft.collectionName || '').trim() || 'Plush pepe';
     const memoLength = memoInput.length;
-    const showBackButton = (step === 'input' && viewMode === 'transfer') || step === 'confirm';
+    const showBackButton = ((step === 'input' && viewMode === 'transfer') || step === 'confirm')
+        && !isConfirmSucceeded;
 
     return (
         <div
@@ -929,43 +805,14 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                         </p>
 
                         <div className={styles.swipeConfirm}>
-                            <div className={styles.swipeTrack} ref={swipeTrackRef}>
-                                <div
-                                    className={styles.swipeFill}
-                                    style={{ width: `${SWIPE_HANDLE_SIZE + swipeOffset + (SWIPE_TRACK_HORIZONTAL_PADDING * 2)}px` }}
-                                ></div>
-                                <span className={styles.swipeLabel}>
-                                    {t('transfer_swipe_confirm') || 'Confirm'}
-                                </span>
-                                <button
-                                    type="button"
-                                    className={`${styles.swipeHandle} ${isSwiping ? styles.swipeHandleActive : ''}`}
-                                    style={{ transform: `translateX(${swipeOffset}px)` }}
-                                    onPointerDown={handleSwipePointerDown}
-                                    onPointerMove={handleSwipePointerMove}
-                                    onPointerUp={finalizeSwipe}
-                                    onPointerCancel={handleSwipePointerCancel}
-                                    disabled={isTransferSubmitting}
-                                    aria-label={t('transfer_swipe_confirm') || 'Confirm'}
-                                >
-                                    {isTransferSubmitting ? (
-                                        <Loader2 size={20} className={styles.swipeSpinner} />
-                                    ) : (
-                                        <ArrowRight size={20} />
-                                    )}
-                                </button>
-                            </div>
-
-                            {swipeResult && (
-                                <div className={styles.swipeResultRow}>
-                                    <span
-                                        className={`${styles.swipeResultIcon} ${swipeResult === 'success' ? styles.swipeResultSuccess : styles.swipeResultError
-                                            }`}
-                                    >
-                                        {swipeResult === 'success' ? <IoCheckmark size={12} /> : <X size={12} strokeWidth={3} />}
-                                    </span>
-                                </div>
-                            )}
+                            <SwipeConfirmWithSuccess
+                                label={t('transfer_swipe_confirm') || 'Confirm'}
+                                onConfirm={confirmSwipeTransfer}
+                                isSubmitting={isTransferSubmitting}
+                                isSuccess={isConfirmSucceeded}
+                                onSuccessAutoClose={handleConfirmAutoClose}
+                                resetKey={`${step}-${displayRecipient}-${nft.tokenId}`}
+                            />
                         </div>
                     </div>
                 )}

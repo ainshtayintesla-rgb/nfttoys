@@ -25,6 +25,7 @@ import { DetailsTable } from '@/components/ui/DetailsTable';
 import { RecipientLookupField } from '@/components/ui/RecipientLookupField';
 import { RoundIconButton } from '@/components/ui/RoundIconButton';
 import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
+import { SwipeConfirmWithSuccess } from '@/components/ui/SwipeConfirmWithSuccess';
 import { TelegramBackButton } from '@/components/ui/TelegramBackButton';
 import { TgsPlayer } from '@/components/ui/TgsPlayer';
 import { TxCard } from '@/components/ui/TxCard';
@@ -125,9 +126,6 @@ const TELEGRAM_USERNAME_MAX_LENGTH = 32;
 const SEND_LOOKUP_DEBOUNCE_MS = 420;
 const MAX_AMOUNT_INPUT_DIGITS = 11;
 const SEND_MEMO_MAX_LENGTH = 180;
-const SWIPE_TRACK_HORIZONTAL_PADDING = 6;
-const SWIPE_HANDLE_SIZE = 44;
-const SWIPE_COMPLETE_THRESHOLD = 0.92;
 
 function localeToIntlCode(locale: string): string {
     if (locale === 'ru') return 'ru-RU';
@@ -314,15 +312,9 @@ export default function WalletPage() {
     const [walletBodyInput, setWalletBodyInput] = useState('');
     const [sendStep, setSendStep] = useState<SendStep>('input');
     const [sendMemoInput, setSendMemoInput] = useState('');
+    const [isSendConfirmSucceeded, setIsSendConfirmSucceeded] = useState(false);
     const [recipientLookup, setRecipientLookup] = useState<RecipientLookupResult | null>(null);
     const lookupSeqRef = useRef(0);
-    const sendSwipeTrackRef = useRef<HTMLDivElement | null>(null);
-    const sendSwipePointerIdRef = useRef<number | null>(null);
-    const sendSwipeStartXRef = useRef(0);
-    const sendSwipeStartOffsetRef = useRef(0);
-    const [sendSwipeOffset, setSendSwipeOffset] = useState(0);
-    const [sendSwipeMaxOffset, setSendSwipeMaxOffset] = useState(0);
-    const [isSendSwiping, setIsSendSwiping] = useState(false);
     const nftDetailsTouchStartY = useRef<number | null>(null);
     const nftDetailsTouchCurrentY = useRef<number | null>(null);
 
@@ -606,45 +598,6 @@ export default function WalletPage() {
         ? `@${resolvedLookupUsername || normalizedUsername}`
         : `LV-${normalizedWalletBody}`;
     const sendMemoLength = sendMemoInput.length;
-
-    const recalculateSendSwipeBounds = useCallback(() => {
-        const trackElement = sendSwipeTrackRef.current;
-        if (!trackElement) {
-            setSendSwipeMaxOffset(0);
-            return;
-        }
-
-        const nextMaxOffset = Math.max(
-            0,
-            trackElement.clientWidth - (SWIPE_TRACK_HORIZONTAL_PADDING * 2) - SWIPE_HANDLE_SIZE,
-        );
-        setSendSwipeMaxOffset(nextMaxOffset);
-        setSendSwipeOffset((current) => Math.min(current, nextMaxOffset));
-    }, []);
-
-    useEffect(() => {
-        if (drawerMode !== 'send' || sendStep !== 'confirm') {
-            setSendSwipeOffset(0);
-            setSendSwipeMaxOffset(0);
-            setIsSendSwiping(false);
-            sendSwipePointerIdRef.current = null;
-            sendSwipeStartXRef.current = 0;
-            sendSwipeStartOffsetRef.current = 0;
-            return;
-        }
-
-        const frameId = window.requestAnimationFrame(recalculateSendSwipeBounds);
-        const handleResize = () => {
-            recalculateSendSwipeBounds();
-        };
-
-        window.addEventListener('resize', handleResize);
-
-        return () => {
-            window.cancelAnimationFrame(frameId);
-            window.removeEventListener('resize', handleResize);
-        };
-    }, [drawerMode, recalculateSendSwipeBounds, sendStep]);
 
     const groupedHistory = useMemo<WalletHistoryGroup[]>(() => {
         const groupsMap = new Map<string, WalletHistoryItem[]>();
@@ -957,10 +910,7 @@ export default function WalletPage() {
 
         if (mode === 'send') {
             setSendStep('input');
-            setSendSwipeOffset(0);
-            setSendSwipeMaxOffset(0);
-            setIsSendSwiping(false);
-            sendSwipePointerIdRef.current = null;
+            setIsSendConfirmSucceeded(false);
             return;
         }
 
@@ -977,10 +927,7 @@ export default function WalletPage() {
         setDrawerMode(null);
         setDrawerError('');
         setCopiedInDrawer(false);
-        setIsSendSwiping(false);
-        sendSwipePointerIdRef.current = null;
-        setSendSwipeOffset(0);
-        setSendSwipeMaxOffset(0);
+        setIsSendConfirmSucceeded(false);
 
         if (drawerMode !== 'send') {
             setAmountInput('');
@@ -1165,25 +1112,19 @@ export default function WalletPage() {
         }
 
         setDrawerError('');
+        setIsSendConfirmSucceeded(false);
         setSendStep('confirm');
-        setSendSwipeOffset(0);
-        setSendSwipeMaxOffset(0);
-        setIsSendSwiping(false);
-        sendSwipePointerIdRef.current = null;
         haptic.impact('light');
     };
 
     const handleBackFromSendConfirm = () => {
-        if (isSubmitting) {
+        if (isSubmitting || isSendConfirmSucceeded) {
             return;
         }
 
         setSendStep('input');
         setDrawerError('');
-        setIsSendSwiping(false);
-        sendSwipePointerIdRef.current = null;
-        setSendSwipeOffset(0);
-        setSendSwipeMaxOffset(0);
+        setIsSendConfirmSucceeded(false);
         haptic.impact('light');
     };
 
@@ -1220,14 +1161,7 @@ export default function WalletPage() {
             ]);
 
             haptic.success();
-            setSendStep('input');
-            setSendMemoInput('');
-            setRecipientType('username');
-            setUsernameInput('');
-            setWalletBodyInput('');
-            setRecipientLookup(null);
-            setAmountInput('');
-            closeDrawer(true);
+            setIsSendConfirmSucceeded(true);
             return true;
         } catch (applyError) {
             setDrawerError(safeErrorMessage(applyError));
@@ -1244,82 +1178,19 @@ export default function WalletPage() {
         loadWallet,
         loadHistory,
         haptic,
-        closeDrawer,
     ]);
 
-    const handleSendSwipePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-        if (drawerMode !== 'send' || sendStep !== 'confirm' || isSubmitting || sendSwipeMaxOffset <= 0) {
-            return;
-        }
-
-        event.preventDefault();
-        sendSwipePointerIdRef.current = event.pointerId;
-        sendSwipeStartXRef.current = event.clientX;
-        sendSwipeStartOffsetRef.current = sendSwipeOffset;
-        setIsSendSwiping(true);
-        setDrawerError('');
-        event.currentTarget.setPointerCapture(event.pointerId);
-    };
-
-    const handleSendSwipePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
-        if (sendSwipePointerIdRef.current !== event.pointerId || isSubmitting) {
-            return;
-        }
-
-        event.preventDefault();
-        const deltaX = event.clientX - sendSwipeStartXRef.current;
-        const nextOffset = Math.min(sendSwipeMaxOffset, Math.max(0, sendSwipeStartOffsetRef.current + deltaX));
-        setSendSwipeOffset(nextOffset);
-    };
-
-    const finalizeSendSwipe = async (event: React.PointerEvent<HTMLButtonElement>) => {
-        if (sendSwipePointerIdRef.current !== event.pointerId) {
-            return;
-        }
-
-        event.preventDefault();
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-            event.currentTarget.releasePointerCapture(event.pointerId);
-        }
-
-        sendSwipePointerIdRef.current = null;
-        setIsSendSwiping(false);
-
-        if (isSubmitting) {
-            return;
-        }
-
-        const reachedEnd = sendSwipeMaxOffset > 0 && sendSwipeOffset >= (sendSwipeMaxOffset * SWIPE_COMPLETE_THRESHOLD);
-        if (!reachedEnd) {
-            setSendSwipeOffset(0);
-            haptic.selection();
-            return;
-        }
-
-        setSendSwipeOffset(sendSwipeMaxOffset);
-        const succeeded = await handleApplySend();
-        if (!succeeded) {
-            setSendSwipeOffset(0);
-        }
-    };
-
-    const handleSendSwipePointerCancel = (event: React.PointerEvent<HTMLButtonElement>) => {
-        if (sendSwipePointerIdRef.current !== event.pointerId) {
-            return;
-        }
-
-        event.preventDefault();
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-            event.currentTarget.releasePointerCapture(event.pointerId);
-        }
-
-        sendSwipePointerIdRef.current = null;
-        setIsSendSwiping(false);
-        if (isSubmitting) {
-            return;
-        }
-        setSendSwipeOffset(0);
-    };
+    const handleSendConfirmAutoClose = useCallback(() => {
+        setSendStep('input');
+        setSendMemoInput('');
+        setRecipientType('username');
+        setUsernameInput('');
+        setWalletBodyInput('');
+        setRecipientLookup(null);
+        setAmountInput('');
+        setIsSendConfirmSucceeded(false);
+        closeDrawer(true);
+    }, [closeDrawer]);
 
     const handleLoadMore = () => {
         if (!historyHasMore || !historyCursor || isHistoryLoadingMore) {
@@ -1759,7 +1630,7 @@ export default function WalletPage() {
                     }
                     closeAriaLabel={t('transactions_close') || 'Close'}
                     backAriaLabel={t('back') || 'Back'}
-                    showBackButton={drawerMode === 'send' && sendStep === 'confirm'}
+                    showBackButton={drawerMode === 'send' && sendStep === 'confirm' && !isSendConfirmSucceeded}
                     onBack={handleBackFromSendConfirm}
                     overlayClassName={styles.overlay}
                     drawerClassName={styles.drawer}
@@ -1961,32 +1832,14 @@ export default function WalletPage() {
                                     {drawerError && <p className={styles.drawerError}>{drawerError}</p>}
 
                                     <div className={styles.swipeConfirm}>
-                                        <div className={styles.swipeTrack} ref={sendSwipeTrackRef}>
-                                            <div
-                                                className={styles.swipeFill}
-                                                style={{ width: `${SWIPE_HANDLE_SIZE + sendSwipeOffset + (SWIPE_TRACK_HORIZONTAL_PADDING * 2)}px` }}
-                                            />
-                                            <span className={styles.swipeLabel}>
-                                                {t('transfer_swipe_confirm') || 'Confirm'}
-                                            </span>
-                                            <button
-                                                type="button"
-                                                className={`${styles.swipeHandle} ${isSendSwiping ? styles.swipeHandleActive : ''}`}
-                                                style={{ transform: `translateX(${sendSwipeOffset}px)` }}
-                                                onPointerDown={handleSendSwipePointerDown}
-                                                onPointerMove={handleSendSwipePointerMove}
-                                                onPointerUp={finalizeSendSwipe}
-                                                onPointerCancel={handleSendSwipePointerCancel}
-                                                disabled={isSubmitting}
-                                                aria-label={t('transfer_swipe_confirm') || 'Confirm'}
-                                            >
-                                                {isSubmitting ? (
-                                                    <Loader2 size={20} className={styles.swipeSpinner} />
-                                                ) : (
-                                                    <ArrowRight size={20} />
-                                                )}
-                                            </button>
-                                        </div>
+                                        <SwipeConfirmWithSuccess
+                                            label={t('transfer_swipe_confirm') || 'Confirm'}
+                                            onConfirm={handleApplySend}
+                                            isSubmitting={isSubmitting}
+                                            isSuccess={isSendConfirmSucceeded}
+                                            onSuccessAutoClose={handleSendConfirmAutoClose}
+                                            resetKey={`${drawerMode}-${sendStep}-${sendRecipientDisplay}-${parsedAmount ?? 'none'}`}
+                                        />
                                     </div>
                                 </div>
                             )}
