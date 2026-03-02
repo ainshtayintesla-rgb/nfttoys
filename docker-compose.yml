@@ -49,6 +49,7 @@ services:
       NODE_ENV: production
       RUN_MODE: production
       UPDATE_SERVICE_ENABLED: "true"
+      UPDATE_BRANCH: main
       UPDATE_SERVER_ROOT: /workspace/server
       UPDATE_REPO_ROOT: /workspace
       UPDATE_RUNNER_SCRIPT: /workspace/scripts/prod-update-runner.sh
