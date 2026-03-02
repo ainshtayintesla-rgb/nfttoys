@@ -127,7 +127,13 @@ function shellEscape(value: string): string {
     return `'${value.replace(/'/g, '\'\\\'\'')}'`;
 }
 
-function runCommand(command: string, args: string[], cwd: string, timeoutMs = CHECK_TIMEOUT_MS): Promise<string> {
+function runCommand(
+    command: string,
+    args: string[],
+    cwd: string,
+    timeoutMs = CHECK_TIMEOUT_MS,
+    envOverrides: NodeJS.ProcessEnv = {},
+): Promise<string> {
     return new Promise((resolve, reject) => {
         execFile(
             command,
@@ -136,7 +142,10 @@ function runCommand(command: string, args: string[], cwd: string, timeoutMs = CH
                 cwd,
                 timeout: timeoutMs,
                 maxBuffer: 10 * 1024 * 1024,
-                env: process.env,
+                env: {
+                    ...process.env,
+                    ...envOverrides,
+                },
             },
             (error, stdout, stderr) => {
                 const stdoutText = safeTrim(stdout);
@@ -152,6 +161,16 @@ function runCommand(command: string, args: string[], cwd: string, timeoutMs = CH
             },
         );
     });
+}
+
+function runGitCommand(args: string[], cwd: string, timeoutMs = CHECK_TIMEOUT_MS): Promise<string> {
+    return runCommand(
+        'git',
+        ['-c', 'credential.useHttpPath=false', ...args],
+        cwd,
+        timeoutMs,
+        { GIT_TERMINAL_PROMPT: '0' },
+    );
 }
 
 function parseChangelog(markdown: string): ChangelogSummary {
@@ -254,12 +273,25 @@ class UpdateService {
 
     constructor() {
         this.runMode = 'development';
-        this.serverRoot = process.cwd();
-        this.repoRoot = path.resolve(this.serverRoot, '..');
+
+        const serverRootOverride = String(process.env.UPDATE_SERVER_ROOT || '').trim();
+        const repoRootOverride = String(process.env.UPDATE_REPO_ROOT || '').trim();
+        const runnerScriptOverride = String(process.env.UPDATE_RUNNER_SCRIPT || '').trim();
+
+        this.serverRoot = serverRootOverride
+            ? path.resolve(serverRootOverride)
+            : process.cwd();
+
+        this.repoRoot = repoRootOverride
+            ? path.resolve(repoRootOverride)
+            : path.resolve(this.serverRoot, '..');
+
         this.settingsPath = path.resolve(this.serverRoot, 'data', 'update-settings.json');
         this.progressPath = path.resolve(this.serverRoot, 'data', 'update-progress.json');
         this.buildMarkerPath = path.resolve(this.serverRoot, 'data', 'last-built-commit.txt');
-        this.runnerScript = path.resolve(this.repoRoot, 'scripts', 'prod-update-runner.sh');
+        this.runnerScript = runnerScriptOverride
+            ? path.resolve(runnerScriptOverride)
+            : path.resolve(this.repoRoot, 'scripts', 'prod-update-runner.sh');
 
         this.settings = {
             intervalMinutes: DEFAULT_INTERVAL_MINUTES,
@@ -503,7 +535,7 @@ class UpdateService {
             return this.branch;
         }
 
-        const currentBranch = await runCommand('git', ['rev-parse', '--abbrev-ref', 'HEAD'], this.repoRoot);
+        const currentBranch = await runGitCommand(['rev-parse', '--abbrev-ref', 'HEAD'], this.repoRoot);
         const normalizedBranch = (currentBranch || '').trim();
         this.branch = (!normalizedBranch || normalizedBranch === 'HEAD' || normalizedBranch === 'master')
             ? 'main'
@@ -512,8 +544,7 @@ class UpdateService {
     }
 
     private async getCommitSnapshot(ref: string): Promise<CommitSnapshot> {
-        const output = await runCommand(
-            'git',
+        const output = await runGitCommand(
             ['log', '-1', '--format=%H%n%h%n%cI%n%s', ref],
             this.repoRoot,
         );
@@ -538,8 +569,7 @@ class UpdateService {
     }
 
     private async readRemoteVersion(branch: string): Promise<string | null> {
-        const content = await runCommand(
-            'git',
+        const content = await runGitCommand(
             ['show', `origin/${branch}:client/package.json`],
             this.repoRoot,
         );
@@ -561,8 +591,7 @@ class UpdateService {
     }
 
     private async readRemoteChangelog(branch: string): Promise<ChangelogSummary> {
-        const content = await runCommand(
-            'git',
+        const content = await runGitCommand(
             ['show', `origin/${branch}:CHANGELOG.md`],
             this.repoRoot,
         );
@@ -594,7 +623,7 @@ class UpdateService {
     private async refreshRemoteSnapshot(): Promise<void> {
         const branch = await this.resolveBranch();
 
-        await runCommand('git', ['fetch', 'origin', branch], this.repoRoot, CHECK_TIMEOUT_MS);
+        await runGitCommand(['fetch', 'origin', branch], this.repoRoot, CHECK_TIMEOUT_MS);
 
         const current = await this.getCommitSnapshot('HEAD');
         const remote = await this.getCommitSnapshot(`origin/${branch}`);
@@ -619,7 +648,7 @@ class UpdateService {
     }
 
     private async ensureCleanWorktree(): Promise<void> {
-        const status = await runCommand('git', ['status', '--porcelain'], this.repoRoot);
+        const status = await runGitCommand(['status', '--porcelain'], this.repoRoot);
         if (status.trim()) {
             throw new Error('Local changes detected in repository.');
         }
@@ -630,7 +659,7 @@ class UpdateService {
         const clientDir = path.resolve(this.repoRoot, 'client');
         const botDir = path.resolve(this.repoRoot, 'bot');
 
-        await runCommand('git', ['pull', '--ff-only', 'origin', branch], this.repoRoot, LONG_TIMEOUT_MS);
+        await runGitCommand(['pull', '--ff-only', 'origin', branch], this.repoRoot, LONG_TIMEOUT_MS);
 
         if (fs.existsSync(clientDir)) {
             await runCommand('npm', ['ci'], clientDir, LONG_TIMEOUT_MS);

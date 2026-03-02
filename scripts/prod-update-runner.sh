@@ -79,7 +79,7 @@ main() {
   log "=== Compose update started (branch: $BRANCH) ==="
   write_progress "pulling"
 
-  if ! git -C "$ROOT_DIR" pull --ff-only origin "$BRANCH" >> "$LOG_FILE" 2>&1; then
+  if ! GIT_TERMINAL_PROMPT=0 git -c credential.useHttpPath=false -C "$ROOT_DIR" pull --ff-only origin "$BRANCH" >> "$LOG_FILE" 2>&1; then
     log "ERROR: git pull failed"
     write_progress "failed" '"error":"git pull failed"'
     exit 1

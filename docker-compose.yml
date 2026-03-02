@@ -48,7 +48,11 @@ services:
     environment:
       NODE_ENV: production
       RUN_MODE: production
-      UPDATE_SERVICE_ENABLED: "false"
+      UPDATE_SERVICE_ENABLED: "true"
+      UPDATE_SERVER_ROOT: /workspace/server
+      UPDATE_REPO_ROOT: /workspace
+      UPDATE_RUNNER_SCRIPT: /workspace/scripts/prod-update-runner.sh
+      NFTTOYS_COMPOSE_FILE: /workspace/docker-compose.yml
       PORT: 4000
       DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://nfttoys:nfttoys@postgres:5432/nfttoys?schema=public}
       BOT_SERVICE_URL: http://bot:8090/internal/notify/nft-received
@@ -60,6 +64,13 @@ services:
     command: ["sh", "-lc", "npm run prisma:migrate && node dist/index.js"]
     ports:
       - "4100:4000"
+    volumes:
+      - /root/my-works/nfttoys-pro:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker:ro
+      - /usr/libexec/docker/cli-plugins:/usr/libexec/docker/cli-plugins:ro
+      - /root/.gitconfig:/root/.gitconfig:ro
+      - /root/remotecontroller/.git-credentials:/root/remotecontroller/.git-credentials:ro
     healthcheck:
       test: ["CMD", "node", "-e", "require(\"http\").get(\"http://127.0.0.1:4000/health\", (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on(\"error\", () => process.exit(1));"]
       interval: 10s
