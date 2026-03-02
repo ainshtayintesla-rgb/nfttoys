@@ -1,0 +1,150 @@
+name: nfttoys-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nfttoys_dev
+      POSTGRES_USER: nfttoys
+      POSTGRES_PASSWORD: nfttoys
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nfttoys -d nfttoys_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  bot:
+    image: python:3.12-slim
+    init: true
+    restart: unless-stopped
+    working_dir: /workspace/bot
+    env_file:
+      - ./bot/.env.dev
+    environment:
+      BOT_ENV_FILE: /dev/null
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    command:
+      - sh
+      - -lc
+      - |
+        set -e
+        if [ ! -x /opt/venv/bin/python ]; then
+          python3 -m venv /opt/venv
+        fi
+        . /opt/venv/bin/activate
+        pip install --disable-pip-version-check --no-input -r requirements.txt
+        python main.py
+    volumes:
+      - ./bot:/workspace/bot
+      - bot_venv:/opt/venv
+      - bot_data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 8091), 3); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  api:
+    image: node:20-bookworm-slim
+    init: true
+    restart: unless-stopped
+    working_dir: /workspace/server
+    env_file:
+      - ./server/.env.dev
+    environment:
+      CHOKIDAR_USEPOLLING: "1"
+      WATCHPACK_POLLING: "true"
+      UPDATE_SERVICE_ENABLED: "false"
+      RUN_MODE: development
+      NODE_ENV: development
+      PORT: 4200
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bot:
+        condition: service_healthy
+    command:
+      - sh
+      - -lc
+      - |
+        set -e
+        if [ ! -f node_modules/.deps_installed ]; then
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          touch node_modules/.deps_installed
+        fi
+        npm run prisma:generate
+        npm run prisma:migrate
+        npm run dev
+    volumes:
+      - ./server:/workspace/server
+      - api_node_modules:/workspace/server/node_modules
+    ports:
+      - "127.0.0.1:4200:4200"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4200/health',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1));"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  web:
+    image: node:20-bookworm-slim
+    init: true
+    restart: unless-stopped
+    working_dir: /workspace/client
+    env_file:
+      - ./client/.env.dev
+    environment:
+      CHOKIDAR_USEPOLLING: "1"
+      WATCHPACK_POLLING: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      NODE_ENV: development
+    depends_on:
+      api:
+        condition: service_healthy
+    command:
+      - sh
+      - -lc
+      - |
+        set -e
+        if [ ! -f node_modules/.deps_installed ]; then
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          touch node_modules/.deps_installed
+        fi
+        npm run dev -- -H 0.0.0.0 -p 4201
+    volumes:
+      - ./client:/workspace/client
+      - web_node_modules:/workspace/client/node_modules
+    ports:
+      - "127.0.0.1:4201:4201"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4201',(r)=>process.exit(r.statusCode>=200&&r.statusCode<500?0:1)).on('error',()=>process.exit(1));"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  cloudflared-api:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    command: tunnel --no-autoupdate --url http://api:4200
+
+  cloudflared-web:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    command: tunnel --no-autoupdate --url http://web:4201
+
+volumes:
+  postgres_dev_data:
+  api_node_modules:
+  web_node_modules:
+  bot_venv:
+  bot_data:
