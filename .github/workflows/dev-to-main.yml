@@ -1,0 +1,129 @@
+name: Dev To Main Auto Release
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dev-to-main-release
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate Dev Commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: bot/requirements.txt
+
+      - name: Build server
+        working-directory: server
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run prisma:generate
+          npm run build
+
+      - name: Build client
+        working-directory: client
+        env:
+          NODE_ENV: production
+          NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_API_URL: http://127.0.0.1:4100
+          NEXT_PUBLIC_BOT_USERNAME: nfttoysdevbot
+          NEXT_PUBLIC_ADMIN_IDS: "1"
+          NEXT_PUBLIC_TG_GROUP: nfttoys_dev
+          NEXT_PUBLIC_TG_CHANNEL: nfttoys_dev
+          TOKEN_SECRET: ci_token_secret_ci_token_secret_123
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+
+      - name: Validate bot dependencies
+        working-directory: bot
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m py_compile main.py
+
+      - name: Build server Docker targets
+        run: |
+          set -euo pipefail
+          docker build -f server/Dockerfile --target runtime -t nfttoys-ci-server:runtime server
+          docker build -f server/Dockerfile --target migrator -t nfttoys-ci-server:migrator server
+
+      - name: Build client Docker target
+        run: |
+          set -euo pipefail
+          docker build -f client/Dockerfile --target runtime -t nfttoys-ci-client:runtime client
+
+  promote:
+    name: Fast Forward Main
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT != '' && secrets.RELEASE_PAT || github.token }}
+
+      - name: Promote dev to main (fast-forward only)
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch --no-tags origin dev main
+
+          dev_sha="$(git rev-parse origin/dev)"
+          main_sha="$(git rev-parse origin/main)"
+
+          if [[ "$EVENT_SHA" != "$dev_sha" ]]; then
+            echo "Detected newer commit on dev branch, promoting latest dev commit: $dev_sha"
+          fi
+
+          if [[ "$dev_sha" == "$main_sha" ]]; then
+            echo "main is already up to date."
+            exit 0
+          fi
+
+          if ! git merge-base --is-ancestor "$main_sha" "$dev_sha"; then
+            echo "Refusing to move main: non fast-forward path detected."
+            echo "Rebase or merge main into dev, then push dev again."
+            exit 1
+          fi
+
+          git push origin "$dev_sha:refs/heads/main"
