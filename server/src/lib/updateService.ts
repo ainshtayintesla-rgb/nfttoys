@@ -10,6 +10,8 @@ const MIN_INTERVAL_MINUTES = 1;
 const MAX_INTERVAL_MINUTES = 720;
 const CHECK_TIMEOUT_MS = 2 * 60 * 1000;
 const LONG_TIMEOUT_MS = 20 * 60 * 1000;
+const STALE_PROGRESS_TIMEOUT_MS = 30 * 60 * 1000;
+const ACTIVE_UPDATE_PHASES = new Set(['pulling', 'building', 'restarting', 'health_check', 'cleaning']);
 
 
 interface UpdateSettings {
@@ -51,6 +53,13 @@ export interface UpdateStatusPayload {
     settings: UpdateSettings;
     autoUpdateActive: boolean;
     state: UpdateState;
+}
+
+interface UpdateProgressSnapshot {
+    phase: string;
+    error?: string;
+    commit?: string;
+    updatedAt?: string;
 }
 
 export class UpdateServiceError extends Error {
@@ -114,6 +123,9 @@ function isGitAuthError(message: string): boolean {
         || lowered.includes('repository not found');
 }
 
+function shellEscape(value: string): string {
+    return `'${value.replace(/'/g, '\'\\\'\'')}'`;
+}
 
 function runCommand(command: string, args: string[], cwd: string, timeoutMs = CHECK_TIMEOUT_MS): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -305,16 +317,22 @@ class UpdateService {
             return this.snapshot();
         }
 
-        if (this.state.isUpdating) {
-            throw new UpdateServiceError('Update is already running.', 'UPDATE_IN_PROGRESS', 409);
-        }
+        // Sync local state first to avoid stale in-memory lock flags.
+        this.syncFromProgressFile();
 
         // Check if a background update is already running
         const progress = this.readProgressFile();
-        if (progress && ['pulling', 'building', 'restarting', 'health_check', 'cleaning'].includes(progress.phase)) {
-            this.state.isUpdating = true;
-            this.state.updatePhase = progress.phase;
-            throw new UpdateServiceError('Background update is already running.', 'UPDATE_IN_PROGRESS', 409);
+        if (progress && ACTIVE_UPDATE_PHASES.has(progress.phase)) {
+            const lockCleared = await this.clearStaleProgressLockIfNeeded(progress);
+            if (!lockCleared) {
+                this.state.isUpdating = true;
+                this.state.updatePhase = progress.phase;
+                throw new UpdateServiceError('Background update is already running.', 'UPDATE_IN_PROGRESS', 409);
+            }
+        }
+
+        if (this.state.isUpdating) {
+            throw new UpdateServiceError('Update is already running.', 'UPDATE_IN_PROGRESS', 409);
         }
 
         this.state.isUpdating = true;
@@ -660,20 +678,19 @@ class UpdateService {
         }
 
         const logFile = path.resolve(this.serverRoot, 'data', 'update-runner.log');
-        const logFd = fs.openSync(logFile, 'a');
+        const launchCommand = `nohup bash ${shellEscape(this.runnerScript)} ${shellEscape(branch)} >> ${shellEscape(logFile)} 2>&1 < /dev/null &`;
 
-        const child = spawn('bash', [this.runnerScript, branch], {
+        const child = spawn('bash', ['-lc', launchCommand], {
             cwd: this.repoRoot,
             detached: true,
-            stdio: ['ignore', logFd, logFd],
+            stdio: 'ignore',
             env: process.env,
         });
 
         child.unref();
-        fs.closeSync(logFd);
     }
 
-    private readProgressFile(): { phase: string; error?: string; commit?: string; updatedAt?: string } | null {
+    private readProgressFile(): UpdateProgressSnapshot | null {
         if (!fs.existsSync(this.progressPath)) {
             return null;
         }
@@ -681,7 +698,7 @@ class UpdateService {
         try {
             const raw = fs.readFileSync(this.progressPath, 'utf8').trim();
             if (!raw) return null;
-            return JSON.parse(raw) as { phase: string; error?: string; commit?: string; updatedAt?: string };
+            return JSON.parse(raw) as UpdateProgressSnapshot;
         } catch {
             return null;
         }
@@ -756,9 +773,63 @@ class UpdateService {
             return;
         }
 
+        if (ACTIVE_UPDATE_PHASES.has(phase) && this.isProgressStale(progress)) {
+            this.state.isUpdating = false;
+            this.state.updatePhase = null;
+            this.state.lastError = 'Stale update lock was cleared automatically.';
+            this.clearProgressFile();
+            return;
+        }
+
         // Active phases: pulling, building, restarting, health_check, cleaning
         this.state.isUpdating = true;
         this.state.updatePhase = phase;
+    }
+
+    private isProgressStale(progress: UpdateProgressSnapshot): boolean {
+        if (!progress.updatedAt) {
+            return false;
+        }
+
+        const updatedAtMs = Date.parse(progress.updatedAt);
+        if (!Number.isFinite(updatedAtMs)) {
+            return false;
+        }
+
+        return Date.now() - updatedAtMs > STALE_PROGRESS_TIMEOUT_MS;
+    }
+
+    private async isUpdateRunnerAlive(): Promise<boolean> {
+        if (this.runMode !== 'production') {
+            return false;
+        }
+
+        try {
+            const output = await runCommand('pgrep', ['-f', this.runnerScript], this.repoRoot, 5_000);
+            return output
+                .split('\n')
+                .map((line) => line.trim())
+                .some((line) => line.length > 0);
+        } catch {
+            return false;
+        }
+    }
+
+    private async clearStaleProgressLockIfNeeded(progress: UpdateProgressSnapshot): Promise<boolean> {
+        if (!ACTIVE_UPDATE_PHASES.has(progress.phase) || this.runMode !== 'production') {
+            return false;
+        }
+
+        const runnerAlive = await this.isUpdateRunnerAlive();
+        if (runnerAlive && !this.isProgressStale(progress)) {
+            return false;
+        }
+
+        this.clearProgressFile();
+        this.state.isUpdating = false;
+        this.state.updatePhase = null;
+        this.state.lastError = null;
+        return true;
     }
 
     private restartScheduler(): void {
