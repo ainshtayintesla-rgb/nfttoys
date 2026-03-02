@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
-# ──────────────────────────────────────────────────────────────
-# prod-update-runner.sh  — standalone update runner
-#
-# Spawned by the API as a detached process. Handles the full
-# update lifecycle: pull → build → restart → health check → cleanup.
-# Writes progress to server/data/update-progress.json so the API
-# can report status without being killed mid-update.
-# ──────────────────────────────────────────────────────────────
+# Production update runner for Docker Compose deployment.
 set -Euo pipefail
 IFS=$'\n\t'
 
@@ -17,18 +10,14 @@ BUILD_MARKER="$SERVER_DIR/data/last-built-commit.txt"
 LOG_FILE="$SERVER_DIR/data/update-runner.log"
 
 BRANCH="${1:-main}"
-
-PM2_API_APP="${NFTTOYS_PM2_API_APP:-nfttoys-prod-api}"
-PM2_WEB_APP="${NFTTOYS_PM2_WEB_APP:-nfttoys-prod-web}"
-PM2_BOT_APP="${NFTTOYS_PM2_BOT_APP:-nfttoys-prod-bot}"
-
+COMPOSE_FILE="${NFTTOYS_COMPOSE_FILE:-$ROOT_DIR/docker-compose.yml}"
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-nfttoys-prod}"
 API_HEALTH_URL="${NFTTOYS_API_HEALTH_URL:-http://127.0.0.1:4100/health}"
 WEB_HEALTH_URL="${NFTTOYS_WEB_HEALTH_URL:-http://127.0.0.1:4101}"
 
-BACKUP_ROOT="$ROOT_DIR/.deploy-backups"
-KEEP_BACKUPS=2
-
-# ── helpers ──────────────────────────────────────────────────
+compose() {
+  docker compose --project-name "$COMPOSE_PROJECT_NAME" -f "$COMPOSE_FILE" "$@"
+}
 
 log() {
   local ts
@@ -51,15 +40,6 @@ write_progress() {
   fi
 }
 
-write_marker() {
-  local commit
-  commit="$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || echo '')"
-  if [[ -n "$commit" ]]; then
-    mkdir -p "$(dirname "$BUILD_MARKER")"
-    printf '%s\n' "$commit" > "$BUILD_MARKER"
-  fi
-}
-
 wait_for_health() {
   local url="$1"
   local retries="${NFTTOYS_HEALTH_RETRIES:-60}"
@@ -75,78 +55,66 @@ wait_for_health() {
   return 1
 }
 
-cleanup_docker() {
-  log "Pruning unused Docker images"
-  docker image prune -af --filter "until=24h" 2>/dev/null || true
-  docker builder prune -af --filter "until=24h" 2>/dev/null || true
-}
-
-cleanup_backups() {
-  if [[ -d "$BACKUP_ROOT" ]]; then
-    local count
-    count="$(ls -1d "$BACKUP_ROOT"/* 2>/dev/null | wc -l)"
-    if (( count > KEEP_BACKUPS )); then
-      log "Removing old backups (keeping last $KEEP_BACKUPS)"
-      ls -1dt "$BACKUP_ROOT"/* 2>/dev/null | tail -n "+$((KEEP_BACKUPS + 1))" | xargs -r rm -rf
-    fi
+write_marker() {
+  local commit
+  commit="$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || true)"
+  if [[ -n "$commit" ]]; then
+    mkdir -p "$(dirname "$BUILD_MARKER")"
+    printf '%s\n' "$commit" > "$BUILD_MARKER"
   fi
 }
 
-cleanup_npm() {
-  log "Cleaning npm cache"
-  npm cache clean --force 2>/dev/null || true
-}
-
-cleanup_logs() {
-  if [[ -f "$LOG_FILE" ]]; then
-    local size
-    size="$(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)"
-    if (( size > 5242880 )); then
-      tail -c 1048576 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
-      log "Truncated old log entries"
-    fi
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing required command: $1" >&2
+    exit 1
   fi
 }
-
-# ── main ─────────────────────────────────────────────────────
 
 main() {
-  log "=== Update started (branch: $BRANCH) ==="
+  require_cmd git
+  require_cmd docker
+  require_cmd curl
+
+  log "=== Compose update started (branch: $BRANCH) ==="
   write_progress "pulling"
 
-  # 1. Pull latest code
-  log "Pulling from origin/$BRANCH"
   if ! git -C "$ROOT_DIR" pull --ff-only origin "$BRANCH" >> "$LOG_FILE" 2>&1; then
     log "ERROR: git pull failed"
     write_progress "failed" '"error":"git pull failed"'
     exit 1
   fi
 
-  # 2. Build via Docker
   write_progress "building"
-  log "Running Docker build pipeline"
-
-  local docker_script="$ROOT_DIR/scripts/prod-update-docker.sh"
-  if [[ ! -x "$docker_script" ]]; then
-    chmod +x "$docker_script" 2>/dev/null || true
-  fi
-
-  if ! bash "$docker_script" >> "$LOG_FILE" 2>&1; then
-    log "ERROR: Docker build failed"
-    write_progress "failed" '"error":"Docker build pipeline failed"'
+  log "Building service images"
+  if ! compose build --pull api web bot >> "$LOG_FILE" 2>&1; then
+    log "ERROR: docker compose build failed"
+    write_progress "failed" '"error":"docker compose build failed"'
     exit 1
   fi
 
-  # 3. Restart PM2 apps
+  log "Starting database for migrations"
+  if ! compose up -d postgres >> "$LOG_FILE" 2>&1; then
+    log "ERROR: failed to start postgres"
+    write_progress "failed" '"error":"failed to start postgres"'
+    exit 1
+  fi
+
+  log "Running Prisma migrations"
+  if ! compose run --rm --no-deps api npm run prisma:migrate >> "$LOG_FILE" 2>&1; then
+    log "ERROR: Prisma migration failed"
+    write_progress "failed" '"error":"Prisma migration failed"'
+    exit 1
+  fi
+
   write_progress "restarting"
-  log "Restarting PM2 services"
+  log "Applying compose deployment"
+  if ! compose up -d --remove-orphans postgres bot api web >> "$LOG_FILE" 2>&1; then
+    log "ERROR: docker compose up failed"
+    write_progress "failed" '"error":"docker compose up failed"'
+    exit 1
+  fi
 
-  pm2 restart "$PM2_API_APP" >> "$LOG_FILE" 2>&1 || true
-  pm2 restart "$PM2_WEB_APP" >> "$LOG_FILE" 2>&1 || true
-  pm2 restart "$PM2_BOT_APP" >> "$LOG_FILE" 2>&1 || true
-  pm2 save >> "$LOG_FILE" 2>&1 || true
-
-  # 4. Health checks
   write_progress "health_check"
   log "Running health checks"
 
@@ -156,32 +124,25 @@ main() {
     health_ok=false
   fi
   if ! wait_for_health "$WEB_HEALTH_URL"; then
-    log "WARNING: Web health check failed"
+    log "WARNING: WEB health check failed"
     health_ok=false
   fi
 
   if [[ "$health_ok" == "false" ]]; then
-    log "Health checks failed — services may need manual attention"
-    write_progress "failed" '"error":"Health checks failed after restart"'
+    write_progress "failed" '"error":"Health checks failed after compose up"'
     exit 1
   fi
 
-  # 5. Write build marker (success)
-  write_marker
-  log "Build marker written"
-
-  # 6. Cleanup
   write_progress "cleaning"
-  cleanup_docker
-  cleanup_backups
-  cleanup_npm
-  cleanup_logs
+  log "Pruning unused images"
+  docker image prune -af --filter "until=24h" >> "$LOG_FILE" 2>&1 || true
 
-  # 7. Done
+  write_marker
+
   local commit
   commit="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
   write_progress "done" "\"commit\":\"$commit\""
-  log "=== Update completed successfully (commit: $commit) ==="
+  log "=== Compose update completed successfully (commit: $commit) ==="
 }
 
 main "$@"

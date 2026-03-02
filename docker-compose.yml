@@ -1,0 +1,93 @@
+name: nfttoys-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nfttoys}
+      POSTGRES_USER: ${POSTGRES_USER:-nfttoys}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nfttoys}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nfttoys} -d ${POSTGRES_DB:-nfttoys}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./bot/.env
+    environment:
+      BOT_HOST: 0.0.0.0
+      BOT_PORT: 8090
+      BOT_LANG_STORE: /app/data/user_lang.json
+      BOT_PREFS_STORE: /app/data/user_prefs.json
+      BOT_ENV_FILE: /dev/null
+    volumes:
+      - bot_data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection((\"127.0.0.1\", 8090), 3); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+      target: runtime
+    restart: unless-stopped
+    env_file:
+      - ./server/.env
+    environment:
+      NODE_ENV: production
+      RUN_MODE: production
+      UPDATE_SERVICE_ENABLED: "false"
+      PORT: 4000
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://nfttoys:nfttoys@postgres:5432/nfttoys?schema=public}
+      BOT_SERVICE_URL: http://bot:8090/internal/notify/nft-received
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bot:
+        condition: service_started
+    command: ["sh", "-lc", "npm run prisma:migrate && node dist/index.js"]
+    ports:
+      - "4100:4000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require(\"http\").get(\"http://127.0.0.1:4000/health\", (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on(\"error\", () => process.exit(1));"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      target: runtime
+    restart: unless-stopped
+    env_file:
+      - ./client/.env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "4101:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require(\"http\").get(\"http://127.0.0.1:3000\", (res) => process.exit(res.statusCode >= 200 && res.statusCode < 500 ? 0 : 1)).on(\"error\", () => process.exit(1));"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  bot_data:
