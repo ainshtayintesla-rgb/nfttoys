@@ -72,9 +72,17 @@ services:
       - -lc
       - |
         set -e
-        if [ ! -f node_modules/.deps_installed ]; then
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
-          touch node_modules/.deps_installed
+        LOCKFILE=package-lock.json
+        HASH_FILE=node_modules/.deps_lock_hash
+        CURRENT_HASH=""
+        if [ -f "$$LOCKFILE" ]; then
+          CURRENT_HASH="$$(sha256sum "$$LOCKFILE" | awk '{print $$1}')"
+        fi
+        INSTALLED_HASH="$$(cat "$$HASH_FILE" 2>/dev/null || true)"
+        if [ ! -d node_modules ] || [ "$$CURRENT_HASH" != "$$INSTALLED_HASH" ]; then
+          if [ -f "$$LOCKFILE" ]; then npm ci; else npm install; fi
+          mkdir -p node_modules
+          printf '%s' "$$CURRENT_HASH" > "$$HASH_FILE"
         fi
         npm run prisma:generate
         npm run prisma:migrate
@@ -110,9 +118,17 @@ services:
       - -lc
       - |
         set -e
-        if [ ! -f node_modules/.deps_installed ]; then
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
-          touch node_modules/.deps_installed
+        LOCKFILE=package-lock.json
+        HASH_FILE=node_modules/.deps_lock_hash
+        CURRENT_HASH=""
+        if [ -f "$$LOCKFILE" ]; then
+          CURRENT_HASH="$$(sha256sum "$$LOCKFILE" | awk '{print $$1}')"
+        fi
+        INSTALLED_HASH="$$(cat "$$HASH_FILE" 2>/dev/null || true)"
+        if [ ! -d node_modules ] || [ "$$CURRENT_HASH" != "$$INSTALLED_HASH" ]; then
+          if [ -f "$$LOCKFILE" ]; then npm ci; else npm install; fi
+          mkdir -p node_modules
+          printf '%s' "$$CURRENT_HASH" > "$$HASH_FILE"
         fi
         npm run dev -- -H 0.0.0.0 -p 4201
     volumes:

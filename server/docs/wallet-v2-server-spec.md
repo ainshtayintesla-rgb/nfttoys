@@ -94,25 +94,37 @@ Indexes:
 - `wallet_id` UUID NOT NULL FK -> `wallets_v2.id`
 - `user_id` TEXT NULL
 - `device_id` TEXT NOT NULL
+- `platform` TEXT NOT NULL (`ios|android|web`)
+- `biometric_supported` BOOLEAN NOT NULL DEFAULT false
 - `device_pubkey` TEXT NULL
 - `refresh_token_hash` TEXT NOT NULL
+- `refresh_token_expires_at` TIMESTAMPTZ NOT NULL
 - `status` TEXT NOT NULL DEFAULT `'active'` (`active|revoked`)
 - `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
 - `last_seen_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+- `last_ip_hash` TEXT NULL
+- `user_agent` TEXT NULL
 - `revoked_at` TIMESTAMPTZ NULL
+- `revoked_reason` TEXT NULL
 
 Constraints:
 - unique (`wallet_id`, `device_id`, `status`) for one active session per device
+
+Indexes:
+- `idx_wallet_sessions_v2_wallet_id_status` on (`wallet_id`, `status`)
+- `idx_wallet_sessions_v2_user_id_status` on (`user_id`, `status`)
 
 ### `tx_challenges_v2`
 - `id` UUID PK
 - `tx_id` UUID NOT NULL FK -> `tx_v2.id`
 - `session_id` UUID NOT NULL FK -> `wallet_sessions_v2.id`
 - `nonce_hash` TEXT NOT NULL
+- `status` TEXT NOT NULL DEFAULT `'active'` (`active|consumed|expired|canceled`)
 - `expires_at` TIMESTAMPTZ NOT NULL
 - `attempts` INT NOT NULL DEFAULT 0
 - `max_attempts` INT NOT NULL DEFAULT 5
 - `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+- `consumed_at` TIMESTAMPTZ NULL
 
 ### `audit_events_v2`
 - `id` UUID PK
@@ -270,7 +282,109 @@ Errors:
 - `423 WALLET_BLOCKED`
 - `429 IMPORT_RATE_LIMITED`
 
-## 6.3 `GET /v2/wallet/:id/balance`
+## 6.3 `POST /v2/session/refresh`
+
+Rotates refresh token and returns a new token pair for the same active device session.
+
+Request:
+```json
+{
+  "refreshToken": "opaque-token",
+  "deviceId": "ios-uuid"
+}
+```
+
+Response `200`:
+```json
+{
+  "success": true,
+  "data": {
+    "session": {
+      "accessToken": "jwt",
+      "refreshToken": "opaque-token-v2",
+      "expiresInSec": 3600
+    }
+  }
+}
+```
+
+Errors:
+- `401 INVALID_REFRESH_TOKEN`
+- `409 DEVICE_MISMATCH`
+- `423 SESSION_REVOKED`
+
+## 6.4 `POST /v2/session/logout`
+
+Revokes current wallet session (current device).
+
+Request:
+```json
+{
+  "refreshToken": "opaque-token"
+}
+```
+
+Response `200`:
+```json
+{
+  "success": true,
+  "data": {
+    "revoked": true
+  }
+}
+```
+
+## 6.5 `GET /v2/sessions`
+
+Returns active/recent device sessions for current wallet.
+
+Response `200`:
+```json
+{
+  "success": true,
+  "data": {
+    "sessions": [
+      {
+        "id": "8f9f7b0f-85b3-44f2-8fc2-3d1618776504",
+        "deviceId": "ios-uuid",
+        "platform": "ios",
+        "biometricSupported": true,
+        "status": "active",
+        "createdAt": "2026-03-02T10:00:00.000Z",
+        "lastSeenAt": "2026-03-02T12:30:00.000Z",
+        "isCurrent": true
+      }
+    ]
+  }
+}
+```
+
+## 6.6 `POST /v2/sessions/revoke`
+
+Revokes another device session for current wallet.
+
+Request:
+```json
+{
+  "sessionId": "8f9f7b0f-85b3-44f2-8fc2-3d1618776504"
+}
+```
+
+Response `200`:
+```json
+{
+  "success": true,
+  "data": {
+    "revoked": true
+  }
+}
+```
+
+Rules:
+1. Current session cannot revoke itself via this endpoint; use `/v2/session/logout`.
+2. Revoked session cannot refresh or confirm transactions anymore.
+
+## 6.7 `GET /v2/wallet/:id/balance`
 
 Returns wallet balances.
 
@@ -293,7 +407,7 @@ Response `200`:
 }
 ```
 
-## 6.4 `POST /v2/tx/create`
+## 6.8 `POST /v2/tx/create`
 
 Creates an internal transaction and reserves sender balance.
 
@@ -339,7 +453,7 @@ Rules:
 2. Use DB transaction + row lock to avoid double spend.
 3. Idempotency key is mandatory for client retries.
 
-## 6.5 `POST /v2/tx/confirm`
+## 6.9 `POST /v2/tx/confirm`
 
 Confirms and executes a pending internal transaction.
 
@@ -403,7 +517,12 @@ Execution rules:
 - max 5 failed PIN attempts per challenge/session
 - after limit: challenge invalidated, tx canceled, locked funds released
 
-3. Global API rate limit per IP and per wallet session.
+3. Session and auth endpoints:
+- `POST /v2/session/refresh`: 10 requests / 5 min per session
+- `POST /v2/session/logout`: 20 requests / 5 min per session
+- `POST /v2/sessions/revoke`: 20 requests / 5 min per wallet
+
+4. Global API rate limit per IP and per wallet session.
 
 ## 8. Audit and Logging
 
@@ -438,6 +557,7 @@ Execution rules:
 5. Unified address format is enforced for all assets.
 6. No secrets appear in logs or audit payloads.
 7. Double spend is prevented under concurrent requests.
+8. Device session list/revoke/refresh works and blocks revoked devices from further access.
 
 ## 11. Out of Scope (V2)
 

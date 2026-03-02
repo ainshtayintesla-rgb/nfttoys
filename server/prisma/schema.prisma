@@ -30,6 +30,9 @@ model User {
   outgoingTransactions Transaction[]       @relation("TxFromUser")
   incomingTransactions Transaction[]       @relation("TxToUser")
   walletTransactions   WalletTransaction[]
+  walletsV2           WalletV2[]
+  walletSessionsV2    WalletSessionV2[]
+  auditEventsV2       AuditEventV2[]
 
   @@index([referrerId, referredAt])
 }
@@ -157,4 +160,137 @@ model Transaction {
   @@index([tokenId, timestamp])
   @@index([fromUserId, timestamp])
   @@index([toUserId, timestamp])
+}
+
+model WalletV2 {
+  id                 String            @id @db.Uuid
+  userId             String?           @map("user_id")
+  mnemonicHash       String            @map("mnemonic_hash")
+  mnemonicSalt       String            @map("mnemonic_salt")
+  mnemonicFingerprint String           @unique @map("mnemonic_fingerprint")
+  pinHash            String            @map("pin_hash")
+  pinSalt            String            @map("pin_salt")
+  status             String            @default("active")
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lastImportAt       DateTime?         @map("last_import_at") @db.Timestamptz(6)
+  user               User?             @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  addresses          AddressV2[]
+  balances           BalanceV2[]
+  txs                TxV2[]
+  sessions           WalletSessionV2[]
+  auditEvents        AuditEventV2[]
+
+  @@index([userId], map: "idx_wallets_v2_user_id")
+  @@index([status], map: "idx_wallets_v2_status")
+  @@map("wallets_v2")
+}
+
+model AddressV2 {
+  id        String    @id @db.Uuid
+  walletId  String    @map("wallet_id") @db.Uuid
+  address   String    @unique
+  type      String    @default("main")
+  status    String    @default("active")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  wallet    WalletV2  @relation(fields: [walletId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([walletId, type], map: "addresses_v2_wallet_id_type_key")
+  @@map("addresses_v2")
+}
+
+model BalanceV2 {
+  walletId  String    @map("wallet_id") @db.Uuid
+  asset     String
+  available BigInt    @default(0)
+  locked    BigInt    @default(0)
+  updatedAt DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  wallet    WalletV2  @relation(fields: [walletId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([walletId, asset])
+  @@map("balances_v2")
+}
+
+model TxV2 {
+  id             String          @id @db.Uuid
+  walletId       String          @map("wallet_id") @db.Uuid
+  fromAddress    String          @map("from_address")
+  toAddress      String          @map("to_address")
+  asset          String
+  amount         BigInt
+  status         String
+  meta           Json?
+  idempotencyKey String?         @unique @map("idempotency_key")
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  confirmedAt    DateTime?       @map("confirmed_at") @db.Timestamptz(6)
+  completedAt    DateTime?       @map("completed_at") @db.Timestamptz(6)
+  wallet         WalletV2        @relation(fields: [walletId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  challenges     TxChallengeV2[]
+
+  @@index([walletId, createdAt(sort: Desc)], map: "idx_tx_v2_wallet_id_created_at")
+  @@index([status], map: "idx_tx_v2_status")
+  @@map("tx_v2")
+}
+
+model WalletSessionV2 {
+  id                    String          @id @db.Uuid
+  walletId              String          @map("wallet_id") @db.Uuid
+  userId                String?         @map("user_id")
+  deviceId              String          @map("device_id")
+  platform              String
+  biometricSupported    Boolean         @default(false) @map("biometric_supported")
+  devicePubkey          String?         @map("device_pubkey")
+  refreshTokenHash      String          @map("refresh_token_hash")
+  refreshTokenExpiresAt DateTime        @map("refresh_token_expires_at") @db.Timestamptz(6)
+  status                String          @default("active")
+  createdAt             DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt            DateTime        @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  lastIpHash            String?         @map("last_ip_hash")
+  userAgent             String?         @map("user_agent")
+  revokedAt             DateTime?       @map("revoked_at") @db.Timestamptz(6)
+  revokedReason         String?         @map("revoked_reason")
+  wallet                WalletV2        @relation(fields: [walletId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  user                  User?           @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  challenges            TxChallengeV2[]
+
+  @@unique([walletId, deviceId, status], map: "wallet_sessions_v2_wallet_id_device_id_status_key")
+  @@index([walletId, status], map: "idx_wallet_sessions_v2_wallet_id_status")
+  @@index([userId, status], map: "idx_wallet_sessions_v2_user_id_status")
+  @@map("wallet_sessions_v2")
+}
+
+model TxChallengeV2 {
+  id          String          @id @db.Uuid
+  txId        String          @map("tx_id") @db.Uuid
+  sessionId   String          @map("session_id") @db.Uuid
+  nonceHash   String          @map("nonce_hash")
+  status      String          @default("active")
+  expiresAt   DateTime        @map("expires_at") @db.Timestamptz(6)
+  attempts    Int             @default(0)
+  maxAttempts Int             @default(5) @map("max_attempts")
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  consumedAt  DateTime?       @map("consumed_at") @db.Timestamptz(6)
+  tx          TxV2            @relation(fields: [txId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  session     WalletSessionV2 @relation(fields: [sessionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([txId], map: "idx_tx_challenges_v2_tx_id")
+  @@index([sessionId], map: "idx_tx_challenges_v2_session_id")
+  @@map("tx_challenges_v2")
+}
+
+model AuditEventV2 {
+  id        String    @id @db.Uuid
+  walletId  String?   @map("wallet_id") @db.Uuid
+  userId    String?   @map("user_id")
+  event     String
+  ipHash    String?   @map("ip_hash")
+  userAgent String?   @map("user_agent")
+  meta      Json?
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  wallet    WalletV2? @relation(fields: [walletId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([walletId, createdAt], map: "idx_audit_events_v2_wallet_id_created_at")
+  @@index([userId, createdAt], map: "idx_audit_events_v2_user_id_created_at")
+  @@map("audit_events_v2")
 }

@@ -16,6 +16,7 @@ import adminRoutes from './routes/admin';
 import notificationRoutes from './routes/notifications';
 import referralRoutes from './routes/referrals';
 import transactionRoutes from './routes/transactions';
+import walletV2Routes from './routes/walletV2';
 
 // Middleware
 import { errorHandler } from './middleware/errorHandler';
@@ -105,6 +106,7 @@ app.use('/admin', adminRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/referrals', referralRoutes);
 app.use('/transactions', transactionRoutes);
+app.use('/v2', walletV2Routes);
 
 // 404 handler
 app.use((req, res) => {

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Protect remote main branch from accidental pushes in this repository.
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main)
+      echo "Blocked: pushing to 'main' is disabled for nfttoys-dev. Push to 'dev' instead." >&2
+      exit 1
+      ;;
+  esac
+done
+
+exit 0
