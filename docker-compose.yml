@@ -52,6 +52,10 @@ services:
       UPDATE_SERVER_ROOT: /workspace/server
       UPDATE_REPO_ROOT: /workspace
       UPDATE_RUNNER_SCRIPT: /workspace/scripts/prod-update-runner.sh
+      UPDATE_RUNNER_MODE: docker
+      UPDATE_RUNNER_IMAGE: nfttoys-prod-api
+      UPDATE_RUNNER_HOST_REPO: /root/my-works/nfttoys-pro
+      UPDATE_RUNNER_CONTAINER_PREFIX: nfttoys-update-runner
       NFTTOYS_COMPOSE_FILE: /workspace/docker-compose.yml
       PORT: 4000
       DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://nfttoys:nfttoys@postgres:5432/nfttoys?schema=public}

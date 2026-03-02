@@ -706,10 +706,93 @@ class UpdateService {
             );
         }
 
+        const runnerMode = String(process.env.UPDATE_RUNNER_MODE || '').trim().toLowerCase();
+        if (runnerMode === 'docker') {
+            this.spawnDockerUpdateRunner(branch);
+            return;
+        }
+
         const logFile = path.resolve(this.serverRoot, 'data', 'update-runner.log');
         const launchCommand = `nohup bash ${shellEscape(this.runnerScript)} ${shellEscape(branch)} >> ${shellEscape(logFile)} 2>&1 < /dev/null &`;
 
         const child = spawn('bash', ['-lc', launchCommand], {
+            cwd: this.repoRoot,
+            detached: true,
+            stdio: 'ignore',
+            env: process.env,
+        });
+
+        child.unref();
+    }
+
+    private spawnDockerUpdateRunner(branch: string): void {
+        const runnerImage = String(process.env.UPDATE_RUNNER_IMAGE || '').trim();
+        const hostRepoPath = String(process.env.UPDATE_RUNNER_HOST_REPO || '').trim();
+        const containerWorkdir = String(process.env.UPDATE_RUNNER_WORKDIR || '/workspace').trim() || '/workspace';
+        const containerScriptPath = String(
+            process.env.UPDATE_RUNNER_SCRIPT_PATH || path.posix.join(containerWorkdir, 'scripts', 'prod-update-runner.sh'),
+        ).trim();
+
+        if (!runnerImage) {
+            throw new UpdateServiceError(
+                'UPDATE_RUNNER_IMAGE is required for docker runner mode.',
+                'RUNNER_CONFIG_INVALID',
+                500,
+            );
+        }
+
+        if (!hostRepoPath) {
+            throw new UpdateServiceError(
+                'UPDATE_RUNNER_HOST_REPO is required for docker runner mode.',
+                'RUNNER_CONFIG_INVALID',
+                500,
+            );
+        }
+
+        const runnerContainerPrefix = String(process.env.UPDATE_RUNNER_CONTAINER_PREFIX || 'nfttoys-update-runner').trim();
+        const runnerName = `${runnerContainerPrefix || 'nfttoys-update-runner'}-${Date.now()}`;
+
+        const dockerArgs = [
+            'run',
+            '-d',
+            '--rm',
+            '--name', runnerName,
+            '--label', 'nfttoys.update.runner=1',
+            '--network', 'host',
+            '-w', containerWorkdir,
+            '-v', `${hostRepoPath}:${containerWorkdir}`,
+            '-v', '/var/run/docker.sock:/var/run/docker.sock',
+            '-v', '/usr/bin/docker:/usr/bin/docker:ro',
+            '-v', '/usr/libexec/docker/cli-plugins:/usr/libexec/docker/cli-plugins:ro',
+        ];
+
+        const hostGitConfig = String(process.env.UPDATE_RUNNER_HOST_GITCONFIG || '/root/.gitconfig').trim();
+        if (hostGitConfig && fs.existsSync(hostGitConfig)) {
+            dockerArgs.push('-v', `${hostGitConfig}:/root/.gitconfig:ro`);
+        }
+
+        const hostGitCredentials = String(process.env.UPDATE_RUNNER_HOST_GIT_CREDENTIALS || '/root/remotecontroller/.git-credentials').trim();
+        if (hostGitCredentials && fs.existsSync(hostGitCredentials)) {
+            dockerArgs.push('-v', `${hostGitCredentials}:/root/remotecontroller/.git-credentials`);
+        }
+
+        const composeProjectName = String(process.env.COMPOSE_PROJECT_NAME || 'nfttoys-prod').trim() || 'nfttoys-prod';
+        const composeFile = String(process.env.UPDATE_RUNNER_COMPOSE_FILE || path.posix.join(containerWorkdir, 'docker-compose.yml')).trim();
+        const apiHealthUrl = String(process.env.UPDATE_RUNNER_API_HEALTH_URL || 'http://127.0.0.1:4100/health').trim();
+        const webHealthUrl = String(process.env.UPDATE_RUNNER_WEB_HEALTH_URL || 'http://127.0.0.1:4101').trim();
+
+        dockerArgs.push(
+            '-e', `COMPOSE_PROJECT_NAME=${composeProjectName}`,
+            '-e', `NFTTOYS_COMPOSE_FILE=${composeFile}`,
+            '-e', `NFTTOYS_API_HEALTH_URL=${apiHealthUrl}`,
+            '-e', `NFTTOYS_WEB_HEALTH_URL=${webHealthUrl}`,
+            runnerImage,
+            'bash',
+            containerScriptPath,
+            branch,
+        );
+
+        const child = spawn('docker', dockerArgs, {
             cwd: this.repoRoot,
             detached: true,
             stdio: 'ignore',
@@ -835,6 +918,29 @@ class UpdateService {
 
         try {
             const output = await runCommand('pgrep', ['-f', this.runnerScript], this.repoRoot, 5_000);
+            const hasLegacyRunner = output
+                .split('\n')
+                .map((line) => line.trim())
+                .some((line) => line.length > 0);
+
+            if (hasLegacyRunner) {
+                return true;
+            }
+        } catch {
+            // Ignore and try docker-runner probe.
+        }
+
+        try {
+            const runnerContainerPrefix = String(process.env.UPDATE_RUNNER_CONTAINER_PREFIX || 'nfttoys-update-runner').trim();
+            const dockerArgs = ['ps', '--filter', 'label=nfttoys.update.runner=1'];
+
+            if (runnerContainerPrefix) {
+                dockerArgs.push('--filter', `name=${runnerContainerPrefix}`);
+            }
+
+            dockerArgs.push('--format', '{{.ID}}');
+
+            const output = await runCommand('docker', dockerArgs, this.repoRoot, 5_000);
             return output
                 .split('\n')
                 .map((line) => line.trim())
