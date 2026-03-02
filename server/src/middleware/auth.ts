@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import { JwtAuthPayload, verifyAuthToken } from '../lib/auth/jwt';
+import { ensureAuthUserUpsert } from '../lib/auth/ensureAuthUserUpsert';
 import { validateTelegramInitData } from '../lib/utils/telegramValidation';
 
 declare global {
@@ -77,40 +78,57 @@ function extractInitDataAuth(req: Request): JwtAuthPayload | null {
     };
 }
 
-export function optionalAuth(req: Request, _res: Response, next: NextFunction) {
+function resolveAuthPayload(req: Request): JwtAuthPayload | null {
     const token = extractBearerToken(req.headers.authorization);
-
     if (token) {
         const payload = verifyAuthToken(token);
-        req.authUser = payload || undefined;
-
         if (payload) {
-            return next();
+            return payload;
         }
     }
 
-    const initDataPayload = extractInitDataAuth(req);
-    req.authUser = initDataPayload || undefined;
-    return next();
+    return extractInitDataAuth(req);
+}
+
+function syncAuthUserAndContinue(
+    authUser: JwtAuthPayload,
+    res: Response,
+    next: NextFunction,
+    required: boolean,
+) {
+    ensureAuthUserUpsert(authUser)
+        .then(() => next())
+        .catch((error) => {
+            console.error('Auth user auto-upsert failed:', error);
+
+            if (required) {
+                return res.status(500).json({
+                    error: 'Failed to sync authenticated user',
+                    code: 'AUTH_SYNC_ERROR',
+                });
+            }
+
+            return next();
+        });
+}
+
+export function optionalAuth(req: Request, _res: Response, next: NextFunction) {
+    const payload = resolveAuthPayload(req);
+    req.authUser = payload || undefined;
+
+    if (!payload) {
+        return next();
+    }
+
+    return syncAuthUserAndContinue(payload, _res, next, false);
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
-    const token = extractBearerToken(req.headers.authorization);
+    const payload = resolveAuthPayload(req);
 
-    if (token) {
-        const payload = verifyAuthToken(token);
-
-        if (payload) {
-            req.authUser = payload;
-            return next();
-        }
-    }
-
-    const initDataPayload = extractInitDataAuth(req);
-
-    if (initDataPayload) {
-        req.authUser = initDataPayload;
-        return next();
+    if (payload) {
+        req.authUser = payload;
+        return syncAuthUserAndContinue(payload, res, next, true);
     }
 
     return res.status(401).json({
