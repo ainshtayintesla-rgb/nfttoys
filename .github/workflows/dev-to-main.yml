@@ -52,7 +52,6 @@ jobs:
       - name: Build client
         working-directory: client
         env:
-          NODE_ENV: production
           NEXT_TELEMETRY_DISABLED: "1"
           NEXT_PUBLIC_API_URL: http://127.0.0.1:4100
           NEXT_PUBLIC_BOT_USERNAME: nfttoysdevbot
@@ -62,8 +61,8 @@ jobs:
           TOKEN_SECRET: ci_token_secret_ci_token_secret_123
         run: |
           set -euo pipefail
-          npm ci
-          npm run build
+          npm ci --include=dev
+          NODE_ENV=production npm run build
 
       - name: Validate bot dependencies
         working-directory: bot
