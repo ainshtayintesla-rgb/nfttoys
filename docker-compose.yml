@@ -75,6 +75,7 @@ services:
       - /usr/bin/docker:/usr/bin/docker:ro
       - /usr/libexec/docker/cli-plugins:/usr/libexec/docker/cli-plugins:ro
       - /root/.gitconfig:/root/.gitconfig:ro
+      - /root/agents/.git-credentials:/root/agents/.git-credentials:ro
       - /root/remotecontroller/.git-credentials:/root/remotecontroller/.git-credentials:ro
     healthcheck:
       test: ["CMD", "node", "-e", "require(\"http\").get(\"http://127.0.0.1:4000/health\", (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on(\"error\", () => process.exit(1));"]
