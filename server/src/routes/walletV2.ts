@@ -5,19 +5,25 @@ import { Request, Response, Router } from 'express';
 import { walletV2AccessTokenTtlSec, signWalletV2AccessToken } from '../lib/auth/walletV2Jwt';
 import { prisma } from '../lib/db/prisma';
 import {
-    WALLET_V2_ADDRESS_REGEX,
+    buildWalletV2AddressCandidates,
     buildChallengeMessage,
+    formatWalletV2AddressForNetwork,
     generateAddressV2,
     generateChallengeNonce,
     generateMnemonic24Words,
     generateOpaqueRefreshToken,
     generateSalt,
+    getWalletV2AddressPrefix,
+    getWalletV2AddressRegex,
+    getWalletV2Network,
     hashChallengeNonce,
     hashIpAddress,
     hashRefreshToken,
     hashSecret,
     isValidPin,
     mnemonicFingerprint,
+    normalizeWalletV2Address,
+    WALLET_V2_ADDRESS_BODY_LENGTH,
     parseAmountToBigInt,
     parseAndNormalizeMnemonicInput,
     verifyEd25519Signature,
@@ -40,6 +46,13 @@ const VALID_ASSET_REGEX = /^[A-Z0-9_]{2,16}$/;
 const VALID_IDEMPOTENCY_KEY_REGEX = /^[a-zA-Z0-9._:-]{8,128}$/;
 const REFRESH_TOKEN_TTL_SEC = Number.parseInt(process.env.WALLET_V2_REFRESH_TOKEN_TTL_SEC || '', 10) || 60 * 60 * 24 * 30;
 const CHALLENGE_TTL_SEC = Number.parseInt(process.env.WALLET_V2_CHALLENGE_TTL_SEC || '', 10) || 60 * 5;
+const WALLET_V2_NETWORK = getWalletV2Network();
+const WALLET_V2_ADDRESS_PREFIX = getWalletV2AddressPrefix(WALLET_V2_NETWORK);
+const WALLET_V2_ADDRESS_REGEX_CURRENT = getWalletV2AddressRegex(WALLET_V2_NETWORK);
+const WALLET_V2_ADDRESS_PLACEHOLDER_BODY = 'X'.repeat(WALLET_V2_ADDRESS_BODY_LENGTH);
+const WALLET_V2_TESTNET_FAUCET_ADDRESS = `${WALLET_V2_ADDRESS_PREFIX}-${'F'.repeat(WALLET_V2_ADDRESS_BODY_LENGTH)}`;
+const WALLET_V2_TESTNET_TOPUP_MAX_AMOUNT = 1_000_000_000n;
+const MAX_WALLETS_PER_USER = 10;
 
 const IMPORT_FINGERPRINT_LIMIT_PER_DAY = 20;
 const IMPORT_FINGERPRINT_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -53,6 +66,16 @@ type DeviceInput = {
     platform: DevicePlatform;
     biometricSupported: boolean;
     devicePubKey: string | null;
+};
+
+type WalletV2PinRecord = {
+    walletId: string;
+    pinHash: string;
+    pinSalt: string;
+};
+
+type WalletV2PinLookupClient = {
+    walletV2: Prisma.TransactionClient['walletV2'];
 };
 
 class ApiError extends Error {
@@ -76,6 +99,42 @@ function now(): Date {
 
 function toIsoDate(value: Date | null | undefined): string | null {
     return value ? value.toISOString() : null;
+}
+
+function formatWalletAddress(value: string): string {
+    return formatWalletV2AddressForNetwork(value, WALLET_V2_NETWORK);
+}
+
+function classifyWalletV2Tx(params: {
+    walletId: string;
+    ownAddress: string;
+    tx: {
+        walletId: string;
+        fromAddress: string;
+        toAddress: string;
+        meta: Prisma.JsonValue | null;
+    };
+}): { type: 'send' | 'receive' | 'topup'; direction: 'in' | 'out' } {
+    const { walletId, ownAddress, tx } = params;
+    const meta = tx.meta;
+    const metaSource = (
+        meta
+        && typeof meta === 'object'
+        && !Array.isArray(meta)
+        && typeof (meta as { source?: unknown }).source === 'string'
+    )
+        ? (meta as { source: string }).source.trim().toLowerCase()
+        : '';
+
+    if (metaSource === 'testnet_faucet' || tx.fromAddress === WALLET_V2_TESTNET_FAUCET_ADDRESS) {
+        return { type: 'topup', direction: 'in' };
+    }
+
+    if (tx.toAddress === ownAddress && (tx.walletId !== walletId || tx.fromAddress !== ownAddress)) {
+        return { type: 'receive', direction: 'in' };
+    }
+
+    return { type: 'send', direction: 'out' };
 }
 
 function sendError(
@@ -343,6 +402,87 @@ async function issueWalletSession(tx: Prisma.TransactionClient, params: {
     };
 }
 
+async function getLatestGlobalPinRecord(
+    client: WalletV2PinLookupClient,
+    params: {
+        userId?: string | null;
+        walletId?: string | null;
+    },
+): Promise<WalletV2PinRecord | null> {
+    const normalizedUserId = params.userId?.trim();
+
+    if (normalizedUserId) {
+        const userWalletPin = await client.walletV2.findFirst({
+            where: {
+                userId: normalizedUserId,
+                status: { not: 'deleted' },
+            },
+            orderBy: [
+                { updatedAt: 'desc' },
+                { createdAt: 'desc' },
+            ],
+            select: {
+                id: true,
+                pinHash: true,
+                pinSalt: true,
+            },
+        });
+
+        if (userWalletPin) {
+            return {
+                walletId: userWalletPin.id,
+                pinHash: userWalletPin.pinHash,
+                pinSalt: userWalletPin.pinSalt,
+            };
+        }
+    }
+
+    const normalizedWalletId = params.walletId?.trim();
+
+    if (normalizedWalletId) {
+        const walletPin = await client.walletV2.findUnique({
+            where: { id: normalizedWalletId },
+            select: {
+                id: true,
+                pinHash: true,
+                pinSalt: true,
+            },
+        });
+
+        if (walletPin) {
+            return {
+                walletId: walletPin.id,
+                pinHash: walletPin.pinHash,
+                pinSalt: walletPin.pinSalt,
+            };
+        }
+    }
+
+    return null;
+}
+
+async function applyGlobalPinToUserWallets(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    pinHash: string,
+    pinSalt: string,
+    updatedAt: Date,
+): Promise<number> {
+    const updateResult = await tx.walletV2.updateMany({
+        where: {
+            userId,
+            status: { not: 'deleted' },
+        },
+        data: {
+            pinHash,
+            pinSalt,
+            updatedAt,
+        },
+    });
+
+    return updateResult.count;
+}
+
 async function cancelPendingTxAndReleaseLocked(
     tx: Prisma.TransactionClient,
     txId: string,
@@ -382,13 +522,14 @@ router.post('/wallet/create', authLimit, requireAuth, async (req, res) => {
         const userId = req.authUser?.uid;
         const telegramId = req.authUser?.telegramId;
         const pin = typeof req.body?.pin === 'string' ? req.body.pin.trim() : '';
+        const hasPinInput = Boolean(pin);
         const device = parseDeviceInput(req.body?.device);
 
         if (!userId || typeof telegramId !== 'number') {
             return sendError(res, 401, 'UNAUTHORIZED', 'Authorization token is required');
         }
 
-        if (!isValidPin(pin)) {
+        if (hasPinInput && !isValidPin(pin)) {
             return sendError(res, 400, 'INVALID_PIN', 'PIN format is invalid');
         }
 
@@ -398,30 +539,57 @@ router.post('/wallet/create', authLimit, requireAuth, async (req, res) => {
 
         await ensureUserExists(userId, telegramId);
 
-        const existingWallet = await prisma.walletV2.findFirst({
+        const existingWalletCount = await prisma.walletV2.count({
             where: {
                 userId,
                 status: { not: 'deleted' },
             },
-            select: { id: true },
         });
 
-        if (existingWallet?.id) {
-            return sendError(res, 409, 'WALLET_ALREADY_EXISTS', 'Wallet already exists for this user');
+        if (existingWalletCount >= MAX_WALLETS_PER_USER) {
+            return sendError(
+                res,
+                409,
+                'WALLET_LIMIT_REACHED',
+                `Wallet limit reached (${MAX_WALLETS_PER_USER})`,
+                { limit: MAX_WALLETS_PER_USER },
+            );
+        }
+
+        let pinHash: string;
+        let pinSalt: string;
+        let shouldPropagateGlobalPin = false;
+
+        if (existingWalletCount === 0) {
+            if (!isValidPin(pin)) {
+                return sendError(res, 400, 'INVALID_PIN', 'PIN format is invalid');
+            }
+
+            pinSalt = generateSalt();
+            pinHash = await hashSecret(pin, pinSalt);
+        } else if (hasPinInput) {
+            pinSalt = generateSalt();
+            pinHash = await hashSecret(pin, pinSalt);
+            shouldPropagateGlobalPin = true;
+        } else {
+            const existingGlobalPin = await getLatestGlobalPinRecord(prisma, { userId });
+
+            if (!existingGlobalPin) {
+                return sendError(res, 409, 'PIN_NOT_CONFIGURED', 'Global PIN is not configured');
+            }
+
+            pinHash = existingGlobalPin.pinHash;
+            pinSalt = existingGlobalPin.pinSalt;
         }
 
         const mnemonic = generateMnemonic24Words();
         const mnemonicSalt = generateSalt();
-        const pinSalt = generateSalt();
         const walletId = crypto.randomUUID();
         const walletCreatedAt = now();
         const ipHash = hashIpAddress(ipFromRequest(req)) || null;
         const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
 
-        const [normalizedMnemonicHash, pinHash] = await Promise.all([
-            hashSecret(mnemonic.normalized, mnemonicSalt),
-            hashSecret(pin, pinSalt),
-        ]);
+        const normalizedMnemonicHash = await hashSecret(mnemonic.normalized, mnemonicSalt);
 
         const fingerprint = mnemonicFingerprint(mnemonic.normalized);
 
@@ -440,6 +608,16 @@ router.post('/wallet/create', authLimit, requireAuth, async (req, res) => {
                     updatedAt: walletCreatedAt,
                 },
             });
+
+            if (shouldPropagateGlobalPin) {
+                await applyGlobalPinToUserWallets(
+                    tx,
+                    userId,
+                    pinHash,
+                    pinSalt,
+                    walletCreatedAt,
+                );
+            }
 
             const address = await createUniqueMainAddress(tx, walletId);
 
@@ -485,7 +663,7 @@ router.post('/wallet/create', authLimit, requireAuth, async (req, res) => {
             data: {
                 wallet: {
                     id: walletId,
-                    address: result.address,
+                    address: formatWalletAddress(result.address),
                     status: 'active',
                     createdAt: walletCreatedAt.toISOString(),
                 },
@@ -499,7 +677,7 @@ router.post('/wallet/create', authLimit, requireAuth, async (req, res) => {
         });
     } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-            return sendError(res, 409, 'WALLET_ALREADY_EXISTS', 'Wallet already exists for this user');
+            return sendError(res, 409, 'WALLET_CREATE_CONFLICT', 'Wallet create conflict');
         }
 
         console.error('Wallet v2 create error:', error);
@@ -614,6 +792,14 @@ router.post('/wallet/import', walletV2ImportLimit, requireAuth, async (req, res)
                 },
             });
 
+            await applyGlobalPinToUserWallets(
+                tx,
+                userId,
+                newPinHash,
+                newPinSalt,
+                currentTime,
+            );
+
             const address = await getMainAddress(tx, wallet.id);
             const session = await issueWalletSession(tx, {
                 walletId: wallet.id,
@@ -649,7 +835,7 @@ router.post('/wallet/import', walletV2ImportLimit, requireAuth, async (req, res)
             data: {
                 wallet: {
                     id: wallet.id,
-                    address: result.address,
+                    address: formatWalletAddress(result.address),
                     status: 'active',
                 },
                 session: {
@@ -662,6 +848,142 @@ router.post('/wallet/import', walletV2ImportLimit, requireAuth, async (req, res)
     } catch (error) {
         console.error('Wallet v2 import error:', error);
         return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to import wallet');
+    }
+});
+
+router.post('/wallet/:id/pin/verify', strictLimit, requireWalletV2Auth, async (req, res) => {
+    try {
+        const walletId = req.params.id;
+        const userId = req.walletV2Auth?.userId || null;
+        const pin = typeof req.body?.pin === 'string' ? req.body.pin.trim() : '';
+
+        if (walletId !== req.walletV2Auth!.walletId) {
+            return sendError(res, 403, 'FORBIDDEN', 'Wallet access denied');
+        }
+
+        if (!isValidPin(pin)) {
+            return sendError(res, 400, 'INVALID_PIN', 'PIN format is invalid');
+        }
+
+        const [wallet, globalPinRecord] = await Promise.all([
+            prisma.walletV2.findUnique({
+                where: { id: walletId },
+                select: {
+                    id: true,
+                    status: true,
+                },
+            }),
+            getLatestGlobalPinRecord(prisma, {
+                userId,
+                walletId,
+            }),
+        ]);
+
+        if (!wallet) {
+            return sendError(res, 404, 'WALLET_NOT_FOUND', 'Wallet not found');
+        }
+
+        if (wallet.status !== 'active') {
+            return sendError(res, 423, 'WALLET_BLOCKED', 'Wallet is blocked');
+        }
+
+        if (!globalPinRecord) {
+            return sendError(res, 404, 'WALLET_NOT_FOUND', 'Wallet not found');
+        }
+
+        const pinValid = await verifySecret(globalPinRecord.pinHash, pin, globalPinRecord.pinSalt);
+
+        if (!pinValid) {
+            return sendError(res, 401, 'INVALID_PIN', 'PIN is invalid');
+        }
+
+        return res.json({
+            success: true,
+            data: {
+                valid: true,
+            },
+        });
+    } catch (error) {
+        console.error('Wallet v2 pin verify error:', error);
+        return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to verify PIN');
+    }
+});
+
+router.post('/wallet/:id/pin/change', strictLimit, requireWalletV2Auth, async (req, res) => {
+    try {
+        const walletId = req.params.id;
+        const authUserId = req.walletV2Auth?.userId || null;
+        const newPin = typeof req.body?.newPin === 'string' ? req.body.newPin.trim() : '';
+
+        if (walletId !== req.walletV2Auth!.walletId) {
+            return sendError(res, 403, 'FORBIDDEN', 'Wallet access denied');
+        }
+
+        if (!isValidPin(newPin)) {
+            return sendError(res, 400, 'INVALID_PIN', 'PIN format is invalid');
+        }
+
+        const wallet = await prisma.walletV2.findUnique({
+            where: { id: walletId },
+            select: {
+                id: true,
+                status: true,
+                userId: true,
+            },
+        });
+
+        if (!wallet) {
+            return sendError(res, 404, 'WALLET_NOT_FOUND', 'Wallet not found');
+        }
+
+        if (wallet.status !== 'active') {
+            return sendError(res, 423, 'WALLET_BLOCKED', 'Wallet is blocked');
+        }
+
+        const pinOwnerUserId = authUserId || wallet.userId;
+
+        if (!pinOwnerUserId) {
+            return sendError(res, 401, 'UNAUTHORIZED', 'Authorization token is required');
+        }
+
+        const currentTime = now();
+        const pinSalt = generateSalt();
+        const pinHash = await hashSecret(newPin, pinSalt);
+        const ipHash = hashIpAddress(ipFromRequest(req)) || null;
+        const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
+
+        await prisma.$transaction(async (tx) => {
+            await applyGlobalPinToUserWallets(
+                tx,
+                pinOwnerUserId,
+                pinHash,
+                pinSalt,
+                currentTime,
+            );
+        });
+
+        await createAuditEvent({
+            walletId,
+            userId: pinOwnerUserId,
+            event: 'wallet.pin.changed',
+            ipHash,
+            userAgent,
+            meta: {
+                sessionId: req.walletV2Auth?.sessionId,
+                deviceId: req.walletV2Auth?.deviceId,
+            },
+        });
+
+        return res.json({
+            success: true,
+            data: {
+                walletId,
+                pinUpdatedAt: currentTime.toISOString(),
+            },
+        });
+    } catch (error) {
+        console.error('Wallet v2 pin change error:', error);
+        return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to change PIN');
     }
 });
 
@@ -973,7 +1295,7 @@ router.get('/wallet/:id/balance', standardLimit, requireWalletV2Auth, async (req
             success: true,
             data: {
                 walletId,
-                address: mainAddress.address,
+                address: formatWalletAddress(mainAddress.address),
                 balances: balances.map((balance) => ({
                     asset: balance.asset,
                     available: balance.available.toString(),
@@ -988,10 +1310,272 @@ router.get('/wallet/:id/balance', standardLimit, requireWalletV2Auth, async (req
     }
 });
 
+router.get('/wallet/:id/transactions', standardLimit, requireWalletV2Auth, async (req, res) => {
+    try {
+        const walletId = req.params.id;
+        const limitRaw = typeof req.query.limit === 'string'
+            ? Number.parseInt(req.query.limit, 10)
+            : NaN;
+        const limit = Number.isFinite(limitRaw)
+            ? Math.min(200, Math.max(1, limitRaw))
+            : 50;
+
+        if (walletId !== req.walletV2Auth!.walletId) {
+            return sendError(res, 403, 'FORBIDDEN', 'Wallet access denied');
+        }
+
+        const [wallet, mainAddress] = await Promise.all([
+            prisma.walletV2.findUnique({
+                where: { id: walletId },
+                select: { id: true },
+            }),
+            prisma.addressV2.findFirst({
+                where: {
+                    walletId,
+                    type: 'main',
+                    status: 'active',
+                },
+                select: { address: true },
+            }),
+        ]);
+
+        if (!wallet || !mainAddress?.address) {
+            return sendError(res, 404, 'WALLET_NOT_FOUND', 'Wallet not found');
+        }
+
+        const ownAddress = mainAddress.address;
+        const txRows = await prisma.txV2.findMany({
+            where: {
+                OR: [
+                    { walletId },
+                    { toAddress: ownAddress, status: 'completed' },
+                ],
+            },
+            orderBy: [
+                { createdAt: 'desc' },
+                { id: 'desc' },
+            ],
+            take: limit,
+            select: {
+                id: true,
+                walletId: true,
+                fromAddress: true,
+                toAddress: true,
+                asset: true,
+                amount: true,
+                status: true,
+                createdAt: true,
+                completedAt: true,
+                meta: true,
+            },
+        });
+
+        return res.json({
+            success: true,
+            data: {
+                walletId,
+                address: formatWalletAddress(ownAddress),
+                items: txRows.map((txRow) => {
+                    const classification = classifyWalletV2Tx({
+                        walletId,
+                        ownAddress,
+                        tx: {
+                            walletId: txRow.walletId,
+                            fromAddress: txRow.fromAddress,
+                            toAddress: txRow.toAddress,
+                            meta: txRow.meta,
+                        },
+                    });
+
+                    return {
+                        id: txRow.id,
+                        type: classification.type,
+                        direction: classification.direction,
+                        fromAddress: formatWalletAddress(txRow.fromAddress),
+                        toAddress: formatWalletAddress(txRow.toAddress),
+                        asset: txRow.asset,
+                        amount: txRow.amount.toString(),
+                        status: txRow.status,
+                        createdAt: txRow.createdAt.toISOString(),
+                        completedAt: toIsoDate(txRow.completedAt),
+                    };
+                }),
+            },
+        });
+    } catch (error) {
+        console.error('Wallet v2 transactions error:', error);
+        return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch transactions');
+    }
+});
+
+router.post('/wallet/:id/topup-testnet', strictLimit, requireWalletV2Auth, async (req, res) => {
+    try {
+        const walletId = req.params.id;
+        const asset = typeof req.body?.asset === 'string'
+            ? req.body.asset.trim().toUpperCase()
+            : DEFAULT_ASSET;
+        const amount = parseAmountToBigInt(req.body?.amount);
+
+        if (walletId !== req.walletV2Auth!.walletId) {
+            return sendError(res, 403, 'FORBIDDEN', 'Wallet access denied');
+        }
+
+        if (WALLET_V2_NETWORK !== 'testnet') {
+            return sendError(res, 403, 'TESTNET_ONLY', 'Test top up is available only in testnet mode');
+        }
+
+        if (!asset || !VALID_ASSET_REGEX.test(asset)) {
+            return sendError(res, 400, 'INVALID_ASSET', 'Asset is invalid');
+        }
+
+        if (!amount) {
+            return sendError(res, 400, 'INVALID_AMOUNT', 'Amount must be a positive integer string');
+        }
+
+        if (amount > WALLET_V2_TESTNET_TOPUP_MAX_AMOUNT) {
+            return sendError(res, 400, 'INVALID_AMOUNT', 'Amount exceeds testnet faucet limit');
+        }
+
+        const currentTime = now();
+        const ipHash = hashIpAddress(ipFromRequest(req)) || null;
+        const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
+
+        const result = await prisma.$transaction(async (tx) => {
+            const wallet = await tx.walletV2.findUnique({
+                where: { id: walletId },
+                select: {
+                    id: true,
+                    status: true,
+                },
+            });
+
+            if (!wallet) {
+                throw new ApiError(404, 'WALLET_NOT_FOUND', 'Wallet not found');
+            }
+
+            if (wallet.status !== 'active') {
+                throw new ApiError(423, 'WALLET_BLOCKED', 'Wallet is blocked');
+            }
+
+            const mainAddress = await getMainAddress(tx, walletId);
+            const balance = await tx.balanceV2.upsert({
+                where: {
+                    walletId_asset: {
+                        walletId,
+                        asset,
+                    },
+                },
+                update: {
+                    available: { increment: amount },
+                    updatedAt: currentTime,
+                },
+                create: {
+                    walletId,
+                    asset,
+                    available: amount,
+                    locked: 0n,
+                    updatedAt: currentTime,
+                },
+                select: {
+                    asset: true,
+                    available: true,
+                    locked: true,
+                    updatedAt: true,
+                },
+            });
+
+            const txRow = await tx.txV2.create({
+                data: {
+                    id: crypto.randomUUID(),
+                    walletId,
+                    fromAddress: WALLET_V2_TESTNET_FAUCET_ADDRESS,
+                    toAddress: mainAddress,
+                    asset,
+                    amount,
+                    status: 'completed',
+                    meta: {
+                        source: 'testnet_faucet',
+                    },
+                    createdAt: currentTime,
+                    confirmedAt: currentTime,
+                    completedAt: currentTime,
+                },
+                select: {
+                    id: true,
+                    status: true,
+                    fromAddress: true,
+                    toAddress: true,
+                    asset: true,
+                    amount: true,
+                    createdAt: true,
+                    completedAt: true,
+                },
+            });
+
+            await createAuditEvent({
+                tx,
+                walletId,
+                userId: req.walletV2Auth?.userId,
+                event: 'wallet.testnet.topup',
+                ipHash,
+                userAgent,
+                meta: {
+                    txId: txRow.id,
+                    amount: amount.toString(),
+                    asset,
+                    source: 'testnet_faucet',
+                },
+            });
+
+            return {
+                balance,
+                txRow,
+            };
+        });
+
+        return res.status(201).json({
+            success: true,
+            data: {
+                walletId,
+                network: WALLET_V2_NETWORK,
+                balance: {
+                    asset: result.balance.asset,
+                    available: result.balance.available.toString(),
+                    locked: result.balance.locked.toString(),
+                    updatedAt: result.balance.updatedAt.toISOString(),
+                },
+                tx: {
+                    id: result.txRow.id,
+                    status: result.txRow.status,
+                    fromAddress: formatWalletAddress(result.txRow.fromAddress),
+                    toAddress: formatWalletAddress(result.txRow.toAddress),
+                    asset: result.txRow.asset,
+                    amount: result.txRow.amount.toString(),
+                    createdAt: result.txRow.createdAt.toISOString(),
+                    completedAt: toIsoDate(result.txRow.completedAt),
+                },
+            },
+        });
+    } catch (error) {
+        if (error instanceof ApiError) {
+            return sendError(res, error.statusCode, error.code, error.message, error.details);
+        }
+
+        console.error('Wallet v2 testnet topup error:', error);
+        return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to apply testnet topup');
+    }
+});
+
 router.post('/tx/create', strictLimit, requireWalletV2Auth, async (req, res) => {
     try {
         const walletId = typeof req.body?.walletId === 'string' ? req.body.walletId.trim() : '';
-        const toAddress = typeof req.body?.toAddress === 'string' ? req.body.toAddress.trim().toUpperCase() : '';
+        const toAddressInput = typeof req.body?.toAddress === 'string' ? req.body.toAddress.trim() : '';
+        const normalizedToAddress = toAddressInput
+            ? normalizeWalletV2Address(toAddressInput, WALLET_V2_NETWORK)
+            : null;
+        const recipientAddressCandidates = toAddressInput
+            ? buildWalletV2AddressCandidates(toAddressInput, WALLET_V2_NETWORK)
+            : [];
         const asset = typeof req.body?.asset === 'string' ? req.body.asset.trim().toUpperCase() : '';
         const amount = parseAmountToBigInt(req.body?.amount);
         const idempotencyKey = typeof req.body?.idempotencyKey === 'string' ? req.body.idempotencyKey.trim() : '';
@@ -1003,8 +1587,13 @@ router.post('/tx/create', strictLimit, requireWalletV2Auth, async (req, res) => 
             return sendError(res, 403, 'FORBIDDEN', 'Wallet access denied');
         }
 
-        if (!WALLET_V2_ADDRESS_REGEX.test(toAddress)) {
-            return sendError(res, 400, 'INVALID_ADDRESS', 'Address format is invalid');
+        if (!normalizedToAddress || !WALLET_V2_ADDRESS_REGEX_CURRENT.test(normalizedToAddress)) {
+            return sendError(
+                res,
+                400,
+                'INVALID_ADDRESS',
+                `Address must match ${WALLET_V2_ADDRESS_PREFIX}-${WALLET_V2_ADDRESS_PLACEHOLDER_BODY}`,
+            );
         }
 
         if (!asset || !VALID_ASSET_REGEX.test(asset)) {
@@ -1101,15 +1690,18 @@ router.post('/tx/create', strictLimit, requireWalletV2Auth, async (req, res) => 
             const senderAddress = await getMainAddress(tx, walletId);
             const recipientAddress = await tx.addressV2.findFirst({
                 where: {
-                    address: toAddress,
+                    address: {
+                        in: recipientAddressCandidates,
+                    },
                     status: 'active',
                 },
                 select: {
                     walletId: true,
+                    address: true,
                 },
             });
 
-            if (!recipientAddress?.walletId) {
+            if (!recipientAddress?.walletId || !recipientAddress.address) {
                 throw new ApiError(404, 'RECIPIENT_NOT_FOUND', 'Recipient wallet not found');
             }
 
@@ -1135,7 +1727,7 @@ router.post('/tx/create', strictLimit, requireWalletV2Auth, async (req, res) => 
                     id: crypto.randomUUID(),
                     walletId,
                     fromAddress: senderAddress,
-                    toAddress,
+                    toAddress: recipientAddress.address,
                     asset,
                     amount,
                     status: 'pending_confirmation',
@@ -1185,7 +1777,7 @@ router.post('/tx/create', strictLimit, requireWalletV2Auth, async (req, res) => 
                     txId: createdTx.id,
                     asset,
                     amount: amount.toString(),
-                    toAddress,
+                    toAddress: formatWalletAddress(recipientAddress.address),
                     idempotencyKey,
                 },
             });
@@ -1203,8 +1795,8 @@ router.post('/tx/create', strictLimit, requireWalletV2Auth, async (req, res) => 
                 tx: {
                     id: txResult.tx.id,
                     status: txResult.tx.status,
-                    fromAddress: txResult.tx.fromAddress,
-                    toAddress: txResult.tx.toAddress,
+                    fromAddress: formatWalletAddress(txResult.tx.fromAddress),
+                    toAddress: formatWalletAddress(txResult.tx.toAddress),
                     asset: txResult.tx.asset,
                     amount: txResult.tx.amount.toString(),
                     createdAt: txResult.tx.createdAt.toISOString(),
@@ -1329,8 +1921,6 @@ router.post('/tx/confirm', strictLimit, requireWalletV2Auth, async (req, res) =>
                     devicePubkey: true,
                     wallet: {
                         select: {
-                            pinHash: true,
-                            pinSalt: true,
                             status: true,
                             userId: true,
                         },
@@ -1357,7 +1947,16 @@ router.post('/tx/confirm', strictLimit, requireWalletV2Auth, async (req, res) =>
                     throw new ApiError(400, 'INVALID_PIN', 'PIN format is invalid');
                 }
 
-                authValid = await verifySecret(session.wallet.pinHash, pin, session.wallet.pinSalt);
+                const globalPinRecord = await getLatestGlobalPinRecord(tx, {
+                    userId: session.wallet.userId,
+                    walletId,
+                });
+
+                if (!globalPinRecord) {
+                    throw new ApiError(404, 'WALLET_NOT_FOUND', 'Wallet not found');
+                }
+
+                authValid = await verifySecret(globalPinRecord.pinHash, pin, globalPinRecord.pinSalt);
             } else {
                 const deviceId = typeof (authPayload as { deviceId?: unknown }).deviceId === 'string'
                     ? (authPayload as { deviceId: string }).deviceId.trim()

@@ -7,6 +7,9 @@ import { useTelegram } from './TelegramContext';
 export type { Locale };
 
 const STORAGE_KEY = 'user_locale';
+const LOCALE_COOKIE_KEY = 'NEXT_LOCALE';
+const LOCALE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+const SUPPORTED_LOCALES: Locale[] = ['en', 'ru', 'uz'];
 
 // Helper to check if CloudStorage is available (requires TG WebApp 6.9+)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -14,6 +17,71 @@ const isCloudStorageAvailable = (webApp: any): boolean => {
     if (!webApp) return false;
     const version = parseFloat(webApp.version || '0');
     return version >= 6.9 && !!webApp.CloudStorage;
+};
+
+const isLocale = (value: unknown): value is Locale => {
+    return typeof value === 'string' && SUPPORTED_LOCALES.includes(value as Locale);
+};
+
+const readLocaleCookie = (): Locale | null => {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+
+    const match = document.cookie.match(new RegExp(`(?:^|; )${LOCALE_COOKIE_KEY}=([^;]*)`));
+    if (!match?.[1]) {
+        return null;
+    }
+
+    const cookieValue = decodeURIComponent(match[1]);
+    return isLocale(cookieValue) ? cookieValue : null;
+};
+
+const writeLocaleCookie = (locale: Locale) => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    document.cookie = `${LOCALE_COOKIE_KEY}=${encodeURIComponent(locale)}; Path=/; Max-Age=${LOCALE_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`;
+};
+
+const readLocaleLocalStorage = (): Locale | null => {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        return isLocale(saved) ? saved : null;
+    } catch {
+        return null;
+    }
+};
+
+const writeLocaleLocalStorage = (locale: Locale) => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    try {
+        localStorage.setItem(STORAGE_KEY, locale);
+    } catch {
+        // localStorage might not be available
+    }
+};
+
+const syncLocaleToBrowserStorage = (locale: Locale) => {
+    writeLocaleLocalStorage(locale);
+    writeLocaleCookie(locale);
+};
+
+const resolveTelegramLocale = (languageCode?: string): Locale | null => {
+    if (!languageCode) {
+        return null;
+    }
+
+    const normalized = languageCode.toLowerCase().split('-')[0];
+    return isLocale(normalized) ? normalized : null;
 };
 
 interface LanguageContextType {
@@ -37,65 +105,76 @@ export const LanguageProvider = ({ children, initialLocale = 'en' }: { children:
     const [locale, setLocalState] = useState<Locale>(initialLocale);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Load saved language from Telegram CloudStorage on mount (requires TG 6.9+)
+    // Load saved language with priority: CloudStorage -> cookie/localStorage -> Telegram user language -> initialLocale
     useEffect(() => {
-        const loadSavedLocale = () => {
-            // Check if CloudStorage is available (real Telegram + version 6.9+)
-            if (!isCloudStorageAvailable(webApp)) {
-                // Not in Telegram or old version - use localStorage only
-                try {
-                    const saved = localStorage.getItem(STORAGE_KEY);
-                    if (saved && ['en', 'ru', 'uz'].includes(saved)) {
-                        setLocalState(saved as Locale);
-                    } else if (user?.language_code) {
-                        const tgLang = user.language_code.toLowerCase();
-                        if (['en', 'ru', 'uz'].includes(tgLang)) {
-                            setLocalState(tgLang as Locale);
-                        }
-                    }
-                } catch {
-                    // localStorage might not be available
-                }
-                setIsLoading(false);
+        let cancelled = false;
+
+        const browserLocale = readLocaleCookie() ?? readLocaleLocalStorage();
+        const telegramLocale = resolveTelegramLocale(user?.language_code);
+        const fallbackLocale = browserLocale ?? telegramLocale ?? initialLocale;
+
+        const finishWithLocale = (nextLocale: Locale) => {
+            if (cancelled) {
                 return;
             }
 
-            // Use Telegram CloudStorage (only in real Telegram 6.9+)
+            setLocalState(nextLocale);
+            syncLocaleToBrowserStorage(nextLocale);
+            setIsLoading(false);
+        };
+
+        const loadSavedLocale = () => {
+            if (!isCloudStorageAvailable(webApp)) {
+                finishWithLocale(fallbackLocale);
+                return;
+            }
+
             try {
                 webApp!.CloudStorage.getItem(STORAGE_KEY, (error: Error | null, value?: string) => {
-                    if (error) {
-                        console.warn('CloudStorage getItem error:', error);
-                        setIsLoading(false);
+                    if (cancelled) {
                         return;
                     }
 
-                    if (value && ['en', 'ru', 'uz'].includes(value)) {
-                        setLocalState(value as Locale);
-                    } else if (user?.language_code) {
-                        // First time: auto-detect from Telegram user language
-                        const tgLang = user.language_code.toLowerCase();
-                        if (['en', 'ru', 'uz'].includes(tgLang)) {
-                            setLocalState(tgLang as Locale);
-                            // Save the detected language
-                            webApp!.CloudStorage.setItem(STORAGE_KEY, tgLang);
-                        }
+                    if (error) {
+                        console.warn('CloudStorage getItem error:', error);
+                        finishWithLocale(fallbackLocale);
+                        return;
                     }
-                    setIsLoading(false);
+
+                    if (isLocale(value)) {
+                        finishWithLocale(value);
+                        return;
+                    }
+
+                    finishWithLocale(fallbackLocale);
+
+                    if (telegramLocale && !browserLocale) {
+                        webApp!.CloudStorage.setItem(STORAGE_KEY, telegramLocale);
+                    }
                 });
             } catch (e) {
                 console.warn('CloudStorage error:', e);
-                setIsLoading(false);
+                finishWithLocale(fallbackLocale);
             }
         };
 
         loadSavedLocale();
-    }, [webApp, user]);
 
-    // Save language to CloudStorage when changed
+        return () => {
+            cancelled = true;
+        };
+    }, [initialLocale, user?.language_code, webApp]);
+
+    useEffect(() => {
+        if (typeof document !== 'undefined') {
+            document.documentElement.lang = locale;
+        }
+    }, [locale]);
+
     const setLocale = useCallback((newLocale: Locale) => {
         setLocalState(newLocale);
+        syncLocaleToBrowserStorage(newLocale);
 
-        // Save to Telegram CloudStorage (only in TG 6.9+)
         if (isCloudStorageAvailable(webApp)) {
             try {
                 webApp!.CloudStorage.setItem(STORAGE_KEY, newLocale, (error: Error | null) => {
@@ -106,13 +185,6 @@ export const LanguageProvider = ({ children, initialLocale = 'en' }: { children:
             } catch (e) {
                 console.warn('CloudStorage save error:', e);
             }
-        }
-
-        // Also save to localStorage as fallback
-        try {
-            localStorage.setItem(STORAGE_KEY, newLocale);
-        } catch {
-            // localStorage might not be available
         }
     }, [webApp]);
 

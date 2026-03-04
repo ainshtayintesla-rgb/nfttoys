@@ -6,7 +6,11 @@ import { normalizedUsername } from '../lib/db/utils';
 import {
     TREASURY_ADDRESS,
     TREASURY_FRIENDLY_ADDRESS,
+    buildFriendlyAddressCandidates,
+    getFriendlyAddressPrefix,
+    getWalletNetwork,
     isValidAddress,
+    normalizeFriendlyAddressForNetwork,
     toFriendlyAddress,
 } from '../lib/utils/crypto';
 import { getUpdateService, UpdateServiceError } from '../lib/updateService';
@@ -20,11 +24,13 @@ const router = Router();
 const CONFIRM_DELETE_ALL_NFTS = 'DELETE ALL NFTS';
 const CONFIRM_DELETE_ALL_USERS = 'DELETE ALL USERS';
 const TELEGRAM_USERNAME_MAX_LENGTH = 32;
-const WALLET_FRIENDLY_BODY_LENGTH = 12;
+const WALLET_FRIENDLY_BODY_LENGTH = 30;
 const MAX_ADMIN_TOPUP_AMOUNT = 10_000_000_000;
 const MIN_TOPUP_TRANSACTION_ID_LENGTH = 12;
 const MAX_TOPUP_TRANSACTION_ID_LENGTH = 80;
 const TOPUP_TRANSACTION_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+const WALLET_NETWORK = getWalletNetwork();
+const WALLET_FRIENDLY_PREFIX = getFriendlyAddressPrefix();
 
 function parseAmount(rawAmount: unknown): number | null {
     if (typeof rawAmount === 'number' && Number.isInteger(rawAmount)) {
@@ -68,13 +74,9 @@ function normalizeWalletLookupInput(value: unknown): string {
         return '';
     }
 
-    if (/^(LV-|UZ-)/i.test(candidate)) {
-        const friendlyBody = candidate
-            .replace(/^(LV-|UZ-)/i, '')
-            .replace(/[^a-zA-Z0-9_]/g, '')
-            .toUpperCase()
-            .slice(0, WALLET_FRIENDLY_BODY_LENGTH);
-        return friendlyBody ? `LV-${friendlyBody}` : '';
+    const normalizedFriendly = normalizeFriendlyAddressForNetwork(candidate);
+    if (normalizedFriendly) {
+        return normalizedFriendly;
     }
 
     if (isValidAddress(candidate)) {
@@ -82,10 +84,19 @@ function normalizeWalletLookupInput(value: unknown): string {
     }
 
     const body = candidate
+        .replace(/^(?:LV-|tLV-|UZ-)/i, '')
         .replace(/[^a-zA-Z0-9_]/g, '')
         .toUpperCase()
         .slice(0, WALLET_FRIENDLY_BODY_LENGTH);
-    return body ? `LV-${body}` : '';
+    return body ? `${WALLET_FRIENDLY_PREFIX}${body}` : '';
+}
+
+function safeFriendlyAddress(address: string): string {
+    try {
+        return toFriendlyAddress(address);
+    } catch {
+        return '';
+    }
 }
 
 function normalizeConfirmValue(value: unknown): string {
@@ -124,9 +135,21 @@ function walletInputMatchesOperation(
         toFriendly: string | null;
     },
 ): boolean {
-    if (/^(LV-|UZ-)/i.test(walletInput)) {
-        return Boolean(operation.toFriendly)
-            && operation.toFriendly!.toUpperCase() === walletInput.toUpperCase();
+    const inputFriendlyCandidates = buildFriendlyAddressCandidates(walletInput)
+        .map((candidate) => candidate.toUpperCase());
+
+    if (inputFriendlyCandidates.length > 0) {
+        const operationFriendlyCandidates = [
+            operation.toFriendly ? (normalizeFriendlyAddressForNetwork(operation.toFriendly) || operation.toFriendly) : null,
+            safeFriendlyAddress(operation.walletAddress),
+            operation.toAddress ? safeFriendlyAddress(operation.toAddress) : null,
+        ]
+            .filter((candidate): candidate is string => Boolean(candidate))
+            .map((candidate) => candidate.toUpperCase());
+
+        return operationFriendlyCandidates.some((candidate) => (
+            inputFriendlyCandidates.includes(candidate)
+        ));
     }
 
     return walletInput === operation.walletAddress
@@ -178,7 +201,8 @@ async function loadTopupReplayByRequestId(transactionId: string): Promise<AdminT
 }
 
 function buildTopupReplayResponse(operation: AdminTopupReplayRow) {
-    const walletFriendly = operation.wallet.friendlyAddress
+    const walletFriendly = safeFriendlyAddress(operation.walletAddress)
+        || operation.wallet.friendlyAddress
         || operation.toFriendly
         || toFriendlyAddress(operation.walletAddress);
 
@@ -482,12 +506,14 @@ router.get('/wallet/recipient/search', standardLimit, requireAuth, requireAdmin,
             const walletFriendly = wallet?.friendlyAddress
                 || recipient.walletFriendly
                 || toFriendlyAddress(recipient.walletAddress);
+            const normalizedFriendly = safeFriendlyAddress(recipient.walletAddress)
+                || walletFriendly;
 
             return res.json({
                 success: true,
                 target: {
                     walletAddress: recipient.walletAddress,
-                    walletFriendly,
+                    walletFriendly: normalizedFriendly,
                     user: {
                         id: recipient.id,
                         username: recipient.username,
@@ -502,9 +528,15 @@ router.get('/wallet/recipient/search', standardLimit, requireAuth, requireAdmin,
             return res.json({ success: true, target: null });
         }
 
-        const wallet = /^(LV-|UZ-)/i.test(walletInput)
-            ? await prisma.wallet.findUnique({
-                where: { friendlyAddress: walletInput.toUpperCase() },
+        const friendlyCandidates = buildFriendlyAddressCandidates(walletInput);
+
+        const wallet = friendlyCandidates.length > 0
+            ? await prisma.wallet.findFirst({
+                where: {
+                    friendlyAddress: {
+                        in: friendlyCandidates,
+                    },
+                },
                 select: {
                     address: true,
                     friendlyAddress: true,
@@ -526,7 +558,7 @@ router.get('/wallet/recipient/search', standardLimit, requireAuth, requireAdmin,
                     success: true,
                     target: {
                         walletAddress: walletInput,
-                        walletFriendly: toFriendlyAddress(walletInput),
+                        walletFriendly: safeFriendlyAddress(walletInput) || toFriendlyAddress(walletInput),
                         user: null,
                     },
                 });
@@ -551,7 +583,7 @@ router.get('/wallet/recipient/search', standardLimit, requireAuth, requireAdmin,
             success: true,
             target: {
                 walletAddress: wallet.address,
-                walletFriendly: wallet.friendlyAddress,
+                walletFriendly: safeFriendlyAddress(wallet.address) || wallet.friendlyAddress,
                 user: recipient
                     ? {
                         id: recipient.id,
@@ -573,6 +605,13 @@ router.get('/wallet/recipient/search', standardLimit, requireAuth, requireAdmin,
 
 router.post('/wallet/topup', strictLimit, requireAuth, requireAdmin, csrfProtection, async (req, res) => {
     try {
+        if (WALLET_NETWORK !== 'testnet') {
+            return res.status(403).json({
+                error: 'Top up is available only in testnet mode',
+                code: 'TOPUP_DISABLED',
+            });
+        }
+
         const amount = parseAmount(req.body?.amount);
         if (!amount) {
             return res.status(400).json({
@@ -627,9 +666,15 @@ router.post('/wallet/topup', strictLimit, requireAuth, requireAdmin, csrfProtect
         }
 
         const runTopupTransaction = () => prisma.$transaction(async (tx) => {
-            let wallet = /^(LV-|UZ-)/i.test(walletInput)
-                ? await tx.wallet.findUnique({
-                    where: { friendlyAddress: walletInput.toUpperCase() },
+            const friendlyCandidates = buildFriendlyAddressCandidates(walletInput);
+
+            let wallet = friendlyCandidates.length > 0
+                ? await tx.wallet.findFirst({
+                    where: {
+                        friendlyAddress: {
+                            in: friendlyCandidates,
+                        },
+                    },
                     select: {
                         address: true,
                         friendlyAddress: true,
@@ -698,7 +743,7 @@ router.post('/wallet/topup', strictLimit, requireAuth, requireAdmin, csrfProtect
                     fromAddress: TREASURY_ADDRESS,
                     fromFriendly: TREASURY_FRIENDLY_ADDRESS,
                     toAddress: updatedWallet.address,
-                    toFriendly: updatedWallet.friendlyAddress,
+                    toFriendly: safeFriendlyAddress(updatedWallet.address) || updatedWallet.friendlyAddress,
                     memo: `admin_topup:${actorUserId}`,
                 },
                 select: {
@@ -767,7 +812,7 @@ router.post('/wallet/topup', strictLimit, requireAuth, requireAdmin, csrfProtect
             success: true,
             target: {
                 walletAddress: result.wallet.address,
-                walletFriendly: result.wallet.friendlyAddress,
+                walletFriendly: safeFriendlyAddress(result.wallet.address) || result.wallet.friendlyAddress,
                 user: result.recipient
                     ? {
                         id: result.recipient.id,

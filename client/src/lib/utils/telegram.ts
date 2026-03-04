@@ -15,11 +15,33 @@ export interface IWebAppInsets {
   left: number;
 }
 
+export interface IWebAppBiometricManager {
+  isInited: boolean;
+  isBiometricAvailable: boolean;
+  biometricType?: 'finger' | 'face' | 'unknown' | string;
+  isAccessRequested: boolean;
+  isAccessGranted: boolean;
+  isBiometricTokenSaved: boolean;
+  deviceId?: string;
+  init: (callback?: () => void) => void;
+  requestAccess: (
+    params?: { reason?: string },
+    callback?: (granted: boolean) => void,
+  ) => void;
+  authenticate: (
+    params?: { reason?: string },
+    callback?: (authenticated: boolean, biometricToken?: string) => void,
+  ) => void;
+  updateBiometricToken: (token: string, callback?: (updated: boolean) => void) => void;
+  openSettings?: () => void;
+}
+
 export type IWebAppEventName =
   | 'viewportChanged'
   | 'themeChanged'
   | 'mainButtonClicked'
   | 'backButtonClicked'
+  | 'settingsButtonClicked'
   | 'safeAreaChanged'
   | 'contentSafeAreaChanged'
   | string;
@@ -64,6 +86,13 @@ export interface IWebApp {
     show: VoidFunction;
     hide: VoidFunction;
   };
+  SettingsButton?: {
+    isVisible: boolean;
+    onClick: (cb: VoidFunction) => void;
+    offClick: (cb: VoidFunction) => void;
+    show: VoidFunction;
+    hide: VoidFunction;
+  };
   MainButton: {
     text: string;
     color: string;
@@ -100,6 +129,9 @@ export interface IWebApp {
   expand: VoidFunction;
   ready: VoidFunction;
   requestFullscreen?: VoidFunction;
+  isOrientationLocked?: boolean;
+  lockOrientation?: VoidFunction;
+  unlockOrientation?: VoidFunction;
   onEvent?: (event: IWebAppEventName, callback: (...args: unknown[]) => void) => void;
   offEvent?: (event: IWebAppEventName, callback: (...args: unknown[]) => void) => void;
   // Swipe and closing controls
@@ -116,6 +148,8 @@ export interface IWebApp {
   openTelegramLink: (url: string) => void;
   // Request write access (Telegram 6.9+) - ask user for permission to send messages
   requestWriteAccess: (callback?: (allowed: boolean) => void) => void;
+  // Biometric manager (Telegram 7.2+)
+  BiometricManager?: IWebAppBiometricManager;
 }
 
 const mockWebApp: IWebApp = {
@@ -175,6 +209,13 @@ const mockWebApp: IWebApp = {
     console.log('[Mock] Set Bottom Bar Color:', color);
   },
   BackButton: {
+    isVisible: false,
+    onClick: () => { },
+    offClick: () => { },
+    show: () => { },
+    hide: () => { },
+  },
+  SettingsButton: {
     isVisible: false,
     onClick: () => { },
     offClick: () => { },
@@ -243,6 +284,15 @@ const mockWebApp: IWebApp = {
     console.log('[Mock] Request Fullscreen');
     mockWebApp.isFullscreen = true;
   },
+  isOrientationLocked: false,
+  lockOrientation: () => {
+    console.log('[Mock] Lock Orientation');
+    mockWebApp.isOrientationLocked = true;
+  },
+  unlockOrientation: () => {
+    console.log('[Mock] Unlock Orientation');
+    mockWebApp.isOrientationLocked = false;
+  },
   onEvent: () => { },
   offEvent: () => { },
   disableVerticalSwipes: () => console.log('[Mock] Disable Vertical Swipes'),
@@ -254,9 +304,10 @@ const mockWebApp: IWebApp = {
     console.log('[Mock] Show Confirm:', msg);
     cb(true);
   },
-  showScanQrPopup: (params: { text?: string }, _cb: (text: string) => boolean | void) => {
+  showScanQrPopup: (params: { text?: string }, callback: (text: string) => boolean | void) => {
     console.log('[Mock] Show QR Scanner:', params.text);
     // For mock, we just log - real TG will show native scanner
+    void callback;
   },
   closeScanQrPopup: () => {
     console.log('[Mock] Close QR Scanner');

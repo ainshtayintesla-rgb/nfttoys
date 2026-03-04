@@ -12,6 +12,7 @@ import { Locale, useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
 import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import { TgsPlayer } from '@/components/ui/TgsPlayer';
+import { formatWalletShortLabel } from '@/lib/wallet/network';
 
 import styles from './page.module.css';
 
@@ -188,24 +189,6 @@ function resolveDisplayKind(item: Pick<TransactionItem, 'type' | 'direction'>): 
     }
 
     return item.direction === 'in' ? 'received' : 'sent';
-}
-
-function formatWalletLabel(address: string | null): string {
-    if (!address) {
-        return '—';
-    }
-
-    const normalized = address.trim();
-    if (!normalized) {
-        return '—';
-    }
-
-    const tail = normalized.toUpperCase().slice(-6);
-    if (!tail) {
-        return '—';
-    }
-
-    return `LV-...${tail}`;
 }
 
 export default function TransactionsPage() {
@@ -565,7 +548,7 @@ export default function TransactionsPage() {
     }, [selectedKind, t]);
 
     const lowerTableAddressValue = selectedAddress
-        ? formatWalletLabel(selectedAddress)
+        ? formatWalletShortLabel(selectedAddress)
         : (t('system') || 'System');
     const selectedMemo = (selectedTransaction?.memo || '').trim();
     const shouldShowMemoDetails = selectedMemo.length > 0;
@@ -619,7 +602,7 @@ export default function TransactionsPage() {
                                             ? (item.fromFriendly || item.from)
                                             : (item.toFriendly || item.to);
                                         const counterpartLabel = counterpartAddress
-                                            ? formatWalletLabel(counterpartAddress)
+                                            ? formatWalletShortLabel(counterpartAddress)
                                             : (t('system') || 'System');
                                         const cardKindClassName = getKindClassName(displayKind);
                                         const cardDateTimeLine = `${formatDetailsDate(item.timestamp, locale)}, ${formatTime(item.timestamp, locale)}`;

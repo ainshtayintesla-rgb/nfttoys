@@ -309,24 +309,33 @@ export const TelegramProvider = ({ children }: { children: React.ReactNode }) =>
                 console.log('WebApp ready not available');
             }
 
-            requestAppFullscreen(app);
-
-            // Disable swipe-to-close gesture (wrap in try-catch for older versions)
             try {
-                if (typeof app.disableVerticalSwipes === 'function') {
-                    app.disableVerticalSwipes();
-                }
+                app.lockOrientation?.();
             } catch {
-                console.log('disableVerticalSwipes not available');
+                console.log('lockOrientation not available');
             }
 
-            // Enable closing confirmation dialog
+            requestAppFullscreen(app);
+
+            // On Android Telegram WebView disabling vertical swipes can break page scrolling.
+            // Keep swipe-to-close disabled only on iOS where this gesture is most disruptive.
             try {
-                if (typeof app.enableClosingConfirmation === 'function') {
-                    app.enableClosingConfirmation();
+                if (app.platform === 'ios' && typeof app.disableVerticalSwipes === 'function') {
+                    app.disableVerticalSwipes();
+                } else if (typeof app.enableVerticalSwipes === 'function') {
+                    app.enableVerticalSwipes();
                 }
             } catch {
-                console.log('enableClosingConfirmation not available');
+                console.log('vertical swipe controls not available');
+            }
+
+            // Keep close confirmation disabled globally.
+            try {
+                if (typeof app.disableClosingConfirmation === 'function') {
+                    app.disableClosingConfirmation();
+                }
+            } catch {
+                console.log('disableClosingConfirmation not available');
             }
 
             setWebApp(app);

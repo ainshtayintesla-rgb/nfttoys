@@ -188,6 +188,57 @@ html[data-theme='light'] {
   --theme-icon-color: #b45309;
 }
 
+html:not([data-theme]) {
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) {
+    color-scheme: light;
+    --bg-primary: #f5f8fd;
+    --bg-secondary: #ffffff;
+    --text-primary: #0f172a;
+    --text-secondary: #64748b;
+    --accent-color: #3390ec;
+    --accent-text: #ffffff;
+    --color-surface-hover: #edf2f9;
+
+    --surface-alpha-02: rgba(15, 23, 42, 0.02);
+    --surface-alpha-03: rgba(15, 23, 42, 0.03);
+    --surface-alpha-04: rgba(15, 23, 42, 0.04);
+    --surface-alpha-05: rgba(15, 23, 42, 0.05);
+    --surface-alpha-06: rgba(15, 23, 42, 0.06);
+    --surface-alpha-08: rgba(15, 23, 42, 0.08);
+    --surface-alpha-10: rgba(15, 23, 42, 0.1);
+    --surface-alpha-12: rgba(15, 23, 42, 0.12);
+    --surface-alpha-14: rgba(15, 23, 42, 0.14);
+    --surface-alpha-15: rgba(15, 23, 42, 0.15);
+    --surface-alpha-20: rgba(15, 23, 42, 0.2);
+    --surface-alpha-30: rgba(15, 23, 42, 0.3);
+    --surface-alpha-45: rgba(15, 23, 42, 0.45);
+    --surface-alpha-50: rgba(15, 23, 42, 0.5);
+    --surface-alpha-60: rgba(15, 23, 42, 0.6);
+    --surface-alpha-70: rgba(15, 23, 42, 0.7);
+    --surface-alpha-80: rgba(15, 23, 42, 0.8);
+    --surface-alpha-90: rgba(15, 23, 42, 0.9);
+
+    --overlay-backdrop: rgba(15, 23, 42, 0.42);
+    --overlay-soft: rgba(15, 23, 42, 0.3);
+    --overlay-strong: rgba(15, 23, 42, 0.62);
+    --ink-alpha-00: rgba(15, 23, 42, 0);
+    --ink-alpha-10: rgba(15, 23, 42, 0.08);
+    --ink-alpha-20: rgba(15, 23, 42, 0.14);
+    --ink-alpha-30: rgba(15, 23, 42, 0.2);
+    --ink-alpha-40: rgba(15, 23, 42, 0.28);
+    --ink-alpha-50: rgba(15, 23, 42, 0.36);
+    --ink-alpha-60: rgba(15, 23, 42, 0.44);
+    --ink-alpha-70: rgba(15, 23, 42, 0.52);
+
+    --theme-icon-bg: rgba(250, 204, 21, 0.2);
+    --theme-icon-color: #b45309;
+  }
+}
+
 /* Reset & Base */
 html {
   background-color: var(--bg-primary);
@@ -214,6 +265,7 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   transition: background-color 0.3s ease, color 0.3s ease;
   -webkit-font-smoothing: antialiased;
+  touch-action: pan-y;
 }
 
 .app-container {

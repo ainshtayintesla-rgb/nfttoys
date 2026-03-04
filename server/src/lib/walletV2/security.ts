@@ -7,6 +7,10 @@ const MNEMONIC_WORD_COUNT = 24;
 const SALT_BYTES = 16;
 const REFRESH_TOKEN_BYTES = 48;
 const CHALLENGE_NONCE_BYTES = 32;
+const WALLET_V2_MAINNET_PREFIX = 'LV';
+const WALLET_V2_TESTNET_PREFIX = 'tLV';
+export const WALLET_V2_ADDRESS_BODY_LENGTH = 30;
+const WALLET_V2_ADDRESS_BODY_REGEX = new RegExp(`^[0-9A-HJKMNP-TV-Z]{${WALLET_V2_ADDRESS_BODY_LENGTH}}$`);
 
 const ARGON2_OPTIONS: argon2.Options & { raw?: false } = {
     type: argon2.argon2id,
@@ -16,7 +20,96 @@ const ARGON2_OPTIONS: argon2.Options & { raw?: false } = {
     hashLength: 32,
 };
 
-export const WALLET_V2_ADDRESS_REGEX = /^LV-[0-9A-HJKMNP-TV-Z]{12}$/;
+export type WalletV2Network = 'mainnet' | 'testnet';
+
+export const WALLET_V2_ADDRESS_REGEX = new RegExp(`^(LV|tLV)-([0-9A-HJKMNP-TV-Z]{${WALLET_V2_ADDRESS_BODY_LENGTH}})$`, 'i');
+
+function resolveWalletV2Network(): WalletV2Network {
+    const configured = process.env.WALLET_V2_NETWORK?.trim().toLowerCase();
+
+    if (configured === 'mainnet' || configured === 'testnet') {
+        return configured;
+    }
+
+    if (process.env.NODE_ENV === 'production') {
+        return 'mainnet';
+    }
+
+    return 'testnet';
+}
+
+const walletV2Network = resolveWalletV2Network();
+
+function resolveAddressPrefix(network: WalletV2Network): string {
+    return network === 'testnet' ? WALLET_V2_TESTNET_PREFIX : WALLET_V2_MAINNET_PREFIX;
+}
+
+function parseWalletV2AddressBody(rawValue: string): string | null {
+    const normalized = rawValue.trim().replace(/\s+/g, '');
+    const match = normalized.match(WALLET_V2_ADDRESS_REGEX);
+
+    if (!match) {
+        return null;
+    }
+
+    const body = (match[2] || '').toUpperCase();
+    return WALLET_V2_ADDRESS_BODY_REGEX.test(body) ? body : null;
+}
+
+export function getWalletV2Network(): WalletV2Network {
+    return walletV2Network;
+}
+
+export function getWalletV2AddressPrefix(network: WalletV2Network = walletV2Network): string {
+    return resolveAddressPrefix(network);
+}
+
+export function getWalletV2AddressRegex(network: WalletV2Network = walletV2Network): RegExp {
+    if (network === 'testnet') {
+        return new RegExp(`^tLV-[0-9A-HJKMNP-TV-Z]{${WALLET_V2_ADDRESS_BODY_LENGTH}}$`);
+    }
+
+    return new RegExp(`^LV-[0-9A-HJKMNP-TV-Z]{${WALLET_V2_ADDRESS_BODY_LENGTH}}$`);
+}
+
+export function normalizeWalletV2Address(value: string, network: WalletV2Network = walletV2Network): string | null {
+    const body = parseWalletV2AddressBody(value);
+
+    if (!body) {
+        return null;
+    }
+
+    return `${resolveAddressPrefix(network)}-${body}`;
+}
+
+export function formatWalletV2AddressForNetwork(value: string, network: WalletV2Network = walletV2Network): string {
+    return normalizeWalletV2Address(value, network) || value;
+}
+
+export function buildWalletV2AddressCandidates(value: string, network: WalletV2Network = walletV2Network): string[] {
+    const body = parseWalletV2AddressBody(value);
+
+    if (!body) {
+        return [];
+    }
+
+    const primaryPrefix = resolveAddressPrefix(network);
+    const fallbackPrefix = primaryPrefix === WALLET_V2_TESTNET_PREFIX
+        ? WALLET_V2_MAINNET_PREFIX
+        : WALLET_V2_TESTNET_PREFIX;
+
+    return [`${primaryPrefix}-${body}`, `${fallbackPrefix}-${body}`];
+}
+
+export function buildWalletV2AddressFromBody(body: string, network: WalletV2Network = walletV2Network): string | null {
+    const normalizedBody = body.trim().toUpperCase();
+
+    if (!WALLET_V2_ADDRESS_BODY_REGEX.test(normalizedBody)) {
+        return null;
+    }
+
+    return `${resolveAddressPrefix(network)}-${normalizedBody}`;
+}
 
 function requiredEnv(name: string): string {
     const value = process.env[name]?.trim();
@@ -74,7 +167,7 @@ function randomCrockfordBody(length: number): string {
 }
 
 export function generateAddressV2(): string {
-    return `LV-${randomCrockfordBody(12)}`;
+    return `${resolveAddressPrefix(walletV2Network)}-${randomCrockfordBody(WALLET_V2_ADDRESS_BODY_LENGTH)}`;
 }
 
 export function generateOpaqueRefreshToken(): string {
@@ -196,5 +289,5 @@ export function parseAmountToBigInt(rawAmount: unknown): bigint | null {
 }
 
 export function isValidPin(pin: unknown): pin is string {
-    return typeof pin === 'string' && /^[0-9]{4,12}$/.test(pin.trim());
+    return typeof pin === 'string' && /^[0-9]{4}$/.test(pin.trim());
 }

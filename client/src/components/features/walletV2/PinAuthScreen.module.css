@@ -1,0 +1,212 @@
+.screen {
+    position: fixed;
+    inset: 0;
+    z-index: 360;
+    background: radial-gradient(circle at 16% 12%, rgba(14, 165, 233, 0.14), transparent 52%), var(--bg-primary);
+    padding:
+        calc(var(--app-safe-top-ui, var(--tg-safe-area-top, 0px)) + 16px)
+        16px
+        calc(var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px)) + 20px);
+    overflow-y: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.content {
+    width: min(100%, 360px);
+    margin: 0 auto;
+    min-height: calc(var(--app-viewport-height, 100dvh) - 72px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 16px;
+}
+
+.subtitle {
+    margin: 0;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.details {
+    border-radius: 14px;
+    border: 1px solid var(--surface-alpha-10);
+    background: var(--surface-alpha-04);
+    padding: 10px;
+    display: grid;
+    gap: 8px;
+}
+
+.detailRow {
+    display: grid;
+    gap: 3px;
+}
+
+.detailLabel {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.detailValue {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.dots {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    min-height: 40px;
+    padding: 2px 6px;
+}
+
+.dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid var(--surface-alpha-20);
+    background: transparent;
+    transition: transform 0.12s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.dotSetup.dotFilled {
+    background: #60a5fa;
+    border-color: #60a5fa;
+}
+
+.dotConfirm.dotFilled {
+    background: #22d3ee;
+    border-color: #22d3ee;
+}
+
+.dotMismatch {
+    background: #ef4444 !important;
+    border-color: #ef4444 !important;
+}
+
+.dotsShake {
+    animation: shakeX 0.36s linear;
+}
+
+.error {
+    min-height: 20px;
+    margin: 0;
+    text-align: center;
+    color: #fca5a5;
+    font-size: 12px;
+    line-height: 1.3;
+}
+
+.errorSpacer {
+    min-height: 20px;
+}
+
+.keypad {
+    margin-top: 4px;
+    display: grid;
+    gap: 12px;
+}
+
+.keypadRow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+
+.keyButton,
+.keyButtonPlaceholder {
+    width: 88px;
+    height: 88px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+}
+
+.keyButton {
+    border: 1px solid var(--surface-alpha-12);
+    background: linear-gradient(180deg, var(--surface-alpha-06), var(--surface-alpha-03));
+    color: var(--text-primary);
+    font-size: 32px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.08s ease, background 0.2s ease;
+}
+
+.keyButton:active {
+    transform: scale(0.98);
+}
+
+.keyButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.keyActionButton {
+    font-size: 18px;
+}
+
+.keyIconLoading {
+    opacity: 0.62;
+}
+
+.dotLoading {
+    animation: pinDotWave 0.9s ease-in-out infinite;
+    animation-delay: var(--pin-dot-delay, 0s);
+}
+
+@keyframes pinDotWave {
+    0%,
+    60%,
+    100% {
+        transform: translateY(0) scale(1);
+    }
+
+    30% {
+        transform: translateY(-6px) scale(1.06);
+    }
+}
+
+@keyframes shakeX {
+    0% {
+        transform: translateX(0);
+    }
+
+    20% {
+        transform: translateX(-5px);
+    }
+
+    40% {
+        transform: translateX(5px);
+    }
+
+    60% {
+        transform: translateX(-3px);
+    }
+
+    80% {
+        transform: translateX(3px);
+    }
+
+    100% {
+        transform: translateX(0);
+    }
+}
+
+@media (max-width: 420px) {
+    .content {
+        min-height: calc(var(--app-viewport-height, 100dvh) - 56px);
+        gap: 14px;
+    }
+}

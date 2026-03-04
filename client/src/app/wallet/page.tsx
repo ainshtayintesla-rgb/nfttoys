@@ -34,6 +34,15 @@ import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
 import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
+import {
+    WALLET_FRIENDLY_BODY_LENGTH,
+    WALLET_FRIENDLY_PREFIX,
+    WALLET_IS_TESTNET,
+    buildWalletFriendlyAddress,
+    formatWalletFriendlyAddressForNetwork,
+    formatWalletShortLabel,
+    sanitizeWalletFriendlyBody,
+} from '@/lib/wallet/network';
 
 import styles from './page.module.css';
 
@@ -121,7 +130,6 @@ type NftTxDisplayKind = 'received' | 'sent' | 'minted' | 'burn';
 const QUICK_AMOUNTS = [5000, 10000, 25000, 50000, 100000];
 const HISTORY_PAGE_SIZE = 20;
 const WALLET_SEND_FEE = 71;
-const WALLET_FRIENDLY_BODY_LENGTH = 12;
 const TELEGRAM_USERNAME_MAX_LENGTH = 32;
 const SEND_LOOKUP_DEBOUNCE_MS = 420;
 const MAX_AMOUNT_INPUT_DIGITS = 11;
@@ -210,16 +218,6 @@ function sanitizeUsernameInput(value: string): string {
     return candidate.replace(/[^a-zA-Z0-9_]/g, '').slice(0, TELEGRAM_USERNAME_MAX_LENGTH);
 }
 
-function sanitizeFriendlyBody(value: string): string {
-    return value
-        .trim()
-        .replace(/^LV-/i, '')
-        .replace(/^UZ-/i, '')
-        .replace(/[^a-zA-Z0-9_]/g, '')
-        .toUpperCase()
-        .slice(0, WALLET_FRIENDLY_BODY_LENGTH);
-}
-
 function normalizeAmountDigits(value: string): string {
     const digitsOnly = value.replace(/[^0-9]/g, '').slice(0, MAX_AMOUNT_INPUT_DIGITS);
     return digitsOnly.replace(/^0+(?=\d)/, '');
@@ -258,24 +256,6 @@ function resolveNftDisplayKind(item: Pick<NftTransactionItem, 'type' | 'directio
     }
 
     return item.direction === 'in' ? 'received' : 'sent';
-}
-
-function formatWalletLabel(address: string | null): string {
-    if (!address) {
-        return '—';
-    }
-
-    const normalized = address.trim();
-    if (!normalized) {
-        return '—';
-    }
-
-    const tail = normalized.toUpperCase().slice(-6);
-    if (!tail) {
-        return '—';
-    }
-
-    return `LV-...${tail}`;
 }
 
 export default function WalletPage() {
@@ -464,20 +444,14 @@ export default function WalletPage() {
     const copyValue = useMemo(() => {
         const friendly = (wallet?.friendlyAddress || user?.walletFriendly || '').trim();
         if (friendly) {
-            return friendly;
+            return formatWalletFriendlyAddressForNetwork(friendly);
         }
 
         return (wallet?.address || user?.walletAddress || '').trim();
     }, [wallet?.address, wallet?.friendlyAddress, user?.walletAddress, user?.walletFriendly]);
 
     const receiveWalletValue = useMemo(() => {
-        const raw = copyValue.toUpperCase();
-        if (!raw) {
-            return 'LV-......';
-        }
-
-        const suffix = raw.slice(-6).padStart(6, '.');
-        return `LV-...${suffix}`;
+        return formatWalletShortLabel(copyValue || null);
     }, [copyValue]);
 
     const parsedAmount = useMemo(() => {
@@ -495,7 +469,7 @@ export default function WalletPage() {
     }, [amountInput]);
 
     const normalizedUsername = useMemo(() => sanitizeUsernameInput(usernameInput), [usernameInput]);
-    const normalizedWalletBody = useMemo(() => sanitizeFriendlyBody(walletBodyInput), [walletBodyInput]);
+    const normalizedWalletBody = useMemo(() => sanitizeWalletFriendlyBody(walletBodyInput), [walletBodyInput]);
     const resolvedLookupUsername = useMemo(
         () => sanitizeUsernameInput(recipientLookup?.username || ''),
         [recipientLookup?.username],
@@ -512,12 +486,12 @@ export default function WalletPage() {
             return '';
         }
 
-        const source = sanitizeFriendlyBody(recipientLookup?.walletFriendly || '');
+        const source = sanitizeWalletFriendlyBody(recipientLookup?.walletFriendly || '');
         if (!source) {
             return '';
         }
 
-        return `LV-${source}`;
+        return `${WALLET_FRIENDLY_PREFIX}${source}`;
     }, [hasExactUsernameMatch, recipientLookup?.walletFriendly]);
     const suggestionDisplayName = useMemo(() => {
         if (resolvedLookupUsername) {
@@ -596,7 +570,7 @@ export default function WalletPage() {
     );
     const sendRecipientDisplay = recipientType === 'username'
         ? `@${resolvedLookupUsername || normalizedUsername}`
-        : `LV-${normalizedWalletBody}`;
+        : `${WALLET_FRIENDLY_PREFIX}${normalizedWalletBody}`;
     const sendMemoLength = sendMemoInput.length;
 
     const groupedHistory = useMemo<WalletHistoryGroup[]>(() => {
@@ -795,7 +769,7 @@ export default function WalletPage() {
         return t('transactions_source') || 'Source';
     }, [selectedNftKind, t]);
     const selectedNftAddressValue = selectedNftAddress
-        ? formatWalletLabel(selectedNftAddress)
+        ? formatWalletShortLabel(selectedNftAddress)
         : (t('system') || 'System');
     const selectedNftMemo = (selectedNftTransaction?.memo || '').trim();
     const shouldShowNftMemoDetails = selectedNftMemo.length > 0;
@@ -814,7 +788,7 @@ export default function WalletPage() {
 
     const ownWalletAddress = wallet?.address || user?.walletAddress || null;
     const ownWalletFriendly = wallet?.friendlyAddress || user?.walletFriendly || null;
-    const ownWalletLabel = formatWalletLabel(ownWalletFriendly || ownWalletAddress);
+    const ownWalletLabel = formatWalletShortLabel(ownWalletFriendly || ownWalletAddress);
     const selectedWalletDirectionLabel = selectedWalletTransaction
         ? (selectedWalletTransaction.type === 'topup'
             ? (t('wallet_history_operation_topup') || 'Top up')
@@ -860,14 +834,14 @@ export default function WalletPage() {
     const selectedWalletSenderValue = selectedWalletIsTopup
         ? (t('system') || 'System')
         : selectedWalletSenderRaw
-            ? formatWalletLabel(selectedWalletSenderRaw)
+            ? formatWalletShortLabel(selectedWalletSenderRaw)
             : (
                 selectedWalletTransaction?.type === 'send' || selectedWalletTransaction?.type === 'withdraw'
                     ? ownWalletLabel
                     : (t('system') || 'System')
             );
     const selectedWalletRecipientValue = selectedWalletRecipientRaw
-        ? formatWalletLabel(selectedWalletRecipientRaw)
+        ? formatWalletShortLabel(selectedWalletRecipientRaw)
         : (
             selectedWalletTransaction?.type === 'receive' || selectedWalletTransaction?.type === 'topup'
                 ? ownWalletLabel
@@ -895,6 +869,11 @@ export default function WalletPage() {
         : '—';
 
     const openDrawer = (mode: Exclude<DrawerMode, null>) => {
+        if (mode === 'topup' && !WALLET_IS_TESTNET) {
+            haptic.warning();
+            return;
+        }
+
         haptic.impact('light');
         setSelectedNftTransaction(null);
         setSelectedWalletTransaction(null);
@@ -1151,7 +1130,7 @@ export default function WalletPage() {
                 amount: payload.amount,
                 ...(payload.recipientByUsername
                     ? { toUsername: payload.recipientByUsername }
-                    : { toAddress: `LV-${payload.recipientByWallet}` }),
+                    : { toAddress: buildWalletFriendlyAddress(payload.recipientByWallet) }),
                 ...(trimmedMemo ? { memo: trimmedMemo } : {}),
             });
 
@@ -1267,6 +1246,7 @@ export default function WalletPage() {
                                         type="button"
                                         className={styles.actionTile}
                                         onClick={() => openDrawer('topup')}
+                                        disabled={!WALLET_IS_TESTNET}
                                     >
                                         <RoundIconButton as="span" size={50} className={`${styles.actionIcon} ${styles.actionIconTopup}`}>
                                             <IoWallet size={20} />
@@ -1341,7 +1321,7 @@ export default function WalletPage() {
 
                                         {!isHistoryLoading && !historyError && groupedHistory.length === 0 && (
                                             <div className={styles.emptyState}>
-                                                {t('wallet_history_empty') || 'No wallet operations yet'}
+                                                {t('wallet_history_empty') || 'There are currently no wallet operations'}
                                             </div>
                                         )}
 
@@ -1429,7 +1409,7 @@ export default function WalletPage() {
                                                                     ? (item.fromFriendly || item.from)
                                                                     : (item.toFriendly || item.to);
                                                                 const counterpartLabel = counterpartAddress
-                                                                    ? formatWalletLabel(counterpartAddress)
+                                                                    ? formatWalletShortLabel(counterpartAddress)
                                                                     : (t('system') || 'System');
                                                                 const cardKindClassName = getNftKindClassName(displayKind);
                                                                 const cardDateTimeLine = `${formatDetailsDate(item.timestamp, locale)}, ${formatTime(item.timestamp, locale)}`;
@@ -1689,7 +1669,7 @@ export default function WalletPage() {
                                         usernameValue={usernameInput}
                                         walletValue={walletBodyInput}
                                         usernamePlaceholder={t('wallet_send_username_placeholder') || 'username'}
-                                        walletPlaceholder={t('wallet_send_wallet_placeholder') || 'XXXXXXXXXXXX'}
+                                        walletPlaceholder={t('wallet_send_wallet_placeholder') || 'X'.repeat(WALLET_FRIENDLY_BODY_LENGTH)}
                                         onUsernameChange={(rawValue) => {
                                             const nextUsername = sanitizeUsernameInput(rawValue);
                                             setUsernameInput(nextUsername);
@@ -1710,10 +1690,11 @@ export default function WalletPage() {
                                             setDrawerError('');
                                         }}
                                         onWalletChange={(rawValue) => {
-                                            const nextWalletBody = sanitizeFriendlyBody(rawValue);
+                                            const nextWalletBody = sanitizeWalletFriendlyBody(rawValue);
                                             setWalletBodyInput(nextWalletBody);
                                             setDrawerError('');
                                         }}
+                                        walletPrefix={WALLET_FRIENDLY_PREFIX}
                                         usernameAvatarUrl={hasExactUsernameMatch ? (recipientLookup?.photoUrl || null) : null}
                                         walletSuggestion={recipientType === 'wallet' && suggestedWallet
                                             ? {
@@ -1721,7 +1702,7 @@ export default function WalletPage() {
                                                 address: suggestedWallet,
                                                 photoUrl: recipientLookup?.photoUrl || null,
                                                 onSelect: () => {
-                                                    setWalletBodyInput(sanitizeFriendlyBody(suggestedWallet.replace(/^LV-/i, '')));
+                                                    setWalletBodyInput(sanitizeWalletFriendlyBody(suggestedWallet));
                                                     setDrawerError('');
                                                     haptic.selection();
                                                 },

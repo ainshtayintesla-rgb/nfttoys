@@ -212,7 +212,7 @@ router.post('/telegram', authLimit, async (req, res) => {
             });
         } else {
             const existingWallet = await prisma.wallet.findUnique({ where: { address: walletAddress } });
-            const normalizedFriendly = walletFriendly || toFriendlyAddress(walletAddress);
+            const normalizedFriendly = toFriendlyAddress(walletAddress);
 
             if (!existingWallet) {
                 await prisma.wallet.create({
@@ -224,20 +224,36 @@ router.post('/telegram', authLimit, async (req, res) => {
                         balance: 0,
                     },
                 });
-            } else if (!existingWallet.userId) {
-                await prisma.wallet.update({
-                    where: { address: walletAddress },
-                    data: { userId: uid },
-                });
+            } else {
+                const walletUpdateData: {
+                    userId?: string;
+                    friendlyAddress?: string;
+                } = {};
+
+                if (!existingWallet.userId) {
+                    walletUpdateData.userId = uid;
+                }
+
+                if (existingWallet.friendlyAddress !== normalizedFriendly) {
+                    walletUpdateData.friendlyAddress = normalizedFriendly;
+                }
+
+                if (Object.keys(walletUpdateData).length > 0) {
+                    await prisma.wallet.update({
+                        where: { address: walletAddress },
+                        data: walletUpdateData,
+                    });
+                }
             }
 
-            if (!walletFriendly) {
+            if (currentUser?.walletFriendly !== normalizedFriendly) {
                 currentUser = await prisma.user.update({
                     where: { id: uid },
                     data: { walletFriendly: normalizedFriendly },
                 });
-                walletFriendly = normalizedFriendly;
             }
+
+            walletFriendly = normalizedFriendly;
         }
 
         if (typeof user.allows_write_to_pm === 'boolean') {

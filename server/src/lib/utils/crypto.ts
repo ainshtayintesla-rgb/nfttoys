@@ -6,18 +6,106 @@ import crypto from 'crypto';
 
 const ADDRESS_PREFIX = '0nt';
 const NFT_PREFIX = 'NFT';
-const FRIENDLY_PREFIX = 'LV-';
-const FRIENDLY_BODY_LENGTH = 12;
+const FRIENDLY_MAINNET_PREFIX = 'LV-';
+const FRIENDLY_TESTNET_PREFIX = 'tLV-';
+const FRIENDLY_BODY_LENGTH = 30;
 const FRIENDLY_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 const LEGACY_FRIENDLY_REGEX = /^UZ-[A-F0-9]{4}-[A-F0-9]{4}$/i;
-const FRIENDLY_REGEX = /^LV-(?!_)(?!.*_.*_)[A-Z0-9_]{12}$/i;
+const FRIENDLY_BODY_PATTERN = `[A-Z0-9_]{${FRIENDLY_BODY_LENGTH}}`;
+const FRIENDLY_BODY_REGEX = new RegExp(`^${FRIENDLY_BODY_PATTERN}$`);
+const FRIENDLY_ANY_REGEX = new RegExp(`^(LV|tLV)-(?!_)(?!.*_.*_)(${FRIENDLY_BODY_PATTERN})$`, 'i');
 const ZERO_ADDRESS_HASH = '0'.repeat(64);
 const TREASURY_ADDRESS_HASH = 'f'.repeat(64);
 
+export type WalletNetwork = 'mainnet' | 'testnet';
+
+function resolveWalletNetwork(): WalletNetwork {
+    const configured = process.env.WALLET_NETWORK?.trim().toLowerCase();
+
+    if (configured === 'mainnet' || configured === 'testnet') {
+        return configured;
+    }
+
+    if (process.env.NODE_ENV === 'production') {
+        return 'mainnet';
+    }
+
+    return 'testnet';
+}
+
+const walletNetwork = resolveWalletNetwork();
+
+function resolveFriendlyPrefix(network: WalletNetwork = walletNetwork): string {
+    return network === 'testnet' ? FRIENDLY_TESTNET_PREFIX : FRIENDLY_MAINNET_PREFIX;
+}
+
+function parseFriendlyBody(value: string): string | null {
+    const normalized = value.trim().replace(/\s+/g, '');
+    const match = normalized.match(FRIENDLY_ANY_REGEX);
+
+    if (!match) {
+        return null;
+    }
+
+    const body = (match[2] || '').toUpperCase();
+    return FRIENDLY_BODY_REGEX.test(body) ? body : null;
+}
+
+export function getWalletNetwork(): WalletNetwork {
+    return walletNetwork;
+}
+
+export function getFriendlyAddressPrefix(network: WalletNetwork = walletNetwork): string {
+    return resolveFriendlyPrefix(network);
+}
+
+export function getFriendlyAddressRegex(network: WalletNetwork = walletNetwork): RegExp {
+    if (network === 'testnet') {
+        return new RegExp(`^tLV-(?!_)(?!.*_.*_)${FRIENDLY_BODY_PATTERN}$`);
+    }
+
+    return new RegExp(`^LV-(?!_)(?!.*_.*_)${FRIENDLY_BODY_PATTERN}$`);
+}
+
+export function normalizeFriendlyAddressForNetwork(
+    value: string,
+    network: WalletNetwork = walletNetwork,
+): string | null {
+    const body = parseFriendlyBody(value);
+
+    if (!body) {
+        return null;
+    }
+
+    return `${resolveFriendlyPrefix(network)}${body}`;
+}
+
+export function buildFriendlyAddressCandidates(
+    value: string,
+    network: WalletNetwork = walletNetwork,
+): string[] {
+    const body = parseFriendlyBody(value);
+
+    if (!body) {
+        return [];
+    }
+
+    const primaryPrefix = resolveFriendlyPrefix(network);
+    const fallbackPrefix = primaryPrefix === FRIENDLY_TESTNET_PREFIX
+        ? FRIENDLY_MAINNET_PREFIX
+        : FRIENDLY_TESTNET_PREFIX;
+
+    return [`${primaryPrefix}${body}`, `${fallbackPrefix}${body}`];
+}
+
+export function isFriendlyAddressInput(value: string): boolean {
+    return /^(LV-|tLV-|UZ-)/i.test(value.trim());
+}
+
 export const ZERO_ADDRESS = `${ADDRESS_PREFIX}${ZERO_ADDRESS_HASH}`;
-export const ZERO_FRIENDLY_ADDRESS = `${FRIENDLY_PREFIX}${'0'.repeat(FRIENDLY_BODY_LENGTH)}`;
+export const ZERO_FRIENDLY_ADDRESS = `${resolveFriendlyPrefix()}${'0'.repeat(FRIENDLY_BODY_LENGTH)}`;
 export const TREASURY_ADDRESS = `${ADDRESS_PREFIX}${TREASURY_ADDRESS_HASH}`;
-export const TREASURY_FRIENDLY_ADDRESS = `${FRIENDLY_PREFIX}${buildFriendlyBody(TREASURY_ADDRESS_HASH)}`;
+export const TREASURY_FRIENDLY_ADDRESS = `${resolveFriendlyPrefix()}${buildFriendlyBody(TREASURY_ADDRESS_HASH)}`;
 
 function buildFriendlyBody(addressHash: string): string {
     const seed = crypto
@@ -48,7 +136,7 @@ function toLegacyFriendlyAddress(rawAddress: string): string {
 
 export function isFriendlyAddress(value: string): boolean {
     const normalized = value.trim().toUpperCase();
-    return FRIENDLY_REGEX.test(normalized) || LEGACY_FRIENDLY_REGEX.test(normalized);
+    return FRIENDLY_ANY_REGEX.test(normalized) || LEGACY_FRIENDLY_REGEX.test(normalized);
 }
 
 /**
@@ -88,7 +176,7 @@ export function toFriendlyAddress(rawAddress: string): string {
         return ZERO_FRIENDLY_ADDRESS;
     }
 
-    return `${FRIENDLY_PREFIX}${buildFriendlyBody(hash.toLowerCase())}`;
+    return `${resolveFriendlyPrefix()}${buildFriendlyBody(hash.toLowerCase())}`;
 }
 
 /**
@@ -105,7 +193,21 @@ export function matchesFriendlyAddress(rawAddress: string, friendlyAddress: stri
             return toLegacyFriendlyAddress(rawAddress) === normalized;
         }
 
-        return toFriendlyAddress(rawAddress) === normalized;
+        if (!rawAddress.startsWith(ADDRESS_PREFIX)) {
+            return false;
+        }
+
+        const hash = rawAddress.slice(ADDRESS_PREFIX.length);
+        if (!/^[a-f0-9]{64}$/i.test(hash)) {
+            return false;
+        }
+
+        const inputBody = parseFriendlyBody(normalized);
+        if (!inputBody) {
+            return false;
+        }
+
+        return buildFriendlyBody(hash.toLowerCase()) === inputBody;
     } catch {
         return false;
     }

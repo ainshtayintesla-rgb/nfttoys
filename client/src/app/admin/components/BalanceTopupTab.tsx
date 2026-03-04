@@ -12,11 +12,17 @@ import { api, type AdminWalletLookupTarget } from '@/lib/api';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
 import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
+import {
+    WALLET_FRIENDLY_BODY_LENGTH,
+    WALLET_FRIENDLY_PREFIX,
+    WALLET_IS_TESTNET,
+    normalizeWalletFriendlyAddress,
+    sanitizeWalletFriendlyBody,
+} from '@/lib/wallet/network';
 
 import styles from './BalanceTopupTab.module.css';
 
 const TELEGRAM_USERNAME_MAX_LENGTH = 32;
-const WALLET_FRIENDLY_BODY_LENGTH = 12;
 const LOOKUP_DEBOUNCE_MS = 320;
 const MAX_AMOUNT_INPUT_DIGITS = 10;
 const QUICK_AMOUNTS = [1000, 5000, 10_000, 50_000, 100_000] as const;
@@ -35,16 +41,6 @@ function sanitizeUsernameInput(value: string): string {
         .replace(/^@+/, '')
         .replace(/[^a-zA-Z0-9_]/g, '')
         .slice(0, TELEGRAM_USERNAME_MAX_LENGTH);
-}
-
-function sanitizeFriendlyBody(value: string): string {
-    return value
-        .trim()
-        .replace(/^LV-/i, '')
-        .replace(/^UZ-/i, '')
-        .replace(/[^a-zA-Z0-9_]/g, '')
-        .toUpperCase()
-        .slice(0, WALLET_FRIENDLY_BODY_LENGTH);
 }
 
 function normalizeAmountDigits(value: string): string {
@@ -127,9 +123,9 @@ export function BalanceTopupTab() {
     useBodyScrollLock(isConfirmOpen);
 
     const normalizedUsername = useMemo(() => sanitizeUsernameInput(usernameInput), [usernameInput]);
-    const normalizedWalletBody = useMemo(() => sanitizeFriendlyBody(walletBodyInput), [walletBodyInput]);
+    const normalizedWalletBody = useMemo(() => sanitizeWalletFriendlyBody(walletBodyInput), [walletBodyInput]);
     const normalizedWalletFriendly = useMemo(() => (
-        normalizedWalletBody ? `LV-${normalizedWalletBody}` : ''
+        normalizedWalletBody ? `${WALLET_FRIENDLY_PREFIX}${normalizedWalletBody}` : ''
     ), [normalizedWalletBody]);
 
     const parsedAmount = useMemo(() => {
@@ -169,12 +165,12 @@ export function BalanceTopupTab() {
             return '';
         }
 
-        const source = sanitizeFriendlyBody(usernameTarget?.walletFriendly || '');
+        const source = sanitizeWalletFriendlyBody(usernameTarget?.walletFriendly || '');
         if (!source) {
             return '';
         }
 
-        return `LV-${source}`;
+        return `${WALLET_FRIENDLY_PREFIX}${source}`;
     }, [hasExactUsernameMatch, usernameTarget?.walletFriendly]);
 
     const usernameDisplayName = useMemo(() => (
@@ -255,7 +251,8 @@ export function BalanceTopupTab() {
     }, [lookupTarget, normalizedWalletBody.length, normalizedWalletFriendly, recipientType]);
 
     const canContinue = Boolean(
-        parsedAmount
+        WALLET_IS_TESTNET
+        && parsedAmount
         && (recipientType === 'username' ? hasExactUsernameMatch : Boolean(walletTarget)),
     );
 
@@ -272,6 +269,11 @@ export function BalanceTopupTab() {
     const handleContinue = async () => {
         setError('');
         setSuccess('');
+
+        if (!WALLET_IS_TESTNET) {
+            setError('Top up is available only in testnet mode');
+            return;
+        }
 
         if (!parsedAmount) {
             setError(t('admin_topup_invalid_amount') || 'Enter valid amount');
@@ -294,8 +296,11 @@ export function BalanceTopupTab() {
             }
 
             nextTarget = walletTarget;
+            const nextTargetFriendly = nextTarget?.walletFriendly
+                ? (normalizeWalletFriendlyAddress(nextTarget.walletFriendly) || nextTarget.walletFriendly)
+                : '';
 
-            if (!nextTarget || nextTarget.walletFriendly.toUpperCase() !== normalizedWalletFriendly.toUpperCase()) {
+            if (!nextTarget || nextTargetFriendly.toUpperCase() !== normalizedWalletFriendly.toUpperCase()) {
                 try {
                     nextTarget = await lookupTarget({ wallet: normalizedWalletFriendly });
                     setWalletTarget(nextTarget);
@@ -349,12 +354,14 @@ export function BalanceTopupTab() {
             });
 
             const resolvedTarget = response?.target || confirmPayload.target;
+            const resolvedFriendly = normalizeWalletFriendlyAddress(resolvedTarget.walletFriendly)
+                || resolvedTarget.walletFriendly;
 
-            setWalletBodyInput(sanitizeFriendlyBody(resolvedTarget.walletFriendly));
+            setWalletBodyInput(sanitizeWalletFriendlyBody(resolvedFriendly));
             setWalletTarget(resolvedTarget);
             setAmountInput('');
             setSelectedQuickAmount(null);
-            setSuccess(`${t('admin_topup_success') || 'Balance topped up'}: ${resolvedTarget.walletFriendly}`);
+            setSuccess(`${t('admin_topup_success') || 'Balance topped up'}: ${resolvedFriendly}`);
             setIsConfirmSucceeded(true);
             haptic.success();
         } catch (submitError) {
@@ -380,7 +387,7 @@ export function BalanceTopupTab() {
                     usernameValue={usernameInput}
                     walletValue={walletBodyInput}
                     usernamePlaceholder={t('wallet_send_username_placeholder') || 'username'}
-                    walletPlaceholder={t('wallet_send_wallet_placeholder') || 'XXXXXXXXXXXX'}
+                    walletPlaceholder={t('wallet_send_wallet_placeholder') || 'X'.repeat(WALLET_FRIENDLY_BODY_LENGTH)}
                     onUsernameChange={(rawValue) => {
                         const nextUsername = sanitizeUsernameInput(rawValue);
                         setUsernameInput(nextUsername);
@@ -402,10 +409,11 @@ export function BalanceTopupTab() {
                         setSuccess('');
                     }}
                     onWalletChange={(rawValue) => {
-                        setWalletBodyInput(sanitizeFriendlyBody(rawValue));
+                        setWalletBodyInput(sanitizeWalletFriendlyBody(rawValue));
                         setError('');
                         setSuccess('');
                     }}
+                    walletPrefix={WALLET_FRIENDLY_PREFIX}
                     usernameAvatarUrl={hasExactUsernameMatch ? (usernameTarget?.user?.photoUrl || null) : null}
                     walletSuggestion={recipientType === 'wallet' && suggestedWallet
                         ? {
@@ -413,7 +421,7 @@ export function BalanceTopupTab() {
                             address: suggestedWallet,
                             photoUrl: usernameTarget?.user?.photoUrl || null,
                             onSelect: () => {
-                                setWalletBodyInput(sanitizeFriendlyBody(suggestedWallet));
+                                setWalletBodyInput(sanitizeWalletFriendlyBody(suggestedWallet));
                                 setError('');
                                 haptic.selection();
                             },
@@ -473,6 +481,13 @@ export function BalanceTopupTab() {
                     <div className={styles.successBox}>
                         <CheckCircle2 size={16} />
                         <span>{success}</span>
+                    </div>
+                )}
+
+                {!WALLET_IS_TESTNET && (
+                    <div className={styles.errorBox}>
+                        <AlertTriangle size={16} />
+                        <span>Top up is available only in testnet mode.</span>
                     </div>
                 )}
 

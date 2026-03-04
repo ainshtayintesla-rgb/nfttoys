@@ -1,5 +1,6 @@
 import React from 'react';
 
+import { WALLET_FRIENDLY_PREFIX } from '@/lib/wallet/network';
 import { SegmentedTabs } from './SegmentedTabs';
 import styles from './RecipientLookupField.module.css';
 
@@ -43,7 +44,7 @@ export function RecipientLookupField({
     onUsernameChange,
     onWalletChange,
     usernameAvatarUrl,
-    walletPrefix = 'LV-',
+    walletPrefix = WALLET_FRIENDLY_PREFIX,
     walletSuggestion,
     className,
 }: RecipientLookupFieldProps) {

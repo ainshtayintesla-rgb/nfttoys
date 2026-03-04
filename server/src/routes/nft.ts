@@ -8,6 +8,7 @@ import {
     ZERO_FRIENDLY_ADDRESS,
     TREASURY_ADDRESS,
     TREASURY_FRIENDLY_ADDRESS,
+    buildFriendlyAddressCandidates,
     toFriendlyAddress,
     signTransaction,
     generateTxHash,
@@ -77,9 +78,12 @@ function isZeroBurnAddressInput(value: string): boolean {
         return false;
     }
 
+    const zeroFriendlyCandidates = buildFriendlyAddressCandidates(ZERO_FRIENDLY_ADDRESS)
+        .map((candidate) => candidate.toUpperCase());
+
     return (
         normalized.toLowerCase() === ZERO_ADDRESS
-        || normalized.toUpperCase() === ZERO_FRIENDLY_ADDRESS
+        || zeroFriendlyCandidates.includes(normalized.toUpperCase())
     );
 }
 
@@ -407,10 +411,15 @@ router.post('/transfer', strictLimit, requireAuth, csrfProtection, async (req, r
             } else {
                 let walletAddress = normalizedAddress;
                 let wallet = null;
+                const friendlyCandidates = buildFriendlyAddressCandidates(normalizedAddress);
 
-                if (/^(UZ-|LV-)/i.test(normalizedAddress)) {
-                    wallet = await prisma.wallet.findUnique({
-                        where: { friendlyAddress: normalizedAddress.toUpperCase() },
+                if (friendlyCandidates.length > 0) {
+                    wallet = await prisma.wallet.findFirst({
+                        where: {
+                            friendlyAddress: {
+                                in: friendlyCandidates,
+                            },
+                        },
                     });
 
                     if (!wallet) {

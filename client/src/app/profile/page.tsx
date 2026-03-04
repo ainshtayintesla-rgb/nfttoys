@@ -228,6 +228,16 @@ export default function ProfilePage() {
                             },
                         },
                         {
+                            key: 'wallet-v2',
+                            icon: <IoWallet size={22} color="white" />,
+                            label: t('wallet_v2') || 'Wallet v2',
+                            iconBackground: 'linear-gradient(135deg, #06b6d4, #0284c7)',
+                            onClick: () => {
+                                haptic.impact('light');
+                                router.push('/wallet-v2');
+                            },
+                        },
+                        {
                             key: 'referrals',
                             icon: <IoGift size={22} color="white" />,
                             label: t('referrals') || 'Referrals',

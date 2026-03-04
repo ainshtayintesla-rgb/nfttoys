@@ -6,8 +6,12 @@ import { normalizedUsername, parseTelegramId } from '../lib/db/utils';
 import {
     TREASURY_ADDRESS,
     TREASURY_FRIENDLY_ADDRESS,
+    buildFriendlyAddressCandidates,
     generateWalletAddress,
+    getFriendlyAddressPrefix,
+    getWalletNetwork,
     isValidAddress,
+    normalizeFriendlyAddressForNetwork,
     toFriendlyAddress,
 } from '../lib/utils/crypto';
 import { getAdminTelegramIds } from '../middleware/admin';
@@ -19,11 +23,13 @@ const MAX_WALLET_OPERATION_AMOUNT = 10_000_000_000;
 const DEFAULT_HISTORY_LIMIT = 20;
 const MAX_HISTORY_LIMIT = 50;
 const TELEGRAM_USERNAME_MAX_LENGTH = 32;
-const WALLET_FRIENDLY_BODY_LENGTH = 12;
+const WALLET_FRIENDLY_BODY_LENGTH = 30;
 const WALLET_SEND_FEE_AMOUNT = 71;
 const WALLET_SEND_FEE_CURRENCY = 'UZS';
 const WALLET_SEND_MEMO_MAX_LENGTH = 180;
 const TREASURY_ADDRESS_HASH = TREASURY_ADDRESS.slice(3);
+const WALLET_NETWORK = getWalletNetwork();
+const WALLET_FRIENDLY_PREFIX = getFriendlyAddressPrefix();
 
 type WalletBalanceMutationKind = 'topup' | 'withdraw';
 type WalletOperationKind = 'topup' | 'withdraw' | 'send' | 'receive';
@@ -101,13 +107,9 @@ function normalizeWalletLookupInput(value: unknown): string {
         return '';
     }
 
-    if (/^(LV-|UZ-)/i.test(candidate)) {
-        const friendlyBody = candidate
-            .replace(/^(LV-|UZ-)/i, '')
-            .replace(/[^a-zA-Z0-9_]/g, '')
-            .toUpperCase()
-            .slice(0, WALLET_FRIENDLY_BODY_LENGTH);
-        return friendlyBody ? `LV-${friendlyBody}` : '';
+    const normalizedFriendly = normalizeFriendlyAddressForNetwork(candidate);
+    if (normalizedFriendly) {
+        return normalizedFriendly;
     }
 
     if (isValidAddress(candidate)) {
@@ -115,11 +117,12 @@ function normalizeWalletLookupInput(value: unknown): string {
     }
 
     const friendlyBody = candidate
+        .replace(/^(?:LV-|tLV-|UZ-)/i, '')
         .replace(/[^a-zA-Z0-9_]/g, '')
         .toUpperCase()
         .slice(0, WALLET_FRIENDLY_BODY_LENGTH);
 
-    return friendlyBody ? `LV-${friendlyBody}` : '';
+    return friendlyBody ? `${WALLET_FRIENDLY_PREFIX}${friendlyBody}` : '';
 }
 
 function normalizeWalletMemoInput(value: unknown): string {
@@ -130,15 +133,43 @@ function normalizeWalletMemoInput(value: unknown): string {
     return value.trim().slice(0, WALLET_SEND_MEMO_MAX_LENGTH);
 }
 
+function safeFriendlyAddress(address: string): string {
+    try {
+        return toFriendlyAddress(address);
+    } catch {
+        return '';
+    }
+}
+
+function resolveOperationFriendlyAddress(
+    rawAddress: string | null,
+    fallbackFriendly: string | null,
+): string | null {
+    if (rawAddress) {
+        const fromRaw = safeFriendlyAddress(rawAddress);
+        if (fromRaw) {
+            return fromRaw;
+        }
+    }
+
+    if (!fallbackFriendly) {
+        return null;
+    }
+
+    return normalizeFriendlyAddressForNetwork(fallbackFriendly) || fallbackFriendly;
+}
+
 function walletPayload(wallet: {
     address: string;
     friendlyAddress: string;
     balance: number;
     createdAt: Date;
 }, nftCount: number) {
+    const normalizedFriendly = safeFriendlyAddress(wallet.address);
+
     return {
         address: wallet.address,
-        friendlyAddress: wallet.friendlyAddress || toFriendlyAddress(wallet.address),
+        friendlyAddress: normalizedFriendly || wallet.friendlyAddress || toFriendlyAddress(wallet.address),
         nftCount,
         balance: wallet.balance || 0,
         createdAt: wallet.createdAt ? wallet.createdAt.toISOString() : null,
@@ -167,9 +198,9 @@ function walletOperationPayload(operation: {
         currency: operation.currency,
         status: operation.status,
         fromAddress: operation.fromAddress,
-        fromFriendly: operation.fromFriendly,
+        fromFriendly: resolveOperationFriendlyAddress(operation.fromAddress, operation.fromFriendly),
         toAddress: operation.toAddress,
-        toFriendly: operation.toFriendly,
+        toFriendly: resolveOperationFriendlyAddress(operation.toAddress, operation.toFriendly),
         memo: operation.memo,
         feeAmount: operation.feeAmount,
         feeCurrency: operation.feeCurrency,
@@ -273,6 +304,7 @@ async function applyWalletBalanceOperation(userId: string, amount: number, opera
                 createdAt: true,
             },
         });
+        const normalizedWalletFriendly = safeFriendlyAddress(wallet.address) || wallet.friendlyAddress;
 
         const operationRow = await tx.walletTransaction.create({
             data: {
@@ -287,11 +319,11 @@ async function applyWalletBalanceOperation(userId: string, amount: number, opera
                         fromAddress: TREASURY_ADDRESS,
                         fromFriendly: TREASURY_FRIENDLY_ADDRESS,
                         toAddress: wallet.address,
-                        toFriendly: wallet.friendlyAddress,
+                        toFriendly: normalizedWalletFriendly,
                     }
                     : {
                         fromAddress: wallet.address,
-                        fromFriendly: wallet.friendlyAddress,
+                        fromFriendly: normalizedWalletFriendly,
                         toAddress: TREASURY_ADDRESS,
                         toFriendly: TREASURY_FRIENDLY_ADDRESS,
                     }),
@@ -331,11 +363,13 @@ router.post('/create', authLimit, requireAuth, async (req, res) => {
         const existingUser = await prisma.user.findUnique({ where: { id: userId } });
 
         if (existingUser?.walletAddress) {
+            const normalizedFriendly = safeFriendlyAddress(existingUser.walletAddress);
+
             return res.json({
                 success: true,
                 wallet: {
                     address: existingUser.walletAddress,
-                    friendlyAddress: existingUser.walletFriendly || toFriendlyAddress(existingUser.walletAddress),
+                    friendlyAddress: normalizedFriendly || existingUser.walletFriendly || toFriendlyAddress(existingUser.walletAddress),
                 },
                 existing: true,
             });
@@ -556,6 +590,7 @@ router.get('/recipient/search', standardLimit, requireAuth, async (req, res) => 
                     username: true,
                     firstName: true,
                     photoUrl: true,
+                    walletAddress: true,
                     walletFriendly: true,
                 },
             });
@@ -568,7 +603,9 @@ router.get('/recipient/search', standardLimit, requireAuth, async (req, res) => 
                         username: recipient.username,
                         firstName: recipient.firstName,
                         photoUrl: recipient.photoUrl,
-                        walletFriendly: recipient.walletFriendly,
+                        walletFriendly: recipient.walletAddress
+                            ? (safeFriendlyAddress(recipient.walletAddress) || recipient.walletFriendly)
+                            : recipient.walletFriendly,
                     }
                     : null,
             });
@@ -578,10 +615,17 @@ router.get('/recipient/search', standardLimit, requireAuth, async (req, res) => 
             return res.json({ success: true, recipient: null });
         }
 
-        const wallet = /^(LV-|UZ-)/i.test(walletInput)
-            ? await prisma.wallet.findUnique({
-                where: { friendlyAddress: walletInput.toUpperCase() },
+        const friendlyCandidates = buildFriendlyAddressCandidates(walletInput);
+
+        const wallet = friendlyCandidates.length > 0
+            ? await prisma.wallet.findFirst({
+                where: {
+                    friendlyAddress: {
+                        in: friendlyCandidates,
+                    },
+                },
                 select: {
+                    address: true,
                     userId: true,
                     friendlyAddress: true,
                 },
@@ -589,6 +633,7 @@ router.get('/recipient/search', standardLimit, requireAuth, async (req, res) => 
             : await prisma.wallet.findUnique({
                 where: { address: walletInput },
                 select: {
+                    address: true,
                     userId: true,
                     friendlyAddress: true,
                 },
@@ -617,7 +662,9 @@ router.get('/recipient/search', standardLimit, requireAuth, async (req, res) => 
                     username: recipient.username,
                     firstName: recipient.firstName,
                     photoUrl: recipient.photoUrl,
-                    walletFriendly: recipient.walletFriendly || wallet.friendlyAddress || null,
+                    walletFriendly: wallet.address
+                        ? (safeFriendlyAddress(wallet.address) || recipient.walletFriendly || wallet.friendlyAddress || null)
+                        : (recipient.walletFriendly || wallet.friendlyAddress || null),
                 }
                 : null,
         });
@@ -630,6 +677,13 @@ router.get('/recipient/search', standardLimit, requireAuth, async (req, res) => 
 // POST /wallet/topup
 router.post('/topup', authLimit, requireAuth, async (req, res) => {
     try {
+        if (WALLET_NETWORK !== 'testnet') {
+            return res.status(403).json({
+                error: 'Top up is available only in testnet mode',
+                code: 'TOPUP_DISABLED',
+            });
+        }
+
         const userId = req.authUser!.uid;
         const amount = parseAmount((req.body as { amount?: unknown } | undefined)?.amount);
 
@@ -815,13 +869,21 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
 
                 recipientWalletAddress = recipient.walletAddress;
                 recipientUserId = recipient.id;
-                recipientWalletFriendly = recipient.walletFriendly || toFriendlyAddress(recipient.walletAddress);
+                recipientWalletFriendly = safeFriendlyAddress(recipient.walletAddress)
+                    || recipient.walletFriendly
+                    || toFriendlyAddress(recipient.walletAddress);
             } else {
                 let normalizedAddress = rawAddressInput;
 
-                if (/^(UZ-|LV-)/i.test(normalizedAddress)) {
-                    const friendlyWallet = await tx.wallet.findUnique({
-                        where: { friendlyAddress: normalizedAddress.toUpperCase() },
+                const friendlyCandidates = buildFriendlyAddressCandidates(normalizedAddress);
+
+                if (friendlyCandidates.length > 0) {
+                    const friendlyWallet = await tx.wallet.findFirst({
+                        where: {
+                            friendlyAddress: {
+                                in: friendlyCandidates,
+                            },
+                        },
                         select: {
                             address: true,
                             friendlyAddress: true,
@@ -835,7 +897,8 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
 
                     normalizedAddress = friendlyWallet.address;
                     recipientUserId = friendlyWallet.userId;
-                    recipientWalletFriendly = friendlyWallet.friendlyAddress;
+                    recipientWalletFriendly = safeFriendlyAddress(friendlyWallet.address)
+                        || friendlyWallet.friendlyAddress;
                 }
 
                 if (!isValidAddress(normalizedAddress)) {
@@ -857,9 +920,11 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
 
                 recipientWalletAddress = recipientWallet.address;
                 recipientUserId = recipientWallet.userId;
-                recipientWalletFriendly = recipientWallet.friendlyAddress;
+                recipientWalletFriendly = safeFriendlyAddress(recipientWallet.address)
+                    || recipientWallet.friendlyAddress;
             }
 
+            const senderWalletFriendly = safeFriendlyAddress(senderWallet.address) || senderWallet.friendlyAddress;
 
             const debitResult = await tx.wallet.updateMany({
                 where: {
@@ -903,7 +968,7 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
                     currency: WALLET_SEND_FEE_CURRENCY,
                     status: 'completed',
                     fromAddress: senderWallet.address,
-                    fromFriendly: senderWallet.friendlyAddress,
+                    fromFriendly: senderWalletFriendly,
                     toAddress: recipientWalletAddress,
                     toFriendly: recipientWalletFriendly,
                     memo: memo || null,
@@ -937,7 +1002,7 @@ router.post('/send', authLimit, requireAuth, async (req, res) => {
                         currency: WALLET_SEND_FEE_CURRENCY,
                         status: 'completed',
                         fromAddress: senderWallet.address,
-                        fromFriendly: senderWallet.friendlyAddress,
+                        fromFriendly: senderWalletFriendly,
                         toAddress: recipientWalletAddress,
                         toFriendly: recipientWalletFriendly,
                         memo: memo || null,

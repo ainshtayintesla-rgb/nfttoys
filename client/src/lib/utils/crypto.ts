@@ -4,15 +4,17 @@
  */
 
 import crypto from 'crypto';
+import { WALLET_FRIENDLY_PREFIX } from '@/lib/wallet/network';
 
 // Address prefix
 const ADDRESS_PREFIX = '0nt';
 const NFT_PREFIX = 'NFT';
-const FRIENDLY_PREFIX = 'LV-';
-const FRIENDLY_BODY_LENGTH = 12;
+const FRIENDLY_BODY_LENGTH = 30;
 const FRIENDLY_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 const LEGACY_FRIENDLY_REGEX = /^UZ-[A-F0-9]{4}-[A-F0-9]{4}$/i;
-const FRIENDLY_REGEX = /^LV-(?!_)(?!.*_.*_)[A-Z0-9_]{12}$/i;
+const FRIENDLY_BODY_PATTERN = `[A-Z0-9_]{${FRIENDLY_BODY_LENGTH}}`;
+const FRIENDLY_BODY_REGEX = new RegExp(`^${FRIENDLY_BODY_PATTERN}$`);
+const FRIENDLY_REGEX = new RegExp(`^(LV|tLV)-(?!_)(?!.*_.*_)(${FRIENDLY_BODY_PATTERN})$`, 'i');
 
 function buildFriendlyBody(addressHash: string): string {
     const seed = crypto
@@ -76,7 +78,7 @@ export function generateWalletAddress(): {
 
 /**
  * Generate user-friendly address from raw address
- * Format: LV-XXXXXXXXXXXX (12 chars, letters/numbers, optional single underscore)
+ * Format: LV-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX (30 chars, letters/numbers, optional single underscore)
  */
 export function toFriendlyAddress(rawAddress: string): string {
     if (!rawAddress.startsWith(ADDRESS_PREFIX)) {
@@ -88,7 +90,7 @@ export function toFriendlyAddress(rawAddress: string): string {
         throw new Error('Invalid address format');
     }
 
-    return `${FRIENDLY_PREFIX}${buildFriendlyBody(hash.toLowerCase())}`;
+    return `${WALLET_FRIENDLY_PREFIX}${buildFriendlyBody(hash.toLowerCase())}`;
 }
 
 /**
@@ -105,7 +107,18 @@ export function matchesFriendlyAddress(rawAddress: string, friendlyAddress: stri
             return toLegacyFriendlyAddress(rawAddress) === normalized;
         }
 
-        return toFriendlyAddress(rawAddress) === normalized;
+        const hash = rawAddress.slice(ADDRESS_PREFIX.length);
+        if (!/^[a-f0-9]{64}$/i.test(hash)) {
+            return false;
+        }
+
+        const match = normalized.match(FRIENDLY_REGEX);
+        const body = (match?.[2] || '').toUpperCase();
+        if (!FRIENDLY_BODY_REGEX.test(body)) {
+            return false;
+        }
+
+        return buildFriendlyBody(hash.toLowerCase()) === body;
     } catch {
         return false;
     }

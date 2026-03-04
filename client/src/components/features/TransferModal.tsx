@@ -12,6 +12,13 @@ import { useTelegram } from '@/lib/context/TelegramContext';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import { api } from '@/lib/api';
+import {
+    WALLET_FRIENDLY_BODY_LENGTH,
+    WALLET_FRIENDLY_PREFIX,
+    buildWalletFriendlyAddress,
+    normalizeWalletFriendlyAddress,
+    sanitizeWalletFriendlyBody,
+} from '@/lib/wallet/network';
 import styles from './TransferModal.module.css';
 
 interface NFTItem {
@@ -50,8 +57,7 @@ interface TransferDraft {
     viewMode: 'info' | 'transfer';
 }
 
-const WALLET_PREFIX = 'LV-';
-const WALLET_BODY_MAX_LENGTH = 12;
+const WALLET_BODY_MAX_LENGTH = WALLET_FRIENDLY_BODY_LENGTH;
 const USERNAME_MAX_LENGTH = 32;
 const USER_LOOKUP_DEBOUNCE_MS = 420;
 const TRANSFER_DRAFT_STORAGE_PREFIX = 'transfer_modal_draft_v2';
@@ -63,39 +69,11 @@ const stripUsernameTransportPrefix = (value: string): string => {
 };
 
 const sanitizeWalletBody = (value: string): string => {
-    const withoutFriendlyPrefix = value.trim().replace(/^(?:LV-|UZ-)/i, '');
-    const upper = withoutFriendlyPrefix.toUpperCase().replace(/[^A-Z0-9_]/g, '');
-
-    let normalized = upper;
-    while (normalized.startsWith('_')) {
-        normalized = normalized.slice(1);
-    }
-
-    let seenUnderscore = false;
-    let result = '';
-
-    for (const char of normalized) {
-        if (char === '_') {
-            if (seenUnderscore) {
-                continue;
-            }
-            seenUnderscore = true;
-        }
-
-        result += char;
-
-        if (result.length >= WALLET_BODY_MAX_LENGTH) {
-            break;
-        }
-    }
-
-    return result;
+    return sanitizeWalletFriendlyBody(value).slice(0, WALLET_BODY_MAX_LENGTH);
 };
 
 const normalizeWalletRecipient = (value: string): string => {
-    const withoutPrefix = value.trim().replace(/^(?:LV-|UZ-)/i, '');
-    const body = sanitizeWalletBody(withoutPrefix);
-    return `${WALLET_PREFIX}${body}`;
+    return buildWalletFriendlyAddress(value);
 };
 
 const sanitizeUsernameInput = (value: string): string => {
@@ -169,7 +147,7 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
     }, [authUser?.uid, nft?.tokenId]);
 
     const username = useMemo(() => sanitizeUsernameInput(usernameInput), [usernameInput]);
-    const walletRecipient = useMemo(() => `${WALLET_PREFIX}${walletBody}`, [walletBody]);
+    const walletRecipient = useMemo(() => buildWalletFriendlyAddress(walletBody), [walletBody]);
     const resolvedUsername = useMemo(
         () => sanitizeUsernameInput(resolvedRecipient?.username || ''),
         [resolvedRecipient?.username],
@@ -196,19 +174,14 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
         }
 
         const source = resolvedRecipient?.walletFriendly || '';
-
-        if (!source || !source.toUpperCase().startsWith(WALLET_PREFIX)) {
-            return '';
-        }
-
-        const candidate = normalizeWalletRecipient(source);
-        const candidateBody = sanitizeWalletBody(candidate.replace(/^LV-/i, ''));
+        const candidate = normalizeWalletFriendlyAddress(source) || normalizeWalletRecipient(source);
+        const candidateBody = sanitizeWalletBody(candidate);
 
         if (!candidateBody) {
             return '';
         }
 
-        return `${WALLET_PREFIX}${candidateBody}`;
+        return `${WALLET_FRIENDLY_PREFIX}${candidateBody}`;
     }, [isExactUsernameMatch, resolvedRecipient?.walletFriendly]);
 
     const clearDraft = useCallback(() => {
@@ -371,7 +344,7 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
     }, []);
 
     const submitTransfer = useCallback(async (): Promise<boolean> => {
-        if (!authUser?.uid) {
+        if (!authUser?.uid || !nft) {
             return false;
         }
 
@@ -385,12 +358,12 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                 toUsername?: string;
                 memo?: string;
             } = {
-                tokenId: nft!.tokenId,
+                tokenId: nft.tokenId,
                 initData: webApp?.initData,
             };
 
             if (recipientType === 'wallet') {
-                transferData.toAddress = normalizeWalletRecipient(walletRecipient);
+                transferData.toAddress = walletRecipient;
             } else {
                 transferData.toUsername = username;
             }
@@ -410,7 +383,7 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
             }
             return false;
         }
-    }, [authUser?.uid, memoInput, nft?.tokenId, recipientType, username, walletRecipient, webApp?.initData]);
+    }, [authUser?.uid, memoInput, nft, recipientType, username, walletRecipient, webApp?.initData]);
 
     const confirmSwipeTransfer = useCallback(async (): Promise<boolean> => {
         if (isTransferSubmitting || isConfirmSucceeded) {
@@ -503,13 +476,13 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
         setViewMode('info');
     };
 
-    const handleConfirmAutoClose = useCallback(() => {
+    const handleConfirmAutoClose = () => {
         closeModal({ reset: true, clearDraft: true });
-    }, [closeModal]);
+    };
 
     const displayRecipient = recipientType === 'username'
         ? `@${(isExactUsernameMatch && resolvedUsername) ? resolvedUsername : username}`
-        : normalizeWalletRecipient(walletRecipient);
+        : walletRecipient;
 
     const suggestionDisplayName = resolvedUsername
         ? `@${resolvedUsername}`
@@ -669,7 +642,7 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                                         usernameValue={usernameInput}
                                         walletValue={walletBody}
                                         usernamePlaceholder="username"
-                                        walletPlaceholder="XXXXXXXXXXXX"
+                                        walletPlaceholder={'X'.repeat(WALLET_BODY_MAX_LENGTH)}
                                         onUsernameChange={(rawValue) => {
                                             const nextUsername = sanitizeUsernameInput(rawValue);
                                             setUsernameInput(nextUsername);
@@ -696,14 +669,14 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                                             setError('');
                                         }}
                                         usernameAvatarUrl={isExactUsernameMatch ? (resolvedRecipient?.photoUrl || null) : null}
-                                        walletPrefix={WALLET_PREFIX}
+                                        walletPrefix={WALLET_FRIENDLY_PREFIX}
                                         walletSuggestion={recipientType === 'wallet' && suggestedWallet
                                             ? {
                                                 displayName: suggestionDisplayName,
                                                 address: suggestedWallet,
                                                 photoUrl: isExactUsernameMatch ? (resolvedRecipient?.photoUrl || null) : null,
                                                 onSelect: () => {
-                                                    setWalletBody(sanitizeWalletBody(suggestedWallet.replace(/^LV-/i, '')));
+                                                    setWalletBody(sanitizeWalletBody(suggestedWallet));
                                                     setError('');
                                                     haptic.selection();
                                                 },

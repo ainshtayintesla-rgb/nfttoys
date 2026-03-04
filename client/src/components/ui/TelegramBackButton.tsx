@@ -7,8 +7,11 @@ import { useTelegram } from '@/lib/context/TelegramContext';
 interface TelegramBackButtonProps {
     /** Route to navigate to when back button is clicked. If not provided, uses router.back() */
     href?: string;
-    /** Callback function called when back button is clicked (before navigation) */
-    onBack?: () => void;
+    /**
+     * Callback function called when back button is clicked (before navigation).
+     * Return `false` to cancel navigation.
+     */
+    onBack?: () => boolean | void;
 }
 
 /**
@@ -39,7 +42,10 @@ export function TelegramBackButton({ href, onBack }: TelegramBackButtonProps) {
             haptic.impact('light');
 
             // Call optional callback
-            onBack?.();
+            const shouldNavigate = onBack?.();
+            if (shouldNavigate === false) {
+                return;
+            }
 
             // Navigate
             if (href) {
