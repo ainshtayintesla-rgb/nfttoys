@@ -67,6 +67,32 @@ function setStoredDevicePubKey(walletDeviceId: string, devicePubKey: string): vo
     localStorage.setItem(resolveStorageKey(walletDeviceId), devicePubKey);
 }
 
+export function clearWalletV2BiometricDevicePubKey(walletDeviceId: string | null | undefined): void {
+    const normalizedDeviceId = typeof walletDeviceId === 'string' ? walletDeviceId.trim() : '';
+
+    if (!isBrowser() || !normalizedDeviceId) {
+        return;
+    }
+
+    localStorage.removeItem(resolveStorageKey(normalizedDeviceId));
+}
+
+export function clearWalletV2AllBiometricDevicePubKeys(): void {
+    if (!isBrowser()) {
+        return;
+    }
+
+    for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+        const key = localStorage.key(index);
+
+        if (!key || !key.startsWith(WALLET_V2_BIO_PUBKEY_STORAGE_PREFIX)) {
+            continue;
+        }
+
+        localStorage.removeItem(key);
+    }
+}
+
 function resolveBiometricManager(webApp: IWebApp | null | undefined): IWebAppBiometricManager | null {
     return webApp?.BiometricManager || null;
 }

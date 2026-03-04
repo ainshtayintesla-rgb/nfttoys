@@ -62,6 +62,11 @@ interface UpdateProgressSnapshot {
     updatedAt?: string;
 }
 
+interface PreservedLocalChanges {
+    stashRef: string;
+    stashMessage: string;
+}
+
 export class UpdateServiceError extends Error {
     readonly code: string;
     readonly status: number;
@@ -121,6 +126,34 @@ function isGitAuthError(message: string): boolean {
         || lowered.includes('permission denied (publickey)')
         || lowered.includes('authentication failed')
         || lowered.includes('repository not found');
+}
+
+function resolveGitCredentialStorePath(gitConfigPath: string): string | null {
+    if (!gitConfigPath || !fs.existsSync(gitConfigPath)) {
+        return null;
+    }
+
+    try {
+        const config = fs.readFileSync(gitConfigPath, 'utf8');
+        const helperLine = config
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .find((line) => line.startsWith('helper ='));
+
+        if (!helperLine) return null;
+
+        const helperValue = helperLine.slice('helper ='.length).trim();
+        if (!helperValue.startsWith('store')) return null;
+
+        const storePathMatch = helperValue.match(/--file=(?:"([^"]+)"|'([^']+)'|(\S+))/);
+        if (!storePathMatch) {
+            return '/root/.git-credentials';
+        }
+
+        return (storePathMatch[1] || storePathMatch[2] || storePathMatch[3] || '').trim() || '/root/.git-credentials';
+    } catch {
+        return null;
+    }
 }
 
 function shellEscape(value: string): string {
@@ -378,8 +411,6 @@ class UpdateService {
                 this.state.isUpdating = false;
                 return this.snapshot();
             }
-
-            await this.ensureCleanWorktree();
 
             if (this.runMode === 'production') {
                 // Production: spawn detached runner script
@@ -647,19 +678,27 @@ class UpdateService {
         }
     }
 
-    private async ensureCleanWorktree(): Promise<void> {
-        const status = await runGitCommand(['status', '--porcelain'], this.repoRoot);
-        if (status.trim()) {
-            throw new Error('Local changes detected in repository.');
-        }
-    }
-
     private async runUpdatePipeline(branch: string): Promise<void> {
         const serverDir = path.resolve(this.repoRoot, 'server');
         const clientDir = path.resolve(this.repoRoot, 'client');
         const botDir = path.resolve(this.repoRoot, 'bot');
+        const preservedChanges = await this.preserveLocalChanges('development');
 
-        await runGitCommand(['pull', '--ff-only', 'origin', branch], this.repoRoot, LONG_TIMEOUT_MS);
+        try {
+            await runGitCommand(['pull', '--ff-only', 'origin', branch], this.repoRoot, LONG_TIMEOUT_MS);
+        } catch (error) {
+            if (preservedChanges) {
+                await this.restoreLocalChanges(preservedChanges, 'Git pull failed, and local changes could not be restored automatically.');
+            }
+            throw error;
+        }
+
+        if (preservedChanges) {
+            await this.restoreLocalChanges(
+                preservedChanges,
+                'Update pulled successfully, but local changes could not be reapplied automatically.',
+            );
+        }
 
         if (fs.existsSync(clientDir)) {
             await runCommand('npm', ['ci'], clientDir, LONG_TIMEOUT_MS);
@@ -695,6 +734,76 @@ class UpdateService {
 
         // Write build marker for development mode
         this.writeBuildMarker();
+    }
+
+    private async preserveLocalChanges(context: string): Promise<PreservedLocalChanges | null> {
+        const status = await runGitCommand(['status', '--porcelain'], this.repoRoot);
+        if (!status.trim()) {
+            return null;
+        }
+
+        const stashMessage = `nfttoys-auto-update-${context}-${Date.now()}`;
+        const stashOutput = await runGitCommand(
+            ['stash', 'push', '--include-untracked', '--message', stashMessage],
+            this.repoRoot,
+            LONG_TIMEOUT_MS,
+        );
+
+        if (stashOutput.toLowerCase().includes('no local changes to save')) {
+            return null;
+        }
+
+        const stashRef = await this.findStashRefByMessage(stashMessage);
+        if (!stashRef) {
+            throw new Error('Failed to preserve local changes before update.');
+        }
+
+        return {
+            stashRef,
+            stashMessage,
+        };
+    }
+
+    private async findStashRefByMessage(stashMessage: string): Promise<string | null> {
+        const stashList = await runGitCommand(['stash', 'list', '--format=%gd%x00%gs'], this.repoRoot);
+        const lines = stashList
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean);
+
+        for (const line of lines) {
+            const [stashRef = '', stashSummary = ''] = line.split('\0');
+            if (stashSummary.includes(stashMessage) && stashRef.trim()) {
+                return stashRef.trim();
+            }
+        }
+
+        return null;
+    }
+
+    private async restoreLocalChanges(
+        preservedChanges: PreservedLocalChanges,
+        failureMessage: string,
+    ): Promise<void> {
+        try {
+            await runGitCommand(
+                ['stash', 'apply', '--index', preservedChanges.stashRef],
+                this.repoRoot,
+                LONG_TIMEOUT_MS,
+            );
+        } catch {
+            throw new UpdateServiceError(
+                `${failureMessage} Changes are preserved in ${preservedChanges.stashRef} (${preservedChanges.stashMessage}). Resolve conflicts and apply this stash manually.`,
+                'LOCAL_CHANGES_RESTORE_FAILED',
+                409,
+            );
+        }
+
+        try {
+            await runGitCommand(['stash', 'drop', preservedChanges.stashRef], this.repoRoot, CHECK_TIMEOUT_MS);
+        } catch {
+            // Ignore drop errors: stash can be cleaned manually later.
+        }
     }
 
     private spawnUpdateRunner(branch: string): void {
@@ -771,9 +880,23 @@ class UpdateService {
             dockerArgs.push('-v', `${hostGitConfig}:/root/.gitconfig:ro`);
         }
 
-        const hostGitCredentials = String(process.env.UPDATE_RUNNER_HOST_GIT_CREDENTIALS || '/root/remotecontroller/.git-credentials').trim();
+        const containerGitCredentials = String(
+            process.env.UPDATE_RUNNER_CONTAINER_GIT_CREDENTIALS
+            || resolveGitCredentialStorePath(hostGitConfig)
+            || '/root/.git-credentials',
+        ).trim() || '/root/.git-credentials';
+
+        const hostGitCredentials = String(process.env.UPDATE_RUNNER_HOST_GIT_CREDENTIALS || '/root/agents/.git-credentials').trim();
         if (hostGitCredentials && fs.existsSync(hostGitCredentials)) {
-            dockerArgs.push('-v', `${hostGitCredentials}:/root/remotecontroller/.git-credentials`);
+            const hostCredentialsDir = path.dirname(hostGitCredentials);
+            const containerCredentialsDir = path.posix.dirname(containerGitCredentials);
+
+            // Mount directory when possible so git credential helper can atomically rewrite the store file.
+            if (containerCredentialsDir && containerCredentialsDir !== '.' && containerCredentialsDir !== '/root') {
+                dockerArgs.push('-v', `${hostCredentialsDir}:${containerCredentialsDir}`);
+            } else {
+                dockerArgs.push('-v', `${hostGitCredentials}:${containerGitCredentials}`);
+            }
         }
 
         const composeProjectName = String(process.env.COMPOSE_PROJECT_NAME || 'nfttoys-prod').trim() || 'nfttoys-prod';

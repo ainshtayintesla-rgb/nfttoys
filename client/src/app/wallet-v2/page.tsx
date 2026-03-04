@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     IoArrowDown,
@@ -52,6 +52,10 @@ import {
     setWalletV2MnemonicWords,
 } from '@/lib/walletV2/settings';
 import {
+    resolveWalletV2BootstrapFailureKind,
+    resetWalletV2ClientAuthState,
+} from '@/lib/walletV2/sessionLifecycle';
+import {
     WALLET_V2_ADDRESS_PREFIX,
     formatWalletV2Address,
     sanitizeWalletV2AddressInput,
@@ -67,6 +71,7 @@ type OnboardingMode = 'create' | 'import';
 type WalletDrawerMode = 'topup' | 'receive' | 'send' | null;
 type SendStep = 'input' | 'confirm' | 'success';
 type PinAuthFlow = 'none' | 'create_setup' | 'import_setup' | 'tx_confirm' | 'entry_auth';
+type InitialBootstrapStatus = 'idle' | 'checking' | 'ready' | 'retry';
 
 type WalletV2BalanceRow = {
     asset: string;
@@ -455,6 +460,42 @@ function safeErrorMessage(error: unknown): string {
             return 'Amount must be a positive integer.';
         }
 
+        if (error.code === 'TOKEN_ID_REQUIRED') {
+            return 'Token id is required.';
+        }
+
+        if (error.code === 'NFT_NOT_FOUND') {
+            return 'NFT not found.';
+        }
+
+        if (error.code === 'NFT_NOT_OWNED') {
+            return 'This NFT is not linked to the current wallet profile.';
+        }
+
+        if (error.code === 'NFT_ALREADY_STAKED') {
+            return 'NFT is already staked.';
+        }
+
+        if (error.code === 'STAKE_WINDOW_NOT_OPEN') {
+            return 'Staking window is not open yet for this NFT.';
+        }
+
+        if (error.code === 'STAKE_WINDOW_CLOSED') {
+            return 'Staking window is closed for this NFT.';
+        }
+
+        if (error.code === 'NO_REWARD_AVAILABLE') {
+            return 'No staking reward available yet.';
+        }
+
+        if (error.code === 'STAKE_POSITION_NOT_FOUND') {
+            return 'Staking position not found.';
+        }
+
+        if (error.code === 'UNSTAKE_COOLDOWN_ACTIVE') {
+            return 'NFT is still in unstake cooldown period.';
+        }
+
         if (error.code === 'INSUFFICIENT_BALANCE') {
             return 'Insufficient available balance.';
         }
@@ -493,6 +534,18 @@ function safeErrorMessage(error: unknown): string {
 
         if (error.code === 'SESSION_REVOKED') {
             return 'Wallet session is revoked or expired. Import wallet again.';
+        }
+
+        if (error.code === 'WALLET_SESSION_MISSING') {
+            return 'Wallet session is missing. Create or import wallet again.';
+        }
+
+        if (error.code === 'WALLET_NOT_FOUND') {
+            return 'Wallet was not found on server. Create or import wallet again.';
+        }
+
+        if (error.code === 'INTERNAL_ERROR') {
+            return 'Wallet service is temporarily unavailable. Try again.';
         }
 
         if (error.message) {
@@ -596,6 +649,9 @@ export default function WalletV2Page() {
     const [pinAuthFlow, setPinAuthFlow] = useState<PinAuthFlow>('none');
     const [pinAuthError, setPinAuthError] = useState('');
     const [hasInitialGateResolved, setHasInitialGateResolved] = useState(false);
+    const [initialBootstrapStatus, setInitialBootstrapStatus] = useState<InitialBootstrapStatus>('idle');
+    const [initialBootstrapError, setInitialBootstrapError] = useState('');
+    const initialBootstrapInFlightRef = useRef(false);
     const [deviceBiometricSupported, setDeviceBiometricSupported] = useState(false);
     const [devicePubKey, setDevicePubKey] = useState<string | null>(null);
     const [isBiometricLoading, setIsBiometricLoading] = useState(false);
@@ -869,6 +925,96 @@ export default function WalletV2Page() {
         setSelectedWalletTransaction(item);
     }, [haptic]);
 
+    const resolveFatalSessionMessage = useCallback((error?: unknown): string => {
+        if (isWalletV2ApiError(error)) {
+            if (error.code === 'WALLET_NOT_FOUND') {
+                return tr(
+                    'wallet_v2_wallet_missing_error',
+                    'Wallet was not found on server. Create or import wallet again.',
+                );
+            }
+
+            if (
+                error.code === 'SESSION_REVOKED'
+                || error.code === 'INVALID_REFRESH_TOKEN'
+                || error.code === 'WALLET_SESSION_MISSING'
+                || error.code === 'DEVICE_MISMATCH'
+            ) {
+                return tr(
+                    'wallet_v2_session_revoked_error',
+                    'Wallet session was revoked. Authenticate and import wallet again.',
+                );
+            }
+        }
+
+        return tr(
+            'wallet_v2_session_revoked_error',
+            'Wallet session was revoked. Authenticate and import wallet again.',
+        );
+    }, [tr]);
+
+    const applyFatalSessionReset = useCallback((error?: unknown) => {
+        const currentWalletId = walletId || api.walletV2.session.getWalletId();
+        const currentDeviceId = api.walletV2.session.getDeviceId();
+
+        resetWalletV2ClientAuthState({
+            walletId: currentWalletId,
+            deviceId: currentDeviceId,
+            clearAllWalletSettings: !currentWalletId,
+        });
+
+        setMode('create');
+        setWalletId(null);
+        setHasStoredPin(false);
+        setWalletAddress(null);
+        setBalances([]);
+        setIsBalanceLoading(false);
+        setBalanceError('');
+        setHistoryItems([]);
+        setIsHistoryLoading(false);
+        setHistoryError('');
+        setNftTransactions([]);
+        setIsNftLoading(false);
+        setNftError('');
+        setSelectedNftTransaction(null);
+        setSelectedWalletTransaction(null);
+        setMnemonicWords([]);
+        setIsMnemonicDrawerOpen(false);
+        setIsMnemonicCopied(false);
+        setWalletDrawerMode(null);
+        setIsDrawerSubmitting(false);
+        setDrawerError('');
+        setReceiveAddress('');
+        setIsReceiveCopied(false);
+        setSendStep('input');
+        setSendAddressInput('');
+        setSendAssetInput('');
+        setSendAmountInput('');
+        setTestnetTopupAmountInput('');
+        setPendingSend(null);
+        setPinAuthFlow('create_setup');
+        setPinAuthError('');
+        setHasInitialGateResolved(true);
+        setInitialBootstrapStatus('ready');
+        setInitialBootstrapError('');
+        setDeviceBiometricSupported(false);
+        setDevicePubKey(null);
+        setIsBiometricConfirmationEnabled(true);
+        setRequestSuccess('');
+        setRequestError(resolveFatalSessionMessage(error));
+    }, [resolveFatalSessionMessage, walletId]);
+
+    const handleRetryInitialBootstrap = useCallback(() => {
+        if (!walletId) {
+            return;
+        }
+
+        setInitialBootstrapStatus('idle');
+        setInitialBootstrapError('');
+        setRequestError('');
+        haptic.selection();
+    }, [haptic, walletId]);
+
     const loadWalletBalance = useCallback(async (showLoader = true) => {
         if (!walletId) {
             setWalletAddress(null);
@@ -949,26 +1095,25 @@ export default function WalletV2Page() {
     }, [isAuthenticated, t]);
 
     useEffect(() => {
-        const unsubscribe = api.walletV2.session.onRevoked(() => {
-            setWalletId(null);
-            setWalletAddress(null);
-            setBalances([]);
-            setHistoryItems([]);
-            setHistoryError('');
-            setNftTransactions([]);
-            setNftError('');
-            setSelectedNftTransaction(null);
-            setSelectedWalletTransaction(null);
-            setIsMnemonicDrawerOpen(false);
-            setWalletDrawerMode(null);
-            setPendingSend(null);
-            setPinAuthFlow('none');
-            setPinAuthError('');
-            setRequestError(tr('wallet_v2_session_revoked_error', 'Wallet session was revoked. Authenticate and import wallet again.'));
+        const unsubscribe = api.walletV2.session.onRevoked((error) => {
+            applyFatalSessionReset(error);
         });
 
         return unsubscribe;
-    }, [tr]);
+    }, [applyFatalSessionReset]);
+
+    useEffect(() => {
+        initialBootstrapInFlightRef.current = false;
+
+        if (!walletId) {
+            setInitialBootstrapStatus('ready');
+            setInitialBootstrapError('');
+            return;
+        }
+
+        setInitialBootstrapStatus('idle');
+        setInitialBootstrapError('');
+    }, [walletId]);
 
     useEffect(() => {
         if (!walletId) {
@@ -987,6 +1132,10 @@ export default function WalletV2Page() {
             return;
         }
 
+        if (!hasInitialGateResolved) {
+            return;
+        }
+
         const cachedBalance = readWalletV2BalanceCache(walletId);
         if (cachedBalance) {
             setWalletAddress(cachedBalance.address ? formatWalletV2Address(cachedBalance.address) : null);
@@ -998,7 +1147,7 @@ export default function WalletV2Page() {
         void loadWalletBalance(true);
         void loadWalletHistory();
         void loadNftTransactions();
-    }, [loadNftTransactions, loadWalletBalance, loadWalletHistory, walletId]);
+    }, [hasInitialGateResolved, loadNftTransactions, loadWalletBalance, loadWalletHistory, walletId]);
 
     useEffect(() => {
         if (activeHistoryTab !== 'nft') {
@@ -1081,11 +1230,89 @@ export default function WalletV2Page() {
     }, [devicePayload.deviceId, webApp]);
 
     useEffect(() => {
+        if (
+            hasInitialGateResolved
+            || !isAuthenticated
+            || !walletId
+            || pinAuthFlow !== 'none'
+            || isSubmitting
+            || isDrawerSubmitting
+        ) {
+            return;
+        }
+
+        if (initialBootstrapStatus === 'ready' || initialBootstrapStatus === 'retry' || initialBootstrapInFlightRef.current) {
+            return;
+        }
+
+        let canceled = false;
+        initialBootstrapInFlightRef.current = true;
+
+        const runInitialBootstrap = async () => {
+            setInitialBootstrapStatus('checking');
+            setInitialBootstrapError('');
+
+            try {
+                await api.walletV2.balance(walletId);
+
+                if (canceled) {
+                    return;
+                }
+
+                setInitialBootstrapStatus('ready');
+            } catch (error) {
+                if (canceled) {
+                    return;
+                }
+
+                if (resolveWalletV2BootstrapFailureKind(error) === 'fatal') {
+                    applyFatalSessionReset(error);
+                    return;
+                }
+
+                const fallbackMessage = tr(
+                    'wallet_v2_bootstrap_retry_error',
+                    'Wallet is temporarily unavailable. Check connection and retry.',
+                );
+                const rawMessage = safeErrorMessage(error);
+
+                setInitialBootstrapStatus('retry');
+                setInitialBootstrapError(rawMessage === 'Request failed' ? fallbackMessage : rawMessage);
+            } finally {
+                if (!canceled) {
+                    initialBootstrapInFlightRef.current = false;
+                }
+            }
+        };
+
+        void runInitialBootstrap();
+
+        return () => {
+            canceled = true;
+            initialBootstrapInFlightRef.current = false;
+        };
+    }, [
+        applyFatalSessionReset,
+        hasInitialGateResolved,
+        initialBootstrapStatus,
+        isAuthenticated,
+        isDrawerSubmitting,
+        isSubmitting,
+        pinAuthFlow,
+        tr,
+        walletId,
+    ]);
+
+    useEffect(() => {
         if (hasInitialGateResolved || !isAuthenticated || pinAuthFlow !== 'none' || isSubmitting || isDrawerSubmitting) {
             return;
         }
 
         if (walletId) {
+            if (initialBootstrapStatus !== 'ready') {
+                return;
+            }
+
             const rememberedAuthValid = isWalletV2RememberedAuthValid(walletId);
 
             if (!rememberedAuthValid) {
@@ -1108,6 +1335,7 @@ export default function WalletV2Page() {
         hasInitialGateResolved,
         isAuthenticated,
         isDrawerSubmitting,
+        initialBootstrapStatus,
         isNewUser,
         isSubmitting,
         pinAuthFlow,
@@ -1511,6 +1739,15 @@ export default function WalletV2Page() {
         haptic.selection();
     }, [haptic, walletId]);
 
+    const handleOpenStaking = useCallback(() => {
+        if (!walletId) {
+            return;
+        }
+
+        router.push('/wallet-v2/staking');
+        haptic.selection();
+    }, [haptic, router, walletId]);
+
     const handleApplyTestnetTopup = useCallback(async () => {
         if (!walletId) {
             setDrawerError(tr('wallet_v2_error_session_missing', 'Wallet session is missing'));
@@ -1905,7 +2142,10 @@ export default function WalletV2Page() {
                 ? tr('wallet_v2_unlock_subtitle', 'Use biometric or PIN to continue.')
                 : tr('wallet_v2_pin_confirm_subtitle', 'Authorize transfer using biometric or PIN.');
 
-    const isMainView = Boolean(walletId);
+    const isBootstrapGateActive = Boolean(isAuthenticated && walletId && !hasInitialGateResolved);
+    const isBootstrapChecking = initialBootstrapStatus === 'idle' || initialBootstrapStatus === 'checking';
+    const isMainView = Boolean(isAuthenticated && walletId) && !isBootstrapGateActive;
+    const isAuthRequiredView = !isAuthenticated;
 
     return (
         <>
@@ -1913,7 +2153,46 @@ export default function WalletV2Page() {
 
             <div className={styles.container}>
                 <main className={styles.main}>
-                    {isMainView ? (
+                    {isAuthRequiredView ? (
+                        <Card className={`${styles.card} ${styles.feedbackCard}`}>
+                            <p>{t('login_required') || 'Login required'}</p>
+                        </Card>
+                    ) : isBootstrapGateActive ? (
+                        <Card className={styles.card}>
+                            <div className={styles.formSection}>
+                                <p className={styles.sectionTitle}>
+                                    {tr('wallet_v2_session_restore_title', 'Restoring wallet access')}
+                                </p>
+                                <p className={styles.sectionHint}>
+                                    {tr(
+                                        'wallet_v2_session_restore_subtitle',
+                                        'Verifying wallet session before unlock.',
+                                    )}
+                                </p>
+
+                                {isBootstrapChecking ? (
+                                    <p className={styles.fieldHint}>{tr('wallet_v2_checking', 'Checking...')}</p>
+                                ) : (
+                                    <>
+                                        <p className={styles.errorText}>
+                                            {initialBootstrapError || tr(
+                                                'wallet_v2_bootstrap_retry_error',
+                                                'Wallet is temporarily unavailable. Check connection and retry.',
+                                            )}
+                                        </p>
+                                        <Button
+                                            variant="primary"
+                                            fullWidth
+                                            onClick={handleRetryInitialBootstrap}
+                                            disabled={isSubmitting || isDrawerSubmitting}
+                                        >
+                                            {tr('wallet_v2_retry', 'Retry')}
+                                        </Button>
+                                    </>
+                                )}
+                            </div>
+                        </Card>
+                    ) : isMainView ? (
                         <>
                             <section className={`${styles.card} ${styles.balanceCard}`}>
                                 <div className={styles.balanceHeaderRow}>
@@ -2008,6 +2287,21 @@ export default function WalletV2Page() {
                                         <span className={styles.actionLabel}>{tr('settings', 'Settings')}</span>
                                     </button>
                                 </div>
+
+                                <button
+                                    type="button"
+                                    className={styles.stakingShortcutButton}
+                                    onClick={handleOpenStaking}
+                                    disabled={!walletId}
+                                >
+                                    <span className={styles.stakingShortcutBadge}>
+                                        <IoSparkles size={14} />
+                                        <span>{tr('wallet_v2_nft_staking_title', 'NFT Staking')}</span>
+                                    </span>
+                                    <span className={styles.stakingShortcutText}>
+                                        {tr('wallet_v2_staking_shortcut', 'Open staking page')}
+                                    </span>
+                                </button>
                             </section>
 
                             <SegmentedTabs
@@ -2284,11 +2578,6 @@ export default function WalletV2Page() {
                         </Card>
                     )}
 
-                    {!isAuthenticated && !isMainView && (
-                        <Card className={`${styles.card} ${styles.feedbackCard}`}>
-                            <p>{t('login_required') || 'Login required'}</p>
-                        </Card>
-                    )}
                 </main>
             </div>
 

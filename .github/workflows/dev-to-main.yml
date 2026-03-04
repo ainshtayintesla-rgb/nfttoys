@@ -53,7 +53,7 @@ jobs:
         working-directory: client
         env:
           NEXT_TELEMETRY_DISABLED: "1"
-          NEXT_PUBLIC_API_URL: http://127.0.0.1:4100
+          NEXT_PUBLIC_API_URL: http://127.0.0.1:4200
           NEXT_PUBLIC_BOT_USERNAME: nfttoysdevbot
           NEXT_PUBLIC_ADMIN_IDS: "1"
           NEXT_PUBLIC_TG_GROUP: nfttoys_dev

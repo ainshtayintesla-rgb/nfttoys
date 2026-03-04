@@ -89,6 +89,151 @@ export interface WalletV2TransactionsData {
     items: WalletV2TransactionRow[];
 }
 
+export interface WalletV2NftStakingWindow {
+    opensAt: string;
+    closesAt: string;
+    canStake: boolean;
+    reason: 'open' | 'not_open' | 'closed' | string;
+}
+
+export interface WalletV2NftStakingPositionRow {
+    tokenId: string;
+    status: string;
+    owned: boolean;
+    modelName: string | null;
+    serialNumber: string | null;
+    rarity: string | null;
+    collectionName: string;
+    tgsUrl: string | null;
+    stakedAt: string;
+    lastClaimAt: string;
+    rewardPerHour: string;
+    pendingReward: string;
+    totalClaimed: string;
+    canClaim: boolean;
+    canUnstake: boolean;
+    unstakeAvailableAt: string;
+}
+
+export interface WalletV2NftStakingAvailableRow {
+    tokenId: string;
+    modelName: string;
+    serialNumber: string;
+    rarity: string;
+    collectionName: string;
+    tgsUrl: string | null;
+    lastTransferAt: string | null;
+    mintedAt: string;
+    stakeWindow: WalletV2NftStakingWindow;
+}
+
+export interface WalletV2NftStakingStateData {
+    walletId: string;
+    address: string;
+    rewardAsset: string;
+    rules: {
+        windowStartHours: number;
+        windowEndHours: number;
+        unstakeCooldownHours: number;
+    };
+    summary: {
+        activeCount: number;
+        availableCount: number;
+        pendingReward: string;
+        totalClaimed: string;
+    };
+    positions: WalletV2NftStakingPositionRow[];
+    available: WalletV2NftStakingAvailableRow[];
+    timestamp: string;
+}
+
+export interface WalletV2NftStakingStakeData {
+    walletId: string;
+    address: string;
+    rewardAsset: string;
+    position: {
+        tokenId: string;
+        modelName: string | null;
+        serialNumber: string | null;
+        rarity: string | null;
+        collectionName: string;
+        tgsUrl: string | null;
+        stakedAt: string;
+        lastClaimAt: string;
+        rewardPerHour: string;
+        totalClaimed: string;
+        stakeWindow: {
+            opensAt: string;
+            closesAt: string;
+        };
+    };
+}
+
+export interface WalletV2NftStakingClaimData {
+    walletId: string;
+    address: string;
+    tokenId: string;
+    rewardAsset: string;
+    claimedAmount: string;
+    position: {
+        tokenId: string;
+        modelName: string | null;
+        serialNumber: string | null;
+        rarity: string | null;
+        collectionName: string;
+        tgsUrl: string | null;
+        stakedAt: string;
+        lastClaimAt: string;
+        rewardPerHour: string;
+        totalClaimed: string;
+    };
+    balance: WalletV2BalanceRow;
+    tx: {
+        id: string;
+        status: string;
+        fromAddress: string;
+        toAddress: string;
+        asset: string;
+        amount: string;
+        createdAt: string;
+        completedAt: string | null;
+    };
+}
+
+export interface WalletV2NftStakingUnstakeData {
+    walletId: string;
+    address: string;
+    tokenId: string;
+    rewardAsset: string;
+    claimRewardsApplied: boolean;
+    claimedAmount: string;
+    position: {
+        tokenId: string;
+        status: string;
+        modelName: string | null;
+        serialNumber: string | null;
+        rarity: string | null;
+        collectionName: string;
+        tgsUrl: string | null;
+        stakedAt: string;
+        lastClaimAt: string;
+        rewardPerHour: string;
+        totalClaimed: string;
+        unstakedAt: string | null;
+    };
+    balance?: WalletV2BalanceRow;
+    tx?: {
+        id: string;
+        status: string;
+        fromAddress: string;
+        toAddress: string;
+        asset: string;
+        amount: string;
+        createdAt: string;
+        completedAt: string | null;
+    };
+}
+
 export interface WalletV2TestnetTopupData {
     walletId: string;
     network: 'mainnet' | 'testnet';
@@ -205,7 +350,8 @@ function isSessionRevokedCode(code: string): boolean {
     return code === 'SESSION_REVOKED'
         || code === 'INVALID_REFRESH_TOKEN'
         || code === 'DEVICE_MISMATCH'
-        || code === 'WALLET_SESSION_MISSING';
+        || code === 'WALLET_SESSION_MISSING'
+        || code === 'WALLET_NOT_FOUND';
 }
 
 function shouldRetryViaRefresh(error: WalletV2ApiError): boolean {
@@ -532,6 +678,73 @@ export const walletV2Api = {
         setWalletV2WalletId(response.data.walletId);
 
         return response.data;
+    },
+
+    nftStaking: {
+        async state(walletId?: string): Promise<WalletV2NftStakingStateData> {
+            const resolvedWalletId = resolveWalletId(walletId);
+            const response = await walletV2Fetch<WalletV2ApiEnvelope<WalletV2NftStakingStateData>>(
+                `/wallet/${encodeURIComponent(resolvedWalletId)}/nft-staking/state`,
+            );
+
+            setWalletV2WalletId(response.data.walletId);
+
+            return response.data;
+        },
+
+        async stake(payload: { walletId?: string; tokenId: string }): Promise<WalletV2NftStakingStakeData> {
+            const resolvedWalletId = resolveWalletId(payload.walletId);
+            const response = await walletV2Fetch<WalletV2ApiEnvelope<WalletV2NftStakingStakeData>>(
+                `/wallet/${encodeURIComponent(resolvedWalletId)}/nft-staking/stake`,
+                {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        tokenId: payload.tokenId,
+                    }),
+                },
+            );
+
+            setWalletV2WalletId(response.data.walletId);
+
+            return response.data;
+        },
+
+        async claim(payload: { walletId?: string; tokenId: string }): Promise<WalletV2NftStakingClaimData> {
+            const resolvedWalletId = resolveWalletId(payload.walletId);
+            const response = await walletV2Fetch<WalletV2ApiEnvelope<WalletV2NftStakingClaimData>>(
+                `/wallet/${encodeURIComponent(resolvedWalletId)}/nft-staking/claim`,
+                {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        tokenId: payload.tokenId,
+                    }),
+                },
+            );
+
+            setWalletV2WalletId(response.data.walletId);
+
+            return response.data;
+        },
+
+        async unstake(payload: { walletId?: string; tokenId: string; claimRewards?: boolean }): Promise<WalletV2NftStakingUnstakeData> {
+            const resolvedWalletId = resolveWalletId(payload.walletId);
+            const response = await walletV2Fetch<WalletV2ApiEnvelope<WalletV2NftStakingUnstakeData>>(
+                `/wallet/${encodeURIComponent(resolvedWalletId)}/nft-staking/unstake`,
+                {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        tokenId: payload.tokenId,
+                        ...(typeof payload.claimRewards === 'boolean'
+                            ? { claimRewards: payload.claimRewards }
+                            : {}),
+                    }),
+                },
+            );
+
+            setWalletV2WalletId(response.data.walletId);
+
+            return response.data;
+        },
     },
 
     async receive(walletId?: string): Promise<{ walletId: string; address: string }> {

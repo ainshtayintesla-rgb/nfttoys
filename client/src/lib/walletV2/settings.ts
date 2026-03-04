@@ -229,6 +229,22 @@ export function clearWalletV2LocalSettings(walletId: string | null | undefined):
     localStorage.removeItem(resolveStorageKey(normalizedWalletId));
 }
 
+export function clearWalletV2AllLocalSettings(): void {
+    if (!isBrowser()) {
+        return;
+    }
+
+    for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+        const key = localStorage.key(index);
+
+        if (!key || !key.startsWith(WALLET_V2_SETTINGS_STORAGE_PREFIX)) {
+            continue;
+        }
+
+        localStorage.removeItem(key);
+    }
+}
+
 export function hasWalletV2StoredPin(): boolean {
     return readAuthState().hasPin;
 }
@@ -305,4 +321,18 @@ export function isWalletV2RememberedAuthValid(walletId: string | null | undefine
     }
 
     return current.unlockedUntil > Date.now();
+}
+
+export function resetWalletV2LocalAuthState(params: {
+    walletId?: string | null;
+    clearAllWalletSettings?: boolean;
+} = {}): void {
+    if (params.clearAllWalletSettings) {
+        clearWalletV2AllLocalSettings();
+    } else {
+        clearWalletV2LocalSettings(params.walletId);
+    }
+
+    clearWalletV2RememberedAuth();
+    setWalletV2StoredPinConfigured(false);
 }

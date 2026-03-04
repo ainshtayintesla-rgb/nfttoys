@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { IoBackspace, IoChevronBack, IoFingerPrint } from 'react-icons/io5';
 import { TbFaceId } from 'react-icons/tb';
 
+import { useTelegram } from '@/lib/context/TelegramContext';
 import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 
 import styles from './PinAuthScreen.module.css';
@@ -77,6 +78,7 @@ export const PinAuthScreen = ({
     onSetupMismatch,
     onPinChange,
 }: PinAuthScreenProps) => {
+    const { haptic } = useTelegram();
     const [mounted, setMounted] = useState(false);
     const [setupStep, setSetupStep] = useState<SetupStep>('enter');
     const [setupPin, setSetupPin] = useState('');
@@ -160,6 +162,9 @@ export const PinAuthScreen = ({
         }
 
         const nextPin = trimPin(`${activePin}${digit}`, maxLength);
+        if (nextPin !== activePin) {
+            haptic.selection();
+        }
         setNextPinValue(nextPin);
     };
 

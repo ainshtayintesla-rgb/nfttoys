@@ -51,8 +51,29 @@ const WALLET_V2_ADDRESS_PREFIX = getWalletV2AddressPrefix(WALLET_V2_NETWORK);
 const WALLET_V2_ADDRESS_REGEX_CURRENT = getWalletV2AddressRegex(WALLET_V2_NETWORK);
 const WALLET_V2_ADDRESS_PLACEHOLDER_BODY = 'X'.repeat(WALLET_V2_ADDRESS_BODY_LENGTH);
 const WALLET_V2_TESTNET_FAUCET_ADDRESS = `${WALLET_V2_ADDRESS_PREFIX}-${'F'.repeat(WALLET_V2_ADDRESS_BODY_LENGTH)}`;
+const WALLET_V2_STAKING_REWARD_SOURCE_ADDRESS = `${WALLET_V2_ADDRESS_PREFIX}-${'S'.repeat(WALLET_V2_ADDRESS_BODY_LENGTH)}`;
 const WALLET_V2_TESTNET_TOPUP_MAX_AMOUNT = 1_000_000_000n;
 const MAX_WALLETS_PER_USER = 10;
+const NFT_STAKING_REWARD_ASSET = DEFAULT_ASSET;
+const NFT_STAKING_UNSTAKE_COOLDOWN_HOURS = Math.max(
+    1,
+    Number.parseInt(process.env.WALLET_V2_NFT_STAKING_UNSTAKE_COOLDOWN_HOURS || '', 10) || 24,
+);
+const NFT_STAKING_WINDOW_START_HOURS = Math.max(
+    1,
+    Number.parseInt(process.env.WALLET_V2_NFT_STAKING_WINDOW_START_HOURS || '', 10) || 24,
+);
+const NFT_STAKING_WINDOW_END_HOURS = Math.max(
+    NFT_STAKING_WINDOW_START_HOURS + 1,
+    Number.parseInt(process.env.WALLET_V2_NFT_STAKING_WINDOW_END_HOURS || '', 10) || 48,
+);
+const NFT_STAKING_REWARD_PER_HOUR_BY_RARITY: Record<string, bigint> = {
+    legendary: 120n,
+    rare: 60n,
+    common: 30n,
+};
+const NFT_STAKING_DEFAULT_REWARD_PER_HOUR = 20n;
+const DEFAULT_COLLECTION_NAME = 'Plush pepe';
 
 const IMPORT_FINGERPRINT_LIMIT_PER_DAY = 20;
 const IMPORT_FINGERPRINT_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -76,6 +97,18 @@ type WalletV2PinRecord = {
 
 type WalletV2PinLookupClient = {
     walletV2: Prisma.TransactionClient['walletV2'];
+};
+
+type WalletNftOwnershipContext = {
+    userId: string | null;
+    mainAddress: string;
+};
+
+type NftStakingWindow = {
+    opensAt: Date;
+    closesAt: Date;
+    canStake: boolean;
+    reason: 'open' | 'not_open' | 'closed';
 };
 
 class ApiError extends Error {
@@ -126,7 +159,12 @@ function classifyWalletV2Tx(params: {
         ? (meta as { source: string }).source.trim().toLowerCase()
         : '';
 
-    if (metaSource === 'testnet_faucet' || tx.fromAddress === WALLET_V2_TESTNET_FAUCET_ADDRESS) {
+    if (
+        metaSource === 'testnet_faucet'
+        || metaSource === 'nft_staking_reward'
+        || tx.fromAddress === WALLET_V2_TESTNET_FAUCET_ADDRESS
+        || tx.fromAddress === WALLET_V2_STAKING_REWARD_SOURCE_ADDRESS
+    ) {
         return { type: 'topup', direction: 'in' };
     }
 
@@ -135,6 +173,148 @@ function classifyWalletV2Tx(params: {
     }
 
     return { type: 'send', direction: 'out' };
+}
+
+function addHours(date: Date, hours: number): Date {
+    return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function readCollectionName(metadata: Prisma.JsonValue | null | undefined): string {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+        return DEFAULT_COLLECTION_NAME;
+    }
+
+    const rawCollectionName = (metadata as Record<string, unknown>).collectionName;
+    if (typeof rawCollectionName !== 'string') {
+        return DEFAULT_COLLECTION_NAME;
+    }
+
+    const normalized = rawCollectionName.trim();
+    return normalized || DEFAULT_COLLECTION_NAME;
+}
+
+function resolveNftStakingRewardPerHour(rarityInput: string | null | undefined): bigint {
+    const rarity = (rarityInput || '').trim().toLowerCase();
+
+    if (rarity && NFT_STAKING_REWARD_PER_HOUR_BY_RARITY[rarity] !== undefined) {
+        return NFT_STAKING_REWARD_PER_HOUR_BY_RARITY[rarity];
+    }
+
+    return NFT_STAKING_DEFAULT_REWARD_PER_HOUR;
+}
+
+function buildStakeWindow(anchorAt: Date, currentTime: Date): NftStakingWindow {
+    const opensAt = addHours(anchorAt, NFT_STAKING_WINDOW_START_HOURS);
+    const closesAt = addHours(anchorAt, NFT_STAKING_WINDOW_END_HOURS);
+
+    if (currentTime.getTime() < opensAt.getTime()) {
+        return {
+            opensAt,
+            closesAt,
+            canStake: false,
+            reason: 'not_open',
+        };
+    }
+
+    if (currentTime.getTime() > closesAt.getTime()) {
+        return {
+            opensAt,
+            closesAt,
+            canStake: false,
+            reason: 'closed',
+        };
+    }
+
+    return {
+        opensAt,
+        closesAt,
+        canStake: true,
+        reason: 'open',
+    };
+}
+
+function computeNftStakingPendingReward(params: {
+    lastClaimAt: Date;
+    rewardPerHour: bigint;
+    currentTime: Date;
+}): {
+    amount: bigint;
+    elapsedWholeHours: number;
+    nextClaimAt: Date;
+} {
+    const elapsedMs = params.currentTime.getTime() - params.lastClaimAt.getTime();
+    const elapsedWholeHours = elapsedMs > 0
+        ? Math.floor(elapsedMs / (60 * 60 * 1000))
+        : 0;
+
+    return {
+        amount: BigInt(elapsedWholeHours) * params.rewardPerHour,
+        elapsedWholeHours,
+        nextClaimAt: addHours(params.lastClaimAt, 1),
+    };
+}
+
+function isNftOwnedByWallet(params: {
+    nftOwnerId: string | null;
+    nftOwnerWallet: string | null;
+    ownership: WalletNftOwnershipContext;
+}): boolean {
+    if (params.nftOwnerWallet && params.nftOwnerWallet === params.ownership.mainAddress) {
+        return true;
+    }
+
+    if (params.ownership.userId && params.nftOwnerId && params.nftOwnerId === params.ownership.userId) {
+        return true;
+    }
+
+    return false;
+}
+
+function buildNftOwnershipWhere(ownership: WalletNftOwnershipContext): Prisma.NftWhereInput {
+    const or: Prisma.NftWhereInput[] = [
+        { ownerWallet: ownership.mainAddress },
+    ];
+
+    if (ownership.userId) {
+        or.push({ ownerId: ownership.userId });
+    }
+
+    if (or.length === 1) {
+        return or[0];
+    }
+
+    return { OR: or };
+}
+
+async function resolveWalletNftStakingContext(tx: Prisma.TransactionClient, walletId: string): Promise<{
+    walletId: string;
+    userId: string | null;
+    mainAddress: string;
+}> {
+    const wallet = await tx.walletV2.findUnique({
+        where: { id: walletId },
+        select: {
+            id: true,
+            userId: true,
+            status: true,
+        },
+    });
+
+    if (!wallet) {
+        throw new ApiError(404, 'WALLET_NOT_FOUND', 'Wallet not found');
+    }
+
+    if (wallet.status !== 'active') {
+        throw new ApiError(423, 'WALLET_BLOCKED', 'Wallet is blocked');
+    }
+
+    const mainAddress = await getMainAddress(tx, walletId);
+
+    return {
+        walletId: wallet.id,
+        userId: wallet.userId,
+        mainAddress,
+    };
 }
 
 function sendError(
@@ -152,6 +332,54 @@ function sendError(
         },
         ...(details || {}),
     });
+}
+
+function assertNftStakingPrismaClientReady(): void {
+    const stakingDelegate = (prisma as unknown as { nftStakingV2?: unknown }).nftStakingV2;
+
+    if (stakingDelegate !== undefined) {
+        return;
+    }
+
+    throw new ApiError(
+        503,
+        'NFT_STAKING_SCHEMA_NOT_READY',
+        'NFT staking database schema is not initialized',
+        {
+            hint: 'Run Prisma migrations and regenerate client (npx prisma migrate deploy && npx prisma generate), then restart backend',
+        },
+    );
+}
+
+function handleNftStakingSchemaNotReadyError(params: {
+    res: Response;
+    error: unknown;
+    context: string;
+}): Response | null {
+    const { res, error, context } = params;
+
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
+        return null;
+    }
+
+    if (error.code !== 'P2021' && error.code !== 'P2022') {
+        return null;
+    }
+
+    console.error(`${context} schema error:`, {
+        code: error.code,
+        meta: error.meta,
+    });
+
+    return sendError(
+        res,
+        503,
+        'NFT_STAKING_SCHEMA_NOT_READY',
+        'NFT staking database schema is not initialized',
+        {
+            hint: 'Run Prisma migrations and regenerate client (npx prisma migrate deploy && npx prisma generate), then restart backend',
+        },
+    );
 }
 
 function parseDeviceInput(rawDevice: unknown): DeviceInput | null {
@@ -515,6 +743,81 @@ async function cancelPendingTxAndReleaseLocked(
             completedAt: timestamp,
         },
     });
+}
+
+async function creditNftStakingReward(
+    tx: Prisma.TransactionClient,
+    params: {
+        walletId: string;
+        tokenId: string;
+        amount: bigint;
+        mainAddress: string;
+        currentTime: Date;
+    },
+) {
+    if (params.amount <= 0n) {
+        return null;
+    }
+
+    const creditedBalance = await tx.balanceV2.upsert({
+        where: {
+            walletId_asset: {
+                walletId: params.walletId,
+                asset: NFT_STAKING_REWARD_ASSET,
+            },
+        },
+        update: {
+            available: { increment: params.amount },
+            updatedAt: params.currentTime,
+        },
+        create: {
+            walletId: params.walletId,
+            asset: NFT_STAKING_REWARD_ASSET,
+            available: params.amount,
+            locked: 0n,
+            updatedAt: params.currentTime,
+        },
+        select: {
+            asset: true,
+            available: true,
+            locked: true,
+            updatedAt: true,
+        },
+    });
+
+    const rewardTx = await tx.txV2.create({
+        data: {
+            id: crypto.randomUUID(),
+            walletId: params.walletId,
+            fromAddress: WALLET_V2_STAKING_REWARD_SOURCE_ADDRESS,
+            toAddress: params.mainAddress,
+            asset: NFT_STAKING_REWARD_ASSET,
+            amount: params.amount,
+            status: 'completed',
+            meta: {
+                source: 'nft_staking_reward',
+                tokenId: params.tokenId,
+            },
+            createdAt: params.currentTime,
+            confirmedAt: params.currentTime,
+            completedAt: params.currentTime,
+        },
+        select: {
+            id: true,
+            status: true,
+            fromAddress: true,
+            toAddress: true,
+            asset: true,
+            amount: true,
+            createdAt: true,
+            completedAt: true,
+        },
+    });
+
+    return {
+        creditedBalance,
+        rewardTx,
+    };
 }
 
 router.post('/wallet/create', authLimit, requireAuth, async (req, res) => {
@@ -1405,6 +1708,872 @@ router.get('/wallet/:id/transactions', standardLimit, requireWalletV2Auth, async
     } catch (error) {
         console.error('Wallet v2 transactions error:', error);
         return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch transactions');
+    }
+});
+
+router.get('/wallet/:id/nft-staking/state', standardLimit, requireWalletV2Auth, async (req, res) => {
+    try {
+        const walletId = req.params.id;
+
+        if (walletId !== req.walletV2Auth!.walletId) {
+            return sendError(res, 403, 'FORBIDDEN', 'Wallet access denied');
+        }
+
+        assertNftStakingPrismaClientReady();
+
+        const currentTime = now();
+
+        const state = await prisma.$transaction(async (tx) => {
+            const walletContext = await resolveWalletNftStakingContext(tx, walletId);
+            const ownership: WalletNftOwnershipContext = {
+                userId: walletContext.userId || req.walletV2Auth?.userId || null,
+                mainAddress: walletContext.mainAddress,
+            };
+
+            const activePositions = await tx.nftStakingV2.findMany({
+                where: {
+                    walletId,
+                    status: 'active',
+                },
+                orderBy: [
+                    { stakedAt: 'desc' },
+                    { tokenId: 'asc' },
+                ],
+                select: {
+                    id: true,
+                    tokenId: true,
+                    status: true,
+                    rewardPerHour: true,
+                    stakedAt: true,
+                    lastClaimAt: true,
+                    totalClaimed: true,
+                    nft: {
+                        select: {
+                            tokenId: true,
+                            ownerWallet: true,
+                            ownerId: true,
+                            modelName: true,
+                            serialNumber: true,
+                            rarity: true,
+                            tgsFile: true,
+                            metadata: true,
+                        },
+                    },
+                },
+            });
+
+            const globallyActiveStakeTokens = await tx.nftStakingV2.findMany({
+                where: {
+                    status: 'active',
+                },
+                select: {
+                    tokenId: true,
+                },
+            });
+            const stakedTokenIds = globallyActiveStakeTokens.map((position) => position.tokenId);
+            const availableWhere: Prisma.NftWhereInput[] = [
+                buildNftOwnershipWhere(ownership),
+                {
+                    NOT: {
+                        status: {
+                            equals: 'burned',
+                            mode: 'insensitive',
+                        },
+                    },
+                },
+            ];
+
+            if (stakedTokenIds.length > 0) {
+                availableWhere.push({
+                    tokenId: {
+                        notIn: stakedTokenIds,
+                    },
+                });
+            }
+
+            const availableNfts = await tx.nft.findMany({
+                where: { AND: availableWhere },
+                orderBy: [
+                    { lastTransferAt: 'desc' },
+                    { mintedAt: 'desc' },
+                ],
+                take: 200,
+                select: {
+                    tokenId: true,
+                    modelName: true,
+                    serialNumber: true,
+                    rarity: true,
+                    tgsFile: true,
+                    metadata: true,
+                    lastTransferAt: true,
+                    mintedAt: true,
+                },
+            });
+
+            let pendingRewardTotal = 0n;
+            let totalClaimed = 0n;
+            const positionRows = activePositions.map((position) => {
+                const nft = position.nft;
+                const rewardPerHour = position.rewardPerHour > 0n
+                    ? position.rewardPerHour
+                    : resolveNftStakingRewardPerHour(nft?.rarity);
+                const pending = computeNftStakingPendingReward({
+                    lastClaimAt: position.lastClaimAt,
+                    rewardPerHour,
+                    currentTime,
+                });
+                const canUnstakeAt = addHours(position.stakedAt, NFT_STAKING_UNSTAKE_COOLDOWN_HOURS);
+                const canUnstake = currentTime.getTime() >= canUnstakeAt.getTime();
+                const owned = nft
+                    ? isNftOwnedByWallet({
+                        nftOwnerId: nft.ownerId,
+                        nftOwnerWallet: nft.ownerWallet,
+                        ownership,
+                    })
+                    : false;
+
+                pendingRewardTotal += pending.amount;
+                totalClaimed += position.totalClaimed;
+
+                return {
+                    tokenId: position.tokenId,
+                    status: position.status,
+                    owned,
+                    modelName: nft?.modelName || null,
+                    serialNumber: nft?.serialNumber || null,
+                    rarity: nft?.rarity || null,
+                    collectionName: readCollectionName(nft?.metadata),
+                    tgsUrl: nft?.tgsFile ? `/models/${nft.tgsFile}` : null,
+                    stakedAt: position.stakedAt.toISOString(),
+                    lastClaimAt: position.lastClaimAt.toISOString(),
+                    rewardPerHour: rewardPerHour.toString(),
+                    pendingReward: pending.amount.toString(),
+                    totalClaimed: position.totalClaimed.toString(),
+                    canClaim: pending.amount > 0n,
+                    canUnstake,
+                    unstakeAvailableAt: canUnstakeAt.toISOString(),
+                };
+            });
+
+            const availableRows = availableNfts.map((nft) => {
+                const anchorAt = nft.lastTransferAt || nft.mintedAt;
+                const stakeWindow = buildStakeWindow(anchorAt, currentTime);
+
+                return {
+                    tokenId: nft.tokenId,
+                    modelName: nft.modelName,
+                    serialNumber: nft.serialNumber,
+                    rarity: nft.rarity,
+                    collectionName: readCollectionName(nft.metadata),
+                    tgsUrl: nft.tgsFile ? `/models/${nft.tgsFile}` : null,
+                    lastTransferAt: toIsoDate(nft.lastTransferAt),
+                    mintedAt: nft.mintedAt.toISOString(),
+                    stakeWindow: {
+                        opensAt: stakeWindow.opensAt.toISOString(),
+                        closesAt: stakeWindow.closesAt.toISOString(),
+                        canStake: stakeWindow.canStake,
+                        reason: stakeWindow.reason,
+                    },
+                };
+            });
+
+            return {
+                address: walletContext.mainAddress,
+                summary: {
+                    activeCount: positionRows.length,
+                    availableCount: availableRows.length,
+                    pendingRewardTotal,
+                    totalClaimed,
+                },
+                positions: positionRows,
+                available: availableRows,
+            };
+        });
+
+        return res.json({
+            success: true,
+            data: {
+                walletId,
+                address: formatWalletAddress(state.address),
+                rewardAsset: NFT_STAKING_REWARD_ASSET,
+                rules: {
+                    windowStartHours: NFT_STAKING_WINDOW_START_HOURS,
+                    windowEndHours: NFT_STAKING_WINDOW_END_HOURS,
+                    unstakeCooldownHours: NFT_STAKING_UNSTAKE_COOLDOWN_HOURS,
+                },
+                summary: {
+                    activeCount: state.summary.activeCount,
+                    availableCount: state.summary.availableCount,
+                    pendingReward: state.summary.pendingRewardTotal.toString(),
+                    totalClaimed: state.summary.totalClaimed.toString(),
+                },
+                positions: state.positions,
+                available: state.available,
+                timestamp: currentTime.toISOString(),
+            },
+        });
+    } catch (error) {
+        if (error instanceof ApiError) {
+            return sendError(res, error.statusCode, error.code, error.message, error.details);
+        }
+
+        const schemaErrorResponse = handleNftStakingSchemaNotReadyError({
+            res,
+            error,
+            context: 'Wallet v2 nft staking state',
+        });
+
+        if (schemaErrorResponse) {
+            return schemaErrorResponse;
+        }
+
+        console.error('Wallet v2 nft staking state error:', error);
+        return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch NFT staking state');
+    }
+});
+
+router.post('/wallet/:id/nft-staking/stake', strictLimit, requireWalletV2Auth, async (req, res) => {
+    try {
+        const walletId = req.params.id;
+        const tokenId = typeof req.body?.tokenId === 'string' ? req.body.tokenId.trim() : '';
+
+        if (walletId !== req.walletV2Auth!.walletId) {
+            return sendError(res, 403, 'FORBIDDEN', 'Wallet access denied');
+        }
+
+        if (!tokenId) {
+            return sendError(res, 400, 'TOKEN_ID_REQUIRED', 'tokenId is required');
+        }
+
+        assertNftStakingPrismaClientReady();
+
+        const currentTime = now();
+        const ipHash = hashIpAddress(ipFromRequest(req)) || null;
+        const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
+
+        const stakeResult = await prisma.$transaction(async (tx) => {
+            const walletContext = await resolveWalletNftStakingContext(tx, walletId);
+            const ownership: WalletNftOwnershipContext = {
+                userId: walletContext.userId || req.walletV2Auth?.userId || null,
+                mainAddress: walletContext.mainAddress,
+            };
+            const nft = await tx.nft.findUnique({
+                where: { tokenId },
+                select: {
+                    tokenId: true,
+                    ownerWallet: true,
+                    ownerId: true,
+                    modelName: true,
+                    serialNumber: true,
+                    rarity: true,
+                    tgsFile: true,
+                    metadata: true,
+                    status: true,
+                    lastTransferAt: true,
+                    mintedAt: true,
+                },
+            });
+
+            if (!nft) {
+                throw new ApiError(404, 'NFT_NOT_FOUND', 'NFT not found');
+            }
+
+            if ((nft.status || '').trim().toLowerCase() === 'burned') {
+                throw new ApiError(409, 'NFT_UNAVAILABLE', 'NFT is not available for staking');
+            }
+
+            if (!isNftOwnedByWallet({
+                nftOwnerId: nft.ownerId,
+                nftOwnerWallet: nft.ownerWallet,
+                ownership,
+            })) {
+                throw new ApiError(403, 'NFT_NOT_OWNED', 'NFT does not belong to the authenticated wallet');
+            }
+
+            const existingPosition = await tx.nftStakingV2.findUnique({
+                where: { tokenId },
+                select: {
+                    id: true,
+                    walletId: true,
+                    status: true,
+                },
+            });
+
+            if (existingPosition?.status === 'active') {
+                throw new ApiError(409, 'NFT_ALREADY_STAKED', 'NFT is already staked');
+            }
+
+            const window = buildStakeWindow(nft.lastTransferAt || nft.mintedAt, currentTime);
+
+            if (window.reason === 'not_open') {
+                throw new ApiError(
+                    409,
+                    'STAKE_WINDOW_NOT_OPEN',
+                    'Staking window has not opened yet',
+                    {
+                        opensAt: window.opensAt.toISOString(),
+                        closesAt: window.closesAt.toISOString(),
+                    },
+                );
+            }
+
+            if (window.reason === 'closed') {
+                throw new ApiError(
+                    409,
+                    'STAKE_WINDOW_CLOSED',
+                    'Staking window is closed',
+                    {
+                        opensAt: window.opensAt.toISOString(),
+                        closesAt: window.closesAt.toISOString(),
+                    },
+                );
+            }
+
+            const rewardPerHour = resolveNftStakingRewardPerHour(nft.rarity);
+            const stakeRecord = existingPosition
+                ? await tx.nftStakingV2.update({
+                    where: { id: existingPosition.id },
+                    data: {
+                        walletId,
+                        userId: ownership.userId,
+                        status: 'active',
+                        rewardPerHour,
+                        stakedAt: currentTime,
+                        lastClaimAt: currentTime,
+                        unstakedAt: null,
+                        updatedAt: currentTime,
+                    },
+                    select: {
+                        tokenId: true,
+                        stakedAt: true,
+                        lastClaimAt: true,
+                        totalClaimed: true,
+                        rewardPerHour: true,
+                    },
+                })
+                : await tx.nftStakingV2.create({
+                    data: {
+                        id: crypto.randomUUID(),
+                        walletId,
+                        tokenId,
+                        userId: ownership.userId,
+                        status: 'active',
+                        rewardPerHour,
+                        stakedAt: currentTime,
+                        lastClaimAt: currentTime,
+                        totalClaimed: 0n,
+                        createdAt: currentTime,
+                        updatedAt: currentTime,
+                    },
+                    select: {
+                        tokenId: true,
+                        stakedAt: true,
+                        lastClaimAt: true,
+                        totalClaimed: true,
+                        rewardPerHour: true,
+                    },
+                });
+
+            await createAuditEvent({
+                tx,
+                walletId,
+                userId: ownership.userId,
+                event: 'nft.staking.staked',
+                ipHash,
+                userAgent,
+                meta: {
+                    tokenId,
+                    rewardPerHour: rewardPerHour.toString(),
+                },
+            });
+
+            return {
+                walletAddress: walletContext.mainAddress,
+                nft,
+                stakeRecord,
+                window,
+            };
+        });
+
+        return res.status(201).json({
+            success: true,
+            data: {
+                walletId,
+                address: formatWalletAddress(stakeResult.walletAddress),
+                rewardAsset: NFT_STAKING_REWARD_ASSET,
+                position: {
+                    tokenId: stakeResult.stakeRecord.tokenId,
+                    modelName: stakeResult.nft.modelName,
+                    serialNumber: stakeResult.nft.serialNumber,
+                    rarity: stakeResult.nft.rarity,
+                    collectionName: readCollectionName(stakeResult.nft.metadata),
+                    tgsUrl: stakeResult.nft.tgsFile ? `/models/${stakeResult.nft.tgsFile}` : null,
+                    stakedAt: stakeResult.stakeRecord.stakedAt.toISOString(),
+                    lastClaimAt: stakeResult.stakeRecord.lastClaimAt.toISOString(),
+                    rewardPerHour: stakeResult.stakeRecord.rewardPerHour.toString(),
+                    totalClaimed: stakeResult.stakeRecord.totalClaimed.toString(),
+                    stakeWindow: {
+                        opensAt: stakeResult.window.opensAt.toISOString(),
+                        closesAt: stakeResult.window.closesAt.toISOString(),
+                    },
+                },
+            },
+        });
+    } catch (error) {
+        if (error instanceof ApiError) {
+            return sendError(res, error.statusCode, error.code, error.message, error.details);
+        }
+
+        const schemaErrorResponse = handleNftStakingSchemaNotReadyError({
+            res,
+            error,
+            context: 'Wallet v2 nft staking stake',
+        });
+
+        if (schemaErrorResponse) {
+            return schemaErrorResponse;
+        }
+
+        console.error('Wallet v2 nft staking stake error:', error);
+        return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to stake NFT');
+    }
+});
+
+router.post('/wallet/:id/nft-staking/claim', strictLimit, requireWalletV2Auth, async (req, res) => {
+    try {
+        const walletId = req.params.id;
+        const tokenId = typeof req.body?.tokenId === 'string' ? req.body.tokenId.trim() : '';
+
+        if (walletId !== req.walletV2Auth!.walletId) {
+            return sendError(res, 403, 'FORBIDDEN', 'Wallet access denied');
+        }
+
+        if (!tokenId) {
+            return sendError(res, 400, 'TOKEN_ID_REQUIRED', 'tokenId is required');
+        }
+
+        assertNftStakingPrismaClientReady();
+
+        const currentTime = now();
+        const ipHash = hashIpAddress(ipFromRequest(req)) || null;
+        const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
+
+        const claimResult = await prisma.$transaction(async (tx) => {
+            const walletContext = await resolveWalletNftStakingContext(tx, walletId);
+            const ownership: WalletNftOwnershipContext = {
+                userId: walletContext.userId || req.walletV2Auth?.userId || null,
+                mainAddress: walletContext.mainAddress,
+            };
+            const position = await tx.nftStakingV2.findFirst({
+                where: {
+                    walletId,
+                    tokenId,
+                    status: 'active',
+                },
+                select: {
+                    id: true,
+                    tokenId: true,
+                    rewardPerHour: true,
+                    stakedAt: true,
+                    lastClaimAt: true,
+                    totalClaimed: true,
+                    nft: {
+                        select: {
+                            tokenId: true,
+                            ownerWallet: true,
+                            ownerId: true,
+                            modelName: true,
+                            serialNumber: true,
+                            rarity: true,
+                            tgsFile: true,
+                            metadata: true,
+                        },
+                    },
+                },
+            });
+
+            if (!position || !position.nft) {
+                throw new ApiError(404, 'STAKE_POSITION_NOT_FOUND', 'Staking position not found');
+            }
+
+            if (!isNftOwnedByWallet({
+                nftOwnerId: position.nft.ownerId,
+                nftOwnerWallet: position.nft.ownerWallet,
+                ownership,
+            })) {
+                throw new ApiError(403, 'NFT_NOT_OWNED', 'NFT does not belong to the authenticated wallet');
+            }
+
+            const rewardPerHour = position.rewardPerHour > 0n
+                ? position.rewardPerHour
+                : resolveNftStakingRewardPerHour(position.nft.rarity);
+            const pending = computeNftStakingPendingReward({
+                lastClaimAt: position.lastClaimAt,
+                rewardPerHour,
+                currentTime,
+            });
+
+            if (pending.amount <= 0n) {
+                throw new ApiError(
+                    409,
+                    'NO_REWARD_AVAILABLE',
+                    'No reward available yet',
+                    {
+                        nextClaimAt: pending.nextClaimAt.toISOString(),
+                        elapsedWholeHours: pending.elapsedWholeHours,
+                    },
+                );
+            }
+
+            const rewardCredit = await creditNftStakingReward(tx, {
+                walletId,
+                tokenId,
+                amount: pending.amount,
+                mainAddress: walletContext.mainAddress,
+                currentTime,
+            });
+
+            if (!rewardCredit) {
+                throw new ApiError(409, 'NO_REWARD_AVAILABLE', 'No reward available yet');
+            }
+
+            const updatedPosition = await tx.nftStakingV2.update({
+                where: { id: position.id },
+                data: {
+                    rewardPerHour,
+                    lastClaimAt: currentTime,
+                    totalClaimed: { increment: pending.amount },
+                    updatedAt: currentTime,
+                },
+                select: {
+                    tokenId: true,
+                    stakedAt: true,
+                    lastClaimAt: true,
+                    totalClaimed: true,
+                    rewardPerHour: true,
+                },
+            });
+
+            await createAuditEvent({
+                tx,
+                walletId,
+                userId: ownership.userId,
+                event: 'nft.staking.claimed',
+                ipHash,
+                userAgent,
+                meta: {
+                    tokenId,
+                    claimedAmount: pending.amount.toString(),
+                    txId: rewardCredit.rewardTx.id,
+                },
+            });
+
+            return {
+                walletAddress: walletContext.mainAddress,
+                nft: position.nft,
+                claimedAmount: pending.amount,
+                updatedPosition,
+                balance: rewardCredit.creditedBalance,
+                rewardTx: rewardCredit.rewardTx,
+            };
+        });
+
+        return res.json({
+            success: true,
+            data: {
+                walletId,
+                address: formatWalletAddress(claimResult.walletAddress),
+                tokenId,
+                rewardAsset: NFT_STAKING_REWARD_ASSET,
+                claimedAmount: claimResult.claimedAmount.toString(),
+                position: {
+                    tokenId: claimResult.updatedPosition.tokenId,
+                    modelName: claimResult.nft.modelName,
+                    serialNumber: claimResult.nft.serialNumber,
+                    rarity: claimResult.nft.rarity,
+                    collectionName: readCollectionName(claimResult.nft.metadata),
+                    tgsUrl: claimResult.nft.tgsFile ? `/models/${claimResult.nft.tgsFile}` : null,
+                    stakedAt: claimResult.updatedPosition.stakedAt.toISOString(),
+                    lastClaimAt: claimResult.updatedPosition.lastClaimAt.toISOString(),
+                    rewardPerHour: claimResult.updatedPosition.rewardPerHour.toString(),
+                    totalClaimed: claimResult.updatedPosition.totalClaimed.toString(),
+                },
+                balance: {
+                    asset: claimResult.balance.asset,
+                    available: claimResult.balance.available.toString(),
+                    locked: claimResult.balance.locked.toString(),
+                    updatedAt: claimResult.balance.updatedAt.toISOString(),
+                },
+                tx: {
+                    id: claimResult.rewardTx.id,
+                    status: claimResult.rewardTx.status,
+                    fromAddress: formatWalletAddress(claimResult.rewardTx.fromAddress),
+                    toAddress: formatWalletAddress(claimResult.rewardTx.toAddress),
+                    asset: claimResult.rewardTx.asset,
+                    amount: claimResult.rewardTx.amount.toString(),
+                    createdAt: claimResult.rewardTx.createdAt.toISOString(),
+                    completedAt: toIsoDate(claimResult.rewardTx.completedAt),
+                },
+            },
+        });
+    } catch (error) {
+        if (error instanceof ApiError) {
+            return sendError(res, error.statusCode, error.code, error.message, error.details);
+        }
+
+        const schemaErrorResponse = handleNftStakingSchemaNotReadyError({
+            res,
+            error,
+            context: 'Wallet v2 nft staking claim',
+        });
+
+        if (schemaErrorResponse) {
+            return schemaErrorResponse;
+        }
+
+        console.error('Wallet v2 nft staking claim error:', error);
+        return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to claim staking reward');
+    }
+});
+
+router.post('/wallet/:id/nft-staking/unstake', strictLimit, requireWalletV2Auth, async (req, res) => {
+    try {
+        const walletId = req.params.id;
+        const tokenId = typeof req.body?.tokenId === 'string' ? req.body.tokenId.trim() : '';
+        const claimRewards = req.body?.claimRewards !== false;
+
+        if (walletId !== req.walletV2Auth!.walletId) {
+            return sendError(res, 403, 'FORBIDDEN', 'Wallet access denied');
+        }
+
+        if (!tokenId) {
+            return sendError(res, 400, 'TOKEN_ID_REQUIRED', 'tokenId is required');
+        }
+
+        assertNftStakingPrismaClientReady();
+
+        const currentTime = now();
+        const ipHash = hashIpAddress(ipFromRequest(req)) || null;
+        const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
+
+        const unstakeResult = await prisma.$transaction(async (tx) => {
+            const walletContext = await resolveWalletNftStakingContext(tx, walletId);
+            const ownership: WalletNftOwnershipContext = {
+                userId: walletContext.userId || req.walletV2Auth?.userId || null,
+                mainAddress: walletContext.mainAddress,
+            };
+
+            const position = await tx.nftStakingV2.findFirst({
+                where: {
+                    walletId,
+                    tokenId,
+                    status: 'active',
+                },
+                select: {
+                    id: true,
+                    tokenId: true,
+                    rewardPerHour: true,
+                    stakedAt: true,
+                    lastClaimAt: true,
+                    totalClaimed: true,
+                    nft: {
+                        select: {
+                            tokenId: true,
+                            ownerWallet: true,
+                            ownerId: true,
+                            modelName: true,
+                            serialNumber: true,
+                            rarity: true,
+                            tgsFile: true,
+                            metadata: true,
+                        },
+                    },
+                },
+            });
+
+            if (!position) {
+                throw new ApiError(404, 'STAKE_POSITION_NOT_FOUND', 'Staking position not found');
+            }
+
+            const unstakeAvailableAt = addHours(position.stakedAt, NFT_STAKING_UNSTAKE_COOLDOWN_HOURS);
+
+            if (currentTime.getTime() < unstakeAvailableAt.getTime()) {
+                throw new ApiError(
+                    409,
+                    'UNSTAKE_COOLDOWN_ACTIVE',
+                    'NFT cannot be unstaked yet',
+                    {
+                        unstakeAvailableAt: unstakeAvailableAt.toISOString(),
+                    },
+                );
+            }
+
+            const rewardPerHour = position.rewardPerHour > 0n
+                ? position.rewardPerHour
+                : resolveNftStakingRewardPerHour(position.nft?.rarity);
+            let claimedAmount = 0n;
+            let claimedBalance: {
+                asset: string;
+                available: bigint;
+                locked: bigint;
+                updatedAt: Date;
+            } | null = null;
+            let rewardTx: {
+                id: string;
+                status: string;
+                fromAddress: string;
+                toAddress: string;
+                asset: string;
+                amount: bigint;
+                createdAt: Date;
+                completedAt: Date | null;
+            } | null = null;
+            const ownedByCurrentWallet = Boolean(
+                position.nft
+                && isNftOwnedByWallet({
+                    nftOwnerId: position.nft.ownerId,
+                    nftOwnerWallet: position.nft.ownerWallet,
+                    ownership,
+                }),
+            );
+
+            if (claimRewards && ownedByCurrentWallet) {
+                const pending = computeNftStakingPendingReward({
+                    lastClaimAt: position.lastClaimAt,
+                    rewardPerHour,
+                    currentTime,
+                });
+
+                if (pending.amount > 0n) {
+                    const rewardCredit = await creditNftStakingReward(tx, {
+                        walletId,
+                        tokenId,
+                        amount: pending.amount,
+                        mainAddress: walletContext.mainAddress,
+                        currentTime,
+                    });
+
+                    if (rewardCredit) {
+                        claimedAmount = pending.amount;
+                        claimedBalance = rewardCredit.creditedBalance;
+                        rewardTx = rewardCredit.rewardTx;
+                    }
+                }
+            }
+
+            const updatedPosition = await tx.nftStakingV2.update({
+                where: { id: position.id },
+                data: {
+                    status: 'unstaked',
+                    rewardPerHour,
+                    lastClaimAt: currentTime,
+                    unstakedAt: currentTime,
+                    updatedAt: currentTime,
+                    ...(claimedAmount > 0n
+                        ? {
+                            totalClaimed: { increment: claimedAmount },
+                        }
+                        : {}),
+                },
+                select: {
+                    tokenId: true,
+                    status: true,
+                    stakedAt: true,
+                    lastClaimAt: true,
+                    totalClaimed: true,
+                    rewardPerHour: true,
+                    unstakedAt: true,
+                },
+            });
+
+            await createAuditEvent({
+                tx,
+                walletId,
+                userId: ownership.userId,
+                event: 'nft.staking.unstaked',
+                ipHash,
+                userAgent,
+                meta: {
+                    tokenId,
+                    claimRewards,
+                    claimedAmount: claimedAmount.toString(),
+                    rewardTxId: rewardTx?.id || null,
+                },
+            });
+
+            return {
+                walletAddress: walletContext.mainAddress,
+                nft: position.nft,
+                updatedPosition,
+                claimedAmount,
+                claimedBalance,
+                rewardTx,
+                ownedByCurrentWallet,
+            };
+        });
+
+        return res.json({
+            success: true,
+            data: {
+                walletId,
+                address: formatWalletAddress(unstakeResult.walletAddress),
+                tokenId,
+                rewardAsset: NFT_STAKING_REWARD_ASSET,
+                claimRewardsApplied: claimRewards && unstakeResult.ownedByCurrentWallet,
+                claimedAmount: unstakeResult.claimedAmount.toString(),
+                position: {
+                    tokenId: unstakeResult.updatedPosition.tokenId,
+                    status: unstakeResult.updatedPosition.status,
+                    modelName: unstakeResult.nft?.modelName || null,
+                    serialNumber: unstakeResult.nft?.serialNumber || null,
+                    rarity: unstakeResult.nft?.rarity || null,
+                    collectionName: readCollectionName(unstakeResult.nft?.metadata),
+                    tgsUrl: unstakeResult.nft?.tgsFile ? `/models/${unstakeResult.nft.tgsFile}` : null,
+                    stakedAt: unstakeResult.updatedPosition.stakedAt.toISOString(),
+                    lastClaimAt: unstakeResult.updatedPosition.lastClaimAt.toISOString(),
+                    rewardPerHour: unstakeResult.updatedPosition.rewardPerHour.toString(),
+                    totalClaimed: unstakeResult.updatedPosition.totalClaimed.toString(),
+                    unstakedAt: toIsoDate(unstakeResult.updatedPosition.unstakedAt),
+                },
+                ...(unstakeResult.claimedBalance && unstakeResult.rewardTx
+                    ? {
+                        balance: {
+                            asset: unstakeResult.claimedBalance.asset,
+                            available: unstakeResult.claimedBalance.available.toString(),
+                            locked: unstakeResult.claimedBalance.locked.toString(),
+                            updatedAt: unstakeResult.claimedBalance.updatedAt.toISOString(),
+                        },
+                        tx: {
+                            id: unstakeResult.rewardTx.id,
+                            status: unstakeResult.rewardTx.status,
+                            fromAddress: formatWalletAddress(unstakeResult.rewardTx.fromAddress),
+                            toAddress: formatWalletAddress(unstakeResult.rewardTx.toAddress),
+                            asset: unstakeResult.rewardTx.asset,
+                            amount: unstakeResult.rewardTx.amount.toString(),
+                            createdAt: unstakeResult.rewardTx.createdAt.toISOString(),
+                            completedAt: toIsoDate(unstakeResult.rewardTx.completedAt),
+                        },
+                    }
+                    : {}),
+            },
+        });
+    } catch (error) {
+        if (error instanceof ApiError) {
+            return sendError(res, error.statusCode, error.code, error.message, error.details);
+        }
+
+        const schemaErrorResponse = handleNftStakingSchemaNotReadyError({
+            res,
+            error,
+            context: 'Wallet v2 nft staking unstake',
+        });
+
+        if (schemaErrorResponse) {
+            return schemaErrorResponse;
+        }
+
+        console.error('Wallet v2 nft staking unstake error:', error);
+        return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to unstake NFT');
     }
 });
 

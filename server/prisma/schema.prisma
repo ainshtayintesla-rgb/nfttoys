@@ -33,6 +33,7 @@ model User {
   walletsV2           WalletV2[]
   walletSessionsV2    WalletSessionV2[]
   auditEventsV2       AuditEventV2[]
+  nftStakingV2        NftStakingV2[]
 
   @@index([referrerId, referredAt])
 }
@@ -114,6 +115,7 @@ model Nft {
   ownerUserRel    User?        @relation("UserOwnedNfts", fields: [ownerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   history         NftHistory[]
   transactions    Transaction[]
+  stakingV2       NftStakingV2[]
 
   @@index([ownerId])
   @@index([ownerWallet])
@@ -180,10 +182,33 @@ model WalletV2 {
   txs                TxV2[]
   sessions           WalletSessionV2[]
   auditEvents        AuditEventV2[]
+  nftStaking         NftStakingV2[]
 
   @@index([userId], map: "idx_wallets_v2_user_id")
   @@index([status], map: "idx_wallets_v2_status")
   @@map("wallets_v2")
+}
+
+model NftStakingV2 {
+  id           String    @id @db.Uuid
+  walletId     String    @map("wallet_id") @db.Uuid
+  tokenId      String    @unique @map("token_id")
+  userId       String?   @map("user_id")
+  status       String    @default("active")
+  rewardPerHour BigInt   @default(0) @map("reward_per_hour")
+  stakedAt     DateTime  @default(now()) @map("staked_at") @db.Timestamptz(6)
+  lastClaimAt  DateTime  @default(now()) @map("last_claim_at") @db.Timestamptz(6)
+  unstakedAt   DateTime? @map("unstaked_at") @db.Timestamptz(6)
+  totalClaimed BigInt    @default(0) @map("total_claimed")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  wallet       WalletV2  @relation(fields: [walletId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  nft          Nft       @relation(fields: [tokenId], references: [tokenId], onDelete: Cascade, onUpdate: Cascade)
+  user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([walletId, status, stakedAt], map: "idx_nft_staking_v2_wallet_id_status_staked_at")
+  @@index([userId, status], map: "idx_nft_staking_v2_user_id_status")
+  @@map("nft_staking_v2")
 }
 
 model AddressV2 {

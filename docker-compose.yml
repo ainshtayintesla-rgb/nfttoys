@@ -1,4 +1,4 @@
-name: nfttoys-prod
+name: ${COMPOSE_PROJECT_NAME:-nfttoys}
 
 services:
   postgres:
@@ -49,15 +49,17 @@ services:
       NODE_ENV: production
       RUN_MODE: production
       UPDATE_SERVICE_ENABLED: "true"
-      UPDATE_BRANCH: main
+      UPDATE_BRANCH: ${NFTTOYS_UPDATE_BRANCH:-main}
       UPDATE_SERVER_ROOT: /workspace/server
       UPDATE_REPO_ROOT: /workspace
       UPDATE_RUNNER_SCRIPT: /workspace/scripts/prod-update-runner.sh
       UPDATE_RUNNER_MODE: docker
-      UPDATE_RUNNER_IMAGE: nfttoys-prod-api
-      UPDATE_RUNNER_HOST_REPO: /root/my-works/nfttoys-pro
+      UPDATE_RUNNER_IMAGE: ${COMPOSE_PROJECT_NAME:-nfttoys}-api
+      UPDATE_RUNNER_HOST_REPO: ${NFTTOYS_HOST_REPO:-/root/my-works/nfttoys}
       UPDATE_RUNNER_CONTAINER_PREFIX: nfttoys-update-runner
       NFTTOYS_COMPOSE_FILE: /workspace/docker-compose.yml
+      NFTTOYS_API_HEALTH_URL: ${NFTTOYS_API_HEALTH_URL:-}
+      NFTTOYS_WEB_HEALTH_URL: ${NFTTOYS_WEB_HEALTH_URL:-}
       PORT: 4000
       DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://nfttoys:nfttoys@postgres:5432/nfttoys?schema=public}
       BOT_SERVICE_URL: http://bot:8090/internal/notify/nft-received
@@ -68,9 +70,9 @@ services:
         condition: service_started
     command: ["sh", "-lc", "npm run prisma:migrate && node dist/index.js"]
     ports:
-      - "4100:4000"
+      - "${NFTTOYS_API_PORT:-4100}:4000"
     volumes:
-      - /root/my-works/nfttoys-pro:/workspace
+      - ${NFTTOYS_HOST_REPO:-/root/my-works/nfttoys}:/workspace
       - /var/run/docker.sock:/var/run/docker.sock
       - /usr/bin/docker:/usr/bin/docker:ro
       - /usr/libexec/docker/cli-plugins:/usr/libexec/docker/cli-plugins:ro
@@ -98,7 +100,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "4101:3000"
+      - "${NFTTOYS_WEB_PORT:-4101}:3000"
     healthcheck:
       test: ["CMD", "node", "-e", "require(\"http\").get(\"http://127.0.0.1:3000\", (res) => process.exit(res.statusCode >= 200 && res.statusCode < 500 ? 0 : 1)).on(\"error\", () => process.exit(1));"]
       interval: 10s

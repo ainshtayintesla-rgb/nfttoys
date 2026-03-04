@@ -1,0 +1,477 @@
+'use client';
+
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { IoRefresh, IoSparkles } from 'react-icons/io5';
+
+import { Button } from '@/components/ui/Button';
+import { TelegramBackButton } from '@/components/ui/TelegramBackButton';
+import { api } from '@/lib/api';
+import { useLanguage } from '@/lib/context/LanguageContext';
+import { useTelegram } from '@/lib/context/TelegramContext';
+import type { WalletV2NftStakingStateData } from '@/lib/walletV2/api';
+import { isWalletV2ApiError } from '@/lib/walletV2/errors';
+import { resetWalletV2ClientAuthState } from '@/lib/walletV2/sessionLifecycle';
+
+import styles from './page.module.css';
+
+type NftStakingActionType = 'stake' | 'claim' | 'unstake';
+
+function formatIntegerString(value: string): string {
+    const normalized = value.trim().replace(/^0+(?=\d)/, '') || '0';
+    return normalized.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+function localeToIntlCode(locale: string): string {
+    if (locale === 'ru') return 'ru-RU';
+    if (locale === 'uz') return 'uz-UZ';
+    return 'en-US';
+}
+
+function formatDateTime(value: string, locale: string): string {
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return new Intl.DateTimeFormat(localeToIntlCode(locale), {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    }).format(date);
+}
+
+function safeErrorMessage(error: unknown): string {
+    if (isWalletV2ApiError(error)) {
+        if (error.code === 'TOKEN_ID_REQUIRED') {
+            return 'Token id is required.';
+        }
+
+        if (error.code === 'NFT_NOT_FOUND') {
+            return 'NFT not found.';
+        }
+
+        if (error.code === 'NFT_NOT_OWNED') {
+            return 'This NFT is not linked to the current wallet profile.';
+        }
+
+        if (error.code === 'NFT_ALREADY_STAKED') {
+            return 'NFT is already staked.';
+        }
+
+        if (error.code === 'NFT_UNAVAILABLE') {
+            return 'NFT is not available for staking.';
+        }
+
+        if (error.code === 'STAKE_WINDOW_NOT_OPEN') {
+            return 'Staking window is not open yet for this NFT.';
+        }
+
+        if (error.code === 'STAKE_WINDOW_CLOSED') {
+            return 'Staking window is closed for this NFT.';
+        }
+
+        if (error.code === 'NO_REWARD_AVAILABLE') {
+            return 'No staking reward available yet.';
+        }
+
+        if (error.code === 'STAKE_POSITION_NOT_FOUND') {
+            return 'Staking position not found.';
+        }
+
+        if (error.code === 'UNSTAKE_COOLDOWN_ACTIVE') {
+            return 'NFT is still in unstake cooldown period.';
+        }
+
+        if (error.code === 'WALLET_SESSION_MISSING' || error.code === 'SESSION_REVOKED') {
+            return 'Wallet session is missing. Open Wallet V2 and authenticate again.';
+        }
+
+        if (error.code === 'WALLET_NOT_FOUND') {
+            return 'Wallet was not found on server. Create or import wallet again.';
+        }
+
+        if (error.code === 'NFT_STAKING_SCHEMA_NOT_READY') {
+            return 'NFT staking is not initialized on server. Apply latest migrations, regenerate Prisma client, and restart backend.';
+        }
+
+        if (error.message) {
+            return error.message;
+        }
+    }
+
+    if (error instanceof Error && error.message) {
+        return error.message;
+    }
+
+    return 'Request failed';
+}
+
+export default function WalletV2StakingPage() {
+    const { t, locale } = useLanguage();
+    const { haptic } = useTelegram();
+    const router = useRouter();
+
+    const tr = useCallback((key: string, fallback: string): string => {
+        const value = t(key as never);
+        return value === key ? fallback : value;
+    }, [t]);
+
+    const [walletId, setWalletId] = useState<string | null>(() => api.walletV2.session.getWalletId());
+    const [nftStakingState, setNftStakingState] = useState<WalletV2NftStakingStateData | null>(null);
+    const [isNftStakingLoading, setIsNftStakingLoading] = useState(false);
+    const [nftStakingError, setNftStakingError] = useState('');
+    const [requestSuccess, setRequestSuccess] = useState('');
+    const [nftStakingActionTokenId, setNftStakingActionTokenId] = useState<string | null>(null);
+    const [nftStakingActionType, setNftStakingActionType] = useState<NftStakingActionType | null>(null);
+
+    const stakingPositions = nftStakingState?.positions || [];
+    const stakingAvailable = nftStakingState?.available || [];
+    const stakingRewardAsset = nftStakingState?.rewardAsset || 'UZS';
+    const stakingSummaryPending = useMemo(() => {
+        const raw = nftStakingState?.summary?.pendingReward || '0';
+        return formatIntegerString(raw);
+    }, [nftStakingState?.summary?.pendingReward]);
+    const stakingSummaryClaimed = useMemo(() => {
+        const raw = nftStakingState?.summary?.totalClaimed || '0';
+        return formatIntegerString(raw);
+    }, [nftStakingState?.summary?.totalClaimed]);
+    const stakingWindowHint = useMemo(() => {
+        if (!nftStakingState?.rules) {
+            return 'Stake window: 24-48h after incoming transfer';
+        }
+
+        return `Stake window: ${nftStakingState.rules.windowStartHours}-${nftStakingState.rules.windowEndHours}h after incoming transfer`;
+    }, [nftStakingState?.rules]);
+
+    const loadNftStakingState = useCallback(async (showLoader = true) => {
+        if (!walletId) {
+            setNftStakingState(null);
+            setIsNftStakingLoading(false);
+            setNftStakingError('Wallet session is missing');
+            return;
+        }
+
+        if (showLoader) {
+            setIsNftStakingLoading(true);
+        }
+
+        setNftStakingError('');
+
+        try {
+            const response = await api.walletV2.nftStaking.state(walletId);
+            setNftStakingState(response);
+        } catch (error) {
+            setNftStakingError(safeErrorMessage(error));
+        } finally {
+            if (showLoader) {
+                setIsNftStakingLoading(false);
+            }
+        }
+    }, [walletId]);
+
+    const runNftStakingAction = useCallback(async (
+        tokenId: string,
+        action: NftStakingActionType,
+    ) => {
+        if (!walletId || !tokenId.trim()) {
+            return;
+        }
+
+        setNftStakingActionTokenId(tokenId);
+        setNftStakingActionType(action);
+        setNftStakingError('');
+        setRequestSuccess('');
+
+        try {
+            if (action === 'stake') {
+                await api.walletV2.nftStaking.stake({ walletId, tokenId });
+                setRequestSuccess('NFT staked successfully.');
+            } else if (action === 'claim') {
+                await api.walletV2.nftStaking.claim({ walletId, tokenId });
+                setRequestSuccess('Staking reward claimed.');
+            } else {
+                await api.walletV2.nftStaking.unstake({ walletId, tokenId, claimRewards: true });
+                setRequestSuccess('NFT unstaked successfully.');
+            }
+
+            await loadNftStakingState(false);
+            haptic.success();
+        } catch (error) {
+            setNftStakingError(safeErrorMessage(error));
+            haptic.error();
+        } finally {
+            setNftStakingActionTokenId(null);
+            setNftStakingActionType(null);
+        }
+    }, [haptic, loadNftStakingState, walletId]);
+
+    const resolveFatalSessionMessage = useCallback((error?: unknown): string => {
+        if (isWalletV2ApiError(error) && error.code === 'WALLET_NOT_FOUND') {
+            return tr(
+                'wallet_v2_wallet_missing_error',
+                'Wallet was not found on server. Create or import wallet again.',
+            );
+        }
+
+        return tr(
+            'wallet_v2_session_revoked_error',
+            'Wallet session was revoked. Authenticate and import wallet again.',
+        );
+    }, [tr]);
+
+    const applyFatalSessionReset = useCallback((error?: unknown) => {
+        const currentWalletId = walletId || api.walletV2.session.getWalletId();
+        const currentDeviceId = api.walletV2.session.getDeviceId();
+
+        resetWalletV2ClientAuthState({
+            walletId: currentWalletId,
+            deviceId: currentDeviceId,
+            clearAllWalletSettings: !currentWalletId,
+        });
+
+        setWalletId(null);
+        setNftStakingState(null);
+        setIsNftStakingLoading(false);
+        setNftStakingActionTokenId(null);
+        setNftStakingActionType(null);
+        setRequestSuccess('');
+        setNftStakingError(resolveFatalSessionMessage(error));
+        router.replace('/wallet-v2');
+    }, [resolveFatalSessionMessage, router, walletId]);
+
+    useEffect(() => {
+        const unsubscribe = api.walletV2.session.onRevoked((error) => {
+            applyFatalSessionReset(error);
+        });
+
+        return unsubscribe;
+    }, [applyFatalSessionReset]);
+
+    useEffect(() => {
+        if (!walletId) {
+            setNftStakingState(null);
+            return;
+        }
+
+        void loadNftStakingState(true);
+    }, [loadNftStakingState, walletId]);
+
+    return (
+        <>
+            <TelegramBackButton href="/wallet-v2" />
+
+            <div className={styles.container}>
+                <main className={styles.main}>
+                    <section className={styles.pageHeader}>
+                        <div className={styles.pageTitleWrap}>
+                            <div className={styles.pageBadge}>
+                                <IoSparkles size={14} />
+                                <span>{tr('wallet_v2_nft_staking_title', 'NFT Staking')}</span>
+                            </div>
+                            <h1 className={styles.pageTitle}>{tr('wallet_v2_nft_staking_title', 'NFT Staking')}</h1>
+                        </div>
+
+                        <button
+                            type="button"
+                            className={styles.refreshButton}
+                            onClick={() => {
+                                void loadNftStakingState(true);
+                            }}
+                            disabled={isNftStakingLoading || !walletId}
+                            aria-label={tr('wallet_v2_refresh', 'Refresh')}
+                        >
+                            <IoRefresh size={18} className={isNftStakingLoading ? styles.refreshSpinning : ''} />
+                        </button>
+                    </section>
+
+                    <p className={styles.pageHint}>{stakingWindowHint}</p>
+
+                    {requestSuccess && (
+                        <p className={styles.statusSuccess}>{requestSuccess}</p>
+                    )}
+
+                    {nftStakingError && (
+                        <p className={styles.statusError}>{nftStakingError}</p>
+                    )}
+
+                    {!walletId ? (
+                        <section className={styles.card}>
+                            <p className={styles.emptyText}>
+                                {tr('wallet_v2_error_session_missing', 'Wallet session is missing')}
+                            </p>
+                            <Button
+                                variant="primary"
+                                onClick={() => {
+                                    haptic.selection();
+                                    router.push('/wallet-v2');
+                                }}
+                            >
+                                {tr('wallet_v2_open_wallet', 'Open Wallet V2')}
+                            </Button>
+                        </section>
+                    ) : (
+                        <section className={styles.card}>
+                            {isNftStakingLoading && !nftStakingState && (
+                                <p className={styles.hint}>
+                                    {tr('wallet_v2_loading', 'Loading...')}
+                                </p>
+                            )}
+
+                            {!isNftStakingLoading && nftStakingState && (
+                                <div className={styles.content}>
+                                    <div className={styles.summaryGrid}>
+                                        <div className={styles.summaryCell}>
+                                            <span>{tr('wallet_v2_staking_active', 'Active')}</span>
+                                            <strong>{nftStakingState.summary.activeCount}</strong>
+                                        </div>
+                                        <div className={styles.summaryCell}>
+                                            <span>{tr('wallet_v2_staking_pending', 'Pending')}</span>
+                                            <strong>{stakingSummaryPending} {stakingRewardAsset}</strong>
+                                        </div>
+                                        <div className={styles.summaryCell}>
+                                            <span>{tr('wallet_v2_staking_claimed', 'Claimed')}</span>
+                                            <strong>{stakingSummaryClaimed} {stakingRewardAsset}</strong>
+                                        </div>
+                                    </div>
+
+                                    {stakingPositions.length > 0 && (
+                                        <div className={styles.block}>
+                                            <h4 className={styles.blockTitle}>
+                                                {tr('wallet_v2_staking_positions', 'Staked now')}
+                                            </h4>
+                                            <div className={styles.list}>
+                                                {stakingPositions.map((position) => {
+                                                    const isAnyActionLoading = Boolean(nftStakingActionTokenId);
+                                                    const isClaimLoading = (
+                                                        nftStakingActionTokenId === position.tokenId
+                                                        && nftStakingActionType === 'claim'
+                                                    );
+                                                    const isUnstakeLoading = (
+                                                        nftStakingActionTokenId === position.tokenId
+                                                        && nftStakingActionType === 'unstake'
+                                                    );
+
+                                                    return (
+                                                        <div key={position.tokenId} className={styles.item}>
+                                                            <div className={styles.itemHead}>
+                                                                <p className={styles.itemTitle}>
+                                                                    {position.collectionName}
+                                                                    {position.serialNumber ? ` #${position.serialNumber}` : ''}
+                                                                </p>
+                                                                <p className={styles.itemValue}>
+                                                                    +{formatIntegerString(position.pendingReward)} {stakingRewardAsset}
+                                                                </p>
+                                                            </div>
+
+                                                            <p className={styles.meta}>
+                                                                {tr('wallet_v2_staked_at', 'Staked at')}: {formatDateTime(position.stakedAt, locale)}
+                                                            </p>
+                                                            {!position.canUnstake && (
+                                                                <p className={styles.meta}>
+                                                                    {tr('wallet_v2_unstake_available', 'Unstake available')}: {formatDateTime(position.unstakeAvailableAt, locale)}
+                                                                </p>
+                                                            )}
+                                                            {!position.owned && (
+                                                                <p className={styles.metaWarning}>
+                                                                    {tr('wallet_v2_staking_ownership_warning', 'NFT ownership changed. Claim is disabled.')}
+                                                                </p>
+                                                            )}
+
+                                                            <div className={styles.actions}>
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="secondary"
+                                                                    isLoading={isClaimLoading}
+                                                                    disabled={!position.canClaim || !position.owned || isAnyActionLoading}
+                                                                    onClick={() => {
+                                                                        void runNftStakingAction(position.tokenId, 'claim');
+                                                                    }}
+                                                                >
+                                                                    {tr('wallet_v2_staking_claim', 'Claim')}
+                                                                </Button>
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="ghost"
+                                                                    isLoading={isUnstakeLoading}
+                                                                    disabled={!position.canUnstake || isAnyActionLoading}
+                                                                    onClick={() => {
+                                                                        void runNftStakingAction(position.tokenId, 'unstake');
+                                                                    }}
+                                                                >
+                                                                    {tr('wallet_v2_staking_unstake', 'Unstake')}
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {stakingAvailable.length > 0 && (
+                                        <div className={styles.block}>
+                                            <h4 className={styles.blockTitle}>
+                                                {tr('wallet_v2_staking_available', 'Available to stake')}
+                                            </h4>
+                                            <div className={styles.list}>
+                                                {stakingAvailable.map((item) => {
+                                                    const isStakeLoading = (
+                                                        nftStakingActionTokenId === item.tokenId
+                                                        && nftStakingActionType === 'stake'
+                                                    );
+                                                    const stakeDisabled = !item.stakeWindow.canStake || Boolean(nftStakingActionTokenId);
+                                                    const stakeWindowMessage = item.stakeWindow.reason === 'not_open'
+                                                        ? `${tr('wallet_v2_stake_opens', 'Opens')}: ${formatDateTime(item.stakeWindow.opensAt, locale)}`
+                                                        : item.stakeWindow.reason === 'closed'
+                                                            ? `${tr('wallet_v2_stake_closed', 'Closed')}: ${formatDateTime(item.stakeWindow.closesAt, locale)}`
+                                                            : `${tr('wallet_v2_stake_open_until', 'Open until')}: ${formatDateTime(item.stakeWindow.closesAt, locale)}`;
+
+                                                    return (
+                                                        <div key={item.tokenId} className={styles.item}>
+                                                            <div className={styles.itemHead}>
+                                                                <p className={styles.itemTitle}>
+                                                                    {item.collectionName}
+                                                                    {item.serialNumber ? ` #${item.serialNumber}` : ''}
+                                                                </p>
+                                                                <p className={styles.meta}>
+                                                                    {item.rarity}
+                                                                </p>
+                                                            </div>
+                                                            <p className={styles.meta}>{stakeWindowMessage}</p>
+                                                            <div className={styles.actions}>
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="primary"
+                                                                    isLoading={isStakeLoading}
+                                                                    disabled={stakeDisabled}
+                                                                    onClick={() => {
+                                                                        void runNftStakingAction(item.tokenId, 'stake');
+                                                                    }}
+                                                                >
+                                                                    {tr('wallet_v2_staking_stake', 'Stake')}
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {stakingPositions.length === 0 && stakingAvailable.length === 0 && (
+                                        <div className={styles.emptyText}>
+                                            {tr('wallet_v2_staking_empty', 'No NFTs are currently eligible for staking in this wallet.')}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </section>
+                    )}
+                </main>
+            </div>
+        </>
+    );
+}

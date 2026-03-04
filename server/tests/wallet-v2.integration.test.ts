@@ -22,6 +22,28 @@ function authHeader(uid: string, telegramId: number): string {
 }
 
 async function cleanupTestUsers(userIds: string[]) {
+    await prisma.nftStakingV2.deleteMany({});
+    await prisma.transaction.deleteMany({
+        where: {
+            tokenId: {
+                startsWith: 'wv2-stake-',
+            },
+        },
+    });
+    await prisma.nftHistory.deleteMany({
+        where: {
+            tokenId: {
+                startsWith: 'wv2-stake-',
+            },
+        },
+    });
+    await prisma.nft.deleteMany({
+        where: {
+            tokenId: {
+                startsWith: 'wv2-stake-',
+            },
+        },
+    });
     await prisma.txChallengeV2.deleteMany({});
     await prisma.txV2.deleteMany({});
     await prisma.walletSessionV2.deleteMany({});
@@ -181,6 +203,74 @@ test('wallet v2 end-to-end flow: create/import/session/tx confirm', async () => 
         assert.equal(user2Balance.status, 200);
         const uzsBalanceRow = (user2Balance.body.data.balances as Array<{ asset: string; available: string }>).find((row) => row.asset === 'UZS');
         assert.equal(uzsBalanceRow?.available, '25000');
+
+        const stakingTokenId = `wv2-stake-${baseId}`;
+        const stakingAnchorAt = new Date(Date.now() - 30 * 60 * 60 * 1000);
+        await prisma.nft.create({
+            data: {
+                tokenId: stakingTokenId,
+                contractAddress: `wv2-contract-${baseId}`,
+                ownerId: user1Id,
+                modelName: 'Stake Toy',
+                serialNumber: String(baseId).slice(-6),
+                rarity: 'common',
+                tgsFile: 'stake-test.tgs',
+                status: 'active',
+                mintedAt: stakingAnchorAt,
+                lastTransferAt: stakingAnchorAt,
+            },
+        });
+
+        const stakingStateBefore = await request(app)
+            .get(`/v2/wallet/${user1WalletId}/nft-staking/state`)
+            .set('Authorization', `Bearer ${refreshedUser1AccessToken}`);
+
+        assert.equal(stakingStateBefore.status, 200);
+        const availableBeforeStake = stakingStateBefore.body.data.available as Array<{ tokenId: string }>;
+        assert.equal(availableBeforeStake.some((row) => row.tokenId === stakingTokenId), true);
+
+        const stakeNft = await request(app)
+            .post(`/v2/wallet/${user1WalletId}/nft-staking/stake`)
+            .set('Authorization', `Bearer ${refreshedUser1AccessToken}`)
+            .send({
+                tokenId: stakingTokenId,
+            });
+
+        assert.equal(stakeNft.status, 201);
+        assert.equal(stakeNft.body.success, true);
+
+        await prisma.nftStakingV2.update({
+            where: {
+                tokenId: stakingTokenId,
+            },
+            data: {
+                stakedAt: new Date(Date.now() - 26 * 60 * 60 * 1000),
+                lastClaimAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+            },
+        });
+
+        const claimNftReward = await request(app)
+            .post(`/v2/wallet/${user1WalletId}/nft-staking/claim`)
+            .set('Authorization', `Bearer ${refreshedUser1AccessToken}`)
+            .send({
+                tokenId: stakingTokenId,
+            });
+
+        assert.equal(claimNftReward.status, 200);
+        assert.equal(claimNftReward.body.success, true);
+        assert.equal(Number.parseInt(claimNftReward.body.data.claimedAmount as string, 10) > 0, true);
+
+        const unstakeNft = await request(app)
+            .post(`/v2/wallet/${user1WalletId}/nft-staking/unstake`)
+            .set('Authorization', `Bearer ${refreshedUser1AccessToken}`)
+            .send({
+                tokenId: stakingTokenId,
+                claimRewards: false,
+            });
+
+        assert.equal(unstakeNft.status, 200);
+        assert.equal(unstakeNft.body.success, true);
+        assert.equal(unstakeNft.body.data.position.status, 'unstaked');
 
         const importWallet = await request(app)
             .post('/v2/wallet/import')

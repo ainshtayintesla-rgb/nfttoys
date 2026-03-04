@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
     IoAddCircle,
     IoCheckmark,
@@ -29,6 +30,7 @@ import {
 } from '@/lib/walletV2/biometric';
 import { buildWalletV2DeviceInput, resolveWalletV2BiometricVisualType } from '@/lib/walletV2/device';
 import { isWalletV2ApiError } from '@/lib/walletV2/errors';
+import { resetWalletV2ClientAuthState } from '@/lib/walletV2/sessionLifecycle';
 import {
     getWalletV2BiometricConfirmationEnabled,
     getWalletV2MnemonicWords,
@@ -96,6 +98,18 @@ function safeErrorMessage(error: unknown): string {
             return 'Invalid PIN';
         }
 
+        if (error.code === 'WALLET_NOT_FOUND') {
+            return 'Wallet was not found on server. Create or import wallet again.';
+        }
+
+        if (
+            error.code === 'WALLET_SESSION_MISSING'
+            || error.code === 'SESSION_REVOKED'
+            || error.code === 'INVALID_REFRESH_TOKEN'
+        ) {
+            return 'Wallet session is missing. Open Wallet V2 and authenticate again.';
+        }
+
         if (error.message) {
             return error.message;
         }
@@ -111,6 +125,7 @@ function safeErrorMessage(error: unknown): string {
 export default function WalletV2SettingsPage() {
     const { t, locale } = useLanguage();
     const { haptic, webApp, isAuthenticated } = useTelegram();
+    const router = useRouter();
 
     const tr = useCallback((key: string, fallback: string): string => {
         const value = t(key as never);
@@ -276,6 +291,58 @@ export default function WalletV2SettingsPage() {
         setStatusError('');
         setStatusSuccess('');
     }, []);
+
+    const resolveFatalSessionMessage = useCallback((error?: unknown): string => {
+        if (isWalletV2ApiError(error) && error.code === 'WALLET_NOT_FOUND') {
+            return tr(
+                'wallet_v2_wallet_missing_error',
+                'Wallet was not found on server. Create or import wallet again.',
+            );
+        }
+
+        return tr(
+            'wallet_v2_session_revoked_error',
+            'Wallet session was revoked. Authenticate and import wallet again.',
+        );
+    }, [tr]);
+
+    const applyFatalSessionReset = useCallback((error?: unknown) => {
+        const currentWalletId = walletId || api.walletV2.session.getWalletId();
+        const currentDeviceId = api.walletV2.session.getDeviceId();
+
+        resetWalletV2ClientAuthState({
+            walletId: currentWalletId,
+            deviceId: currentDeviceId,
+            clearAllWalletSettings: !currentWalletId,
+        });
+
+        setWalletId(null);
+        setIsBiometricEnabled(true);
+        setIsBiometricAvailable(false);
+        setIsBiometricChecking(false);
+        setDeviceBiometricSupported(false);
+        setDevicePubKey(null);
+        setMnemonicWords([]);
+        setIsMnemonicDrawerOpen(false);
+        setIsMnemonicCopied(false);
+        setIsRememberDropdownOpen(false);
+        setPinFlow('none');
+        setPinAuthError('');
+        setIsPinAuthSubmitting(false);
+        setIsPinAuthBiometricLoading(false);
+        setPendingSensitiveAction(null);
+        setStatusSuccess('');
+        setStatusError(resolveFatalSessionMessage(error));
+        router.replace('/wallet-v2');
+    }, [resolveFatalSessionMessage, router, walletId]);
+
+    useEffect(() => {
+        const unsubscribe = api.walletV2.session.onRevoked((error) => {
+            applyFatalSessionReset(error);
+        });
+
+        return unsubscribe;
+    }, [applyFatalSessionReset]);
 
     const handleToggleBiometric = (nextValue: boolean) => {
         if (!walletId) {
