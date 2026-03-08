@@ -29,7 +29,7 @@ const ADMIN_IDS = process.env.NEXT_PUBLIC_ADMIN_IDS?.split(',') || [];
 
 export default function ProfilePage() {
     const { t } = useLanguage();
-    const { user, authUser, haptic, webApp } = useTelegram();
+    const { user, authUser, authReady, haptic, webApp } = useTelegram();
     const router = useRouter();
     const [selectedNFT, setSelectedNFT] = useState<NFTItem | null>(null);
     const [stats, setStats] = useState({ total: 0, used: 0, created: 0 });
@@ -72,7 +72,7 @@ export default function ProfilePage() {
     }, [isAdmin]);
 
     const loadNFTs = useCallback(async (silent = false) => {
-        if (!authUser?.uid || isNFTRequestInFlight.current) {
+        if (!authReady || !authUser?.uid || isNFTRequestInFlight.current) {
             return;
         }
 
@@ -95,16 +95,16 @@ export default function ProfilePage() {
             }
             isNFTRequestInFlight.current = false;
         }
-    }, [authUser?.uid]);
+    }, [authReady, authUser?.uid]);
 
     // Initial load user's NFTs
     useEffect(() => {
-        if (!authUser?.uid) {
+        if (!authReady || !authUser?.uid) {
             return;
         }
 
         void loadNFTs(false);
-    }, [authUser?.uid, loadNFTs]);
+    }, [authReady, authUser?.uid, loadNFTs]);
 
     // Live sync for profile page (recipient gets NFTs without manual reload)
     useEffect(() => {

@@ -76,7 +76,9 @@ export default async function RootLayout({
                     name="viewport"
                     content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
                 />
-                {/* Telegram Web App Script */}
+                {/* Telegram Web App Script — loaded on all pages.
+                    Outside Telegram the script is harmless but may log warnings to the console;
+                    this is expected behaviour and does not affect functionality. */}
                 <Script
                     src="https://telegram.org/js/telegram-web-app.js"
                     strategy="beforeInteractive"

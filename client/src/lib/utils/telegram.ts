@@ -331,8 +331,15 @@ const mockWebApp: IWebApp = {
 };
 
 export const getTelegramWebApp = (): IWebApp | null => {
-  if (typeof window !== 'undefined' && (window as unknown as Record<string, { WebApp?: IWebApp }>).Telegram?.WebApp) {
-    return (window as unknown as Record<string, { WebApp: IWebApp }>).Telegram.WebApp;
+  if (typeof window !== 'undefined') {
+    const webApp = (window as unknown as Record<string, { WebApp?: IWebApp }>).Telegram?.WebApp;
+
+    // The telegram-web-app.js script always creates window.Telegram.WebApp,
+    // even in a regular browser. Check initData to confirm we are actually
+    // running inside the Telegram WebApp context.
+    if (webApp && webApp.initData && webApp.initData.length > 0) {
+      return webApp;
+    }
   }
   // In development, return mock for testing
   // In production, return null (browser visitors will be redirected to Telegram)
