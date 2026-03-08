@@ -203,6 +203,8 @@ interface TelegramContextType {
     authUser: AuthUser | null;
     ready: boolean;
     isAuthenticated: boolean;
+    /** True once the JWT auth flow has completed (success or failure). */
+    authReady: boolean;
     // Haptic feedback helpers
     haptic: {
         impact: (style?: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft') => void;
@@ -227,6 +229,7 @@ const TelegramContext = createContext<TelegramContextType>({
     authUser: null,
     ready: false,
     isAuthenticated: false,
+    authReady: false,
     haptic: noopHaptic,
 });
 
@@ -237,6 +240,7 @@ export const TelegramProvider = ({ children }: { children: React.ReactNode }) =>
     const [authUser, setAuthUser] = useState<AuthUser | null>(null);
     const [ready, setReady] = useState(false);
     const [authAttempted, setAuthAttempted] = useState(false);
+    const [authReady, setAuthReady] = useState(false);
 
     // Restore persisted auth state from local storage
     useEffect(() => {
@@ -454,10 +458,20 @@ export const TelegramProvider = ({ children }: { children: React.ReactNode }) =>
         };
     }, []);
 
-    // Authenticate with backend and store local JWT when Telegram is ready
+    // If no Telegram WebApp context, mark auth as ready immediately
+    // (persisted auth from localStorage is the best we have).
+    useEffect(() => {
+        if (ready && !webApp?.initData && !authReady) {
+            setAuthReady(true);
+        }
+    }, [ready, webApp, authReady]);
+
+    // Authenticate with backend and store local JWT when Telegram is ready.
+    // Always refresh JWT via initData, even if we have a cached authUser,
+    // to ensure the token is not expired.
     useEffect(() => {
         const authenticateWithJwt = async () => {
-            if (!webApp?.initData || authAttempted || authUser) return;
+            if (!webApp?.initData || authAttempted) return;
 
             setAuthAttempted(true);
 
@@ -519,11 +533,13 @@ export const TelegramProvider = ({ children }: { children: React.ReactNode }) =>
                 clearAuthSession();
                 setAuthUser(null);
                 console.error('JWT auth error:', error);
+            } finally {
+                setAuthReady(true);
             }
         };
 
         authenticateWithJwt();
-    }, [webApp, authAttempted, authUser]);
+    }, [webApp, authAttempted]);
 
     // Haptic feedback helpers
     const haptic = React.useMemo(() => ({
@@ -550,6 +566,7 @@ export const TelegramProvider = ({ children }: { children: React.ReactNode }) =>
         authUser,
         ready,
         isAuthenticated: !!authUser,
+        authReady,
         haptic,
     };
 
