@@ -168,7 +168,7 @@ router.get('/my', standardLimit, optionalAuth, async (req, res) => {
                         COUNT(*) AS minted_count,
                         COUNT(*) FILTER (WHERE LOWER(status) != 'burned') AS active_count
                     FROM "Nft"
-                    GROUP BY COALESCE(metadata->>'collectionName', ${DEFAULT_COLLECTION_NAME})
+                    GROUP BY 1
                 `,
             ),
         ]);
