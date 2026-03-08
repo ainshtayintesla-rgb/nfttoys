@@ -32,7 +32,7 @@ export default function ActivatePage() {
     const params = useParams();
     const router = useRouter();
     const { t } = useLanguage();
-    const { user, haptic, authUser, webApp, isAuthenticated } = useTelegram();
+    const { user, haptic, authUser, authReady, webApp, isAuthenticated } = useTelegram();
     const [toy, setToy] = useState<ToyData | null>(null);
     const [status, setStatus] = useState<PageStatus>('loading');
     const [activationTime, setActivationTime] = useState<string | null>(null);
@@ -102,21 +102,12 @@ export default function ActivatePage() {
         checkQRCode();
     }, [params.token]);
 
-    // Track local JWT auth state - once authenticated, allow activation
+    // Track local JWT auth state - once authReady, allow activation
     useEffect(() => {
-        if (authUser) {
-            queueMicrotask(() => setIsAuthenticating(false));
-            console.log('✅ Local auth complete, activation enabled');
-        } else if (webApp && !isAuthenticated) {
-            // Still waiting for auth
-            const timeout = setTimeout(() => {
-                // If auth takes too long (5s), still allow activation with basic user info
-                console.log('⚠️ Auth timeout, allowing activation with basic info');
-                setIsAuthenticating(false);
-            }, 5000);
-            return () => clearTimeout(timeout);
+        if (authReady) {
+            setIsAuthenticating(false);
         }
-    }, [authUser, webApp, isAuthenticated]);
+    }, [authReady]);
 
     useEffect(() => {
         let isUnmounted = false;
