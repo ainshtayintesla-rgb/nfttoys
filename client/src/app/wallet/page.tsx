@@ -273,7 +273,7 @@ function resolveNftDisplayKind(item: Pick<NftTransactionItem, 'type' | 'directio
 
 export default function WalletPage() {
     const { t, locale } = useLanguage();
-    const { user, authUser, isAuthenticated, haptic, webApp } = useTelegram();
+    const { user, authUser, isAuthenticated, authReady, haptic, webApp } = useTelegram();
 
     const [wallet, setWallet] = useState<WalletInfo | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -320,6 +320,8 @@ export default function WalletPage() {
     }, [locale]);
 
     const loadWallet = useCallback(async () => {
+        if (!authReady) return;
+
         if (!isAuthenticated || !authUser?.uid) {
             setIsLoading(false);
             setWallet(null);
@@ -353,7 +355,7 @@ export default function WalletPage() {
         } finally {
             setIsLoading(false);
         }
-    }, [authUser?.uid, isAuthenticated, t]);
+    }, [authReady, authUser?.uid, isAuthenticated, t]);
 
     const loadHistory = useCallback(async (
         options: {
@@ -362,6 +364,8 @@ export default function WalletPage() {
         } = {},
     ) => {
         const { cursor = null, append = false } = options;
+
+        if (!authReady) return;
 
         if (!isAuthenticated || !authUser?.uid) {
             setHistoryItems([]);
@@ -424,9 +428,11 @@ export default function WalletPage() {
                 setIsHistoryLoading(false);
             }
         }
-    }, [authUser?.uid, isAuthenticated, t]);
+    }, [authReady, authUser?.uid, isAuthenticated, t]);
 
     const loadNftTransactions = useCallback(async () => {
+        if (!authReady) return;
+
         if (!isAuthenticated || !authUser?.uid) {
             setNftTransactions([]);
             setNftError(t('login_required') || 'Login required');
@@ -446,7 +452,7 @@ export default function WalletPage() {
         } finally {
             setIsNftLoading(false);
         }
-    }, [authUser?.uid, isAuthenticated, t]);
+    }, [authReady, authUser?.uid, isAuthenticated, t]);
 
     useEffect(() => {
         void loadWallet();
