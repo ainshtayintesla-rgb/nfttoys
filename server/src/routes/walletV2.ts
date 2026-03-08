@@ -78,7 +78,8 @@ const DEFAULT_COLLECTION_NAME = 'Plush pepe';
 const IMPORT_FINGERPRINT_LIMIT_PER_DAY = 20;
 const IMPORT_FINGERPRINT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-const importFingerprintAttempts = new Map<string, { count: number; resetAt: number }>();
+const PIN_VERIFY_MAX_FAILURES = 5;
+const PIN_VERIFY_LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
 
 type DevicePlatform = 'ios' | 'android' | 'web';
 
@@ -419,43 +420,55 @@ function parseDeviceInput(rawDevice: unknown): DeviceInput | null {
     };
 }
 
-function parseMnemonicFingerprintBucket(fingerprint: string): { allowed: boolean; retryAfterSec: number } {
-    const timestamp = Date.now();
-    const existing = importFingerprintAttempts.get(fingerprint);
+async function checkFingerprintAttemptDb(fingerprint: string): Promise<{ allowed: boolean; retryAfterSec: number }> {
+    const windowStart = new Date(Date.now() - IMPORT_FINGERPRINT_WINDOW_MS);
 
-    if (!existing || existing.resetAt <= timestamp) {
-        importFingerprintAttempts.set(fingerprint, {
-            count: 1,
-            resetAt: timestamp + IMPORT_FINGERPRINT_WINDOW_MS,
-        });
+    const result = await prisma.$queryRaw<[{ count: bigint }]>(
+        Prisma.sql`
+            SELECT COUNT(*) AS count
+            FROM audit_events_v2
+            WHERE event = 'wallet.import.fingerprint_attempt'
+              AND (meta->>'fingerprint') = ${fingerprint}
+              AND created_at >= ${windowStart}
+        `,
+    );
 
-        return { allowed: true, retryAfterSec: 0 };
+    const count = Number(result[0]?.count ?? 0n);
+
+    if (count >= IMPORT_FINGERPRINT_LIMIT_PER_DAY) {
+        const oldestResult = await prisma.$queryRaw<[{ oldest_at: Date | null }]>(
+            Prisma.sql`
+                SELECT MIN(created_at) AS oldest_at
+                FROM audit_events_v2
+                WHERE event = 'wallet.import.fingerprint_attempt'
+                  AND (meta->>'fingerprint') = ${fingerprint}
+                  AND created_at >= ${windowStart}
+            `,
+        );
+        const oldestAt = oldestResult[0]?.oldest_at;
+        const retryAfterSec = oldestAt
+            ? Math.max(1, Math.ceil((oldestAt.getTime() + IMPORT_FINGERPRINT_WINDOW_MS - Date.now()) / 1000))
+            : Math.ceil(IMPORT_FINGERPRINT_WINDOW_MS / 1000);
+
+        return { allowed: false, retryAfterSec };
     }
-
-    if (existing.count >= IMPORT_FINGERPRINT_LIMIT_PER_DAY) {
-        return {
-            allowed: false,
-            retryAfterSec: Math.max(1, Math.ceil((existing.resetAt - timestamp) / 1000)),
-        };
-    }
-
-    existing.count += 1;
-    importFingerprintAttempts.set(fingerprint, existing);
 
     return { allowed: true, retryAfterSec: 0 };
 }
 
-function clearMnemonicFingerprintAttempts(fingerprint: string): void {
-    importFingerprintAttempts.delete(fingerprint);
+async function recordFingerprintAttemptDb(fingerprint: string): Promise<void> {
+    await prisma.auditEventV2.create({
+        data: {
+            id: crypto.randomUUID(),
+            event: 'wallet.import.fingerprint_attempt',
+            meta: { fingerprint },
+        },
+    });
 }
 
+// Use req.ip — Express resolves this correctly based on `trust proxy` setting,
+// preventing spoofing via X-Forwarded-For injection.
 function ipFromRequest(req: Request): string | undefined {
-    const forwarded = req.headers['x-forwarded-for'];
-
-    if (typeof forwarded === 'string' && forwarded.trim()) {
-        return forwarded.split(',')[0]?.trim();
-    }
-
     return req.ip || req.socket.remoteAddress || undefined;
 }
 
@@ -1014,7 +1027,7 @@ router.post('/wallet/import', walletV2ImportLimit, requireAuth, async (req, res)
         }
 
         const fingerprint = mnemonicFingerprint(normalizedMnemonic.normalized);
-        const perFingerprintCheck = parseMnemonicFingerprintBucket(fingerprint);
+        const perFingerprintCheck = await checkFingerprintAttemptDb(fingerprint);
 
         if (!perFingerprintCheck.allowed) {
             return sendError(
@@ -1025,6 +1038,8 @@ router.post('/wallet/import', walletV2ImportLimit, requireAuth, async (req, res)
                 { retryAfterSec: perFingerprintCheck.retryAfterSec },
             );
         }
+
+        await recordFingerprintAttemptDb(fingerprint);
 
         const wallet = await prisma.walletV2.findUnique({
             where: { mnemonicFingerprint: fingerprint },
@@ -1131,8 +1146,6 @@ router.post('/wallet/import', walletV2ImportLimit, requireAuth, async (req, res)
             };
         });
 
-        clearMnemonicFingerprintAttempts(fingerprint);
-
         return res.json({
             success: true,
             data: {
@@ -1159,6 +1172,8 @@ router.post('/wallet/:id/pin/verify', strictLimit, requireWalletV2Auth, async (r
         const walletId = req.params.id;
         const userId = req.walletV2Auth?.userId || null;
         const pin = typeof req.body?.pin === 'string' ? req.body.pin.trim() : '';
+        const ipHash = hashIpAddress(ipFromRequest(req)) || null;
+        const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
 
         if (walletId !== req.walletV2Auth!.walletId) {
             return sendError(res, 403, 'FORBIDDEN', 'Wallet access denied');
@@ -1194,9 +1209,32 @@ router.post('/wallet/:id/pin/verify', strictLimit, requireWalletV2Auth, async (r
             return sendError(res, 404, 'WALLET_NOT_FOUND', 'Wallet not found');
         }
 
+        const lockoutWindowStart = new Date(Date.now() - PIN_VERIFY_LOCKOUT_WINDOW_MS);
+        const failureCountResult = await prisma.$queryRaw<[{ count: bigint }]>(
+            Prisma.sql`
+                SELECT COUNT(*) AS count
+                FROM audit_events_v2
+                WHERE event = 'wallet.pin.verify.failed'
+                  AND wallet_id = ${walletId}
+                  AND created_at >= ${lockoutWindowStart}
+            `,
+        );
+        const recentFailures = Number(failureCountResult[0]?.count ?? 0n);
+
+        if (recentFailures >= PIN_VERIFY_MAX_FAILURES) {
+            return sendError(res, 429, 'PIN_LOCKED', 'Too many failed PIN attempts. Try again later.');
+        }
+
         const pinValid = await verifySecret(globalPinRecord.pinHash, pin, globalPinRecord.pinSalt);
 
         if (!pinValid) {
+            await createAuditEvent({
+                walletId,
+                userId,
+                event: 'wallet.pin.verify.failed',
+                ipHash,
+                userAgent,
+            });
             return sendError(res, 401, 'INVALID_PIN', 'PIN is invalid');
         }
 
@@ -1216,14 +1254,19 @@ router.post('/wallet/:id/pin/change', strictLimit, requireWalletV2Auth, async (r
     try {
         const walletId = req.params.id;
         const authUserId = req.walletV2Auth?.userId || null;
+        const currentPin = typeof req.body?.currentPin === 'string' ? req.body.currentPin.trim() : '';
         const newPin = typeof req.body?.newPin === 'string' ? req.body.newPin.trim() : '';
 
         if (walletId !== req.walletV2Auth!.walletId) {
             return sendError(res, 403, 'FORBIDDEN', 'Wallet access denied');
         }
 
+        if (!isValidPin(currentPin)) {
+            return sendError(res, 400, 'CURRENT_PIN_REQUIRED', 'Current PIN is required');
+        }
+
         if (!isValidPin(newPin)) {
-            return sendError(res, 400, 'INVALID_PIN', 'PIN format is invalid');
+            return sendError(res, 400, 'INVALID_PIN', 'New PIN format is invalid');
         }
 
         const wallet = await prisma.walletV2.findUnique({
@@ -1247,6 +1290,20 @@ router.post('/wallet/:id/pin/change', strictLimit, requireWalletV2Auth, async (r
 
         if (!pinOwnerUserId) {
             return sendError(res, 401, 'UNAUTHORIZED', 'Authorization token is required');
+        }
+
+        const globalPinRecord = await getLatestGlobalPinRecord(prisma, {
+            userId: pinOwnerUserId,
+            walletId,
+        });
+
+        if (!globalPinRecord) {
+            return sendError(res, 404, 'WALLET_NOT_FOUND', 'Wallet not found');
+        }
+
+        const currentPinValid = await verifySecret(globalPinRecord.pinHash, currentPin, globalPinRecord.pinSalt);
+        if (!currentPinValid) {
+            return sendError(res, 401, 'INVALID_CURRENT_PIN', 'Current PIN is incorrect');
         }
 
         const currentTime = now();
@@ -2577,6 +2634,337 @@ router.post('/wallet/:id/nft-staking/unstake', strictLimit, requireWalletV2Auth,
     }
 });
 
+
+// ─── NFT Story Share ──────────────────────────────────────────────────────────
+// Пользователь нажал "Share Story" в TG → фронт вызвал shareToStory() →
+// затем сразу POST сюда чтобы зафиксировать факт шаринга и начислить бонус.
+//
+// Логика streak:
+//   - Если последний share был вчера (в пределах 24-48ч) → streak++
+//   - Если сегодня уже шарил (< 24ч) → 429 STORY_ALREADY_SHARED_TODAY
+//   - Если пропустил день (> 48ч) → streak сбрасывается в 1
+//
+// Бонус = rewardPerHour * streakDay (capped at 7x)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const NFT_STORY_SHARE_COOLDOWN_HOURS = 20;   // минимум между шарами (не чаще раз в 20ч)
+const NFT_STORY_SHARE_STREAK_WINDOW_HOURS = 48; // максимум для продолжения streak
+const NFT_STORY_SHARE_MAX_STREAK_MULTIPLIER = 7; // максимальный множитель
+
+function assertNftStorySharePrismaClientReady(): void {
+    const delegate = (prisma as unknown as { nftStoryShare?: unknown }).nftStoryShare;
+    if (delegate !== undefined) return;
+    throw new ApiError(
+        503,
+        'NFT_STORY_SHARE_SCHEMA_NOT_READY',
+        'NFT story share database schema is not initialized',
+    );
+}
+
+router.post('/wallet/:id/nft-staking/story-share', strictLimit, requireWalletV2Auth, async (req, res) => {
+    try {
+        const walletId = req.params.id;
+
+        if (walletId !== req.walletV2Auth!.walletId) {
+            return sendError(res, 403, 'FORBIDDEN', 'Wallet access denied');
+        }
+
+        assertNftStakingPrismaClientReady();
+        assertNftStorySharePrismaClientReady();
+
+        const tokenId = typeof req.body?.tokenId === 'string' ? req.body.tokenId.trim() : '';
+        if (!tokenId) {
+            return sendError(res, 400, 'TOKEN_ID_REQUIRED', 'tokenId is required');
+        }
+
+        const currentTime = now();
+
+        const result = await prisma.$transaction(async (tx) => {
+            // 1. Проверяем что кошелёк существует и активен
+            const walletContext = await resolveWalletNftStakingContext(tx, walletId);
+            const userId = walletContext.userId || req.walletV2Auth?.userId || null;
+
+            // 2. Проверяем что NFT застейкан этим кошельком
+            const position = await tx.nftStakingV2.findFirst({
+                where: { walletId, tokenId, status: 'active' },
+                select: {
+                    id: true,
+                    rewardPerHour: true,
+                    nft: {
+                        select: {
+                            rarity: true,
+                            ownerId: true,
+                            ownerWallet: true,
+                        },
+                    },
+                },
+            });
+
+            if (!position) {
+                throw new ApiError(404, 'STAKE_POSITION_NOT_FOUND', 'Active staking position not found for this NFT');
+            }
+
+            // 2b. Проверяем что NFT всё ещё принадлежит этому кошельку
+            if (position.nft) {
+                const owned = isNftOwnedByWallet({
+                    nftOwnerId: position.nft.ownerId,
+                    nftOwnerWallet: position.nft.ownerWallet,
+                    ownership: { userId: walletContext.userId || req.walletV2Auth?.userId || null, mainAddress: walletContext.mainAddress },
+                });
+                if (!owned) {
+                    throw new ApiError(403, 'NFT_NOT_OWNED', 'NFT no longer belongs to this wallet');
+                }
+            }
+
+            // 3. Проверяем cooldown — нельзя шарить чаще раз в 20 часов
+            const lastShare = await (tx as unknown as { nftStoryShare: { findFirst: Function } }).nftStoryShare.findFirst({
+                where: { walletId, tokenId },
+                orderBy: { sharedAt: 'desc' },
+                select: { id: true, sharedAt: true, streakDay: true },
+            });
+
+            const cooldownMs = NFT_STORY_SHARE_COOLDOWN_HOURS * 60 * 60 * 1000;
+            const streakWindowMs = NFT_STORY_SHARE_STREAK_WINDOW_HOURS * 60 * 60 * 1000;
+
+            if (lastShare) {
+                const msSinceLast = currentTime.getTime() - lastShare.sharedAt.getTime();
+                if (msSinceLast < cooldownMs) {
+                    const nextShareAt = new Date(lastShare.sharedAt.getTime() + cooldownMs);
+                    throw new ApiError(429, 'STORY_ALREADY_SHARED_TODAY', 'Already shared story for this NFT today', {
+                        nextShareAt: nextShareAt.toISOString(),
+                    });
+                }
+            }
+
+            // 4. Вычисляем streak
+            let streakDay = 1;
+            if (lastShare) {
+                const msSinceLast = currentTime.getTime() - lastShare.sharedAt.getTime();
+                if (msSinceLast <= streakWindowMs) {
+                    // Продолжаем streak
+                    streakDay = Math.min(lastShare.streakDay + 1, 99);
+                }
+                // Иначе streak сбрасывается в 1
+            }
+
+            // 5. Вычисляем бонус
+            const rewardPerHour = position.rewardPerHour > 0n
+                ? position.rewardPerHour
+                : resolveNftStakingRewardPerHour(position.nft?.rarity);
+
+            const multiplier = BigInt(Math.min(streakDay, NFT_STORY_SHARE_MAX_STREAK_MULTIPLIER));
+            const bonusAmount = rewardPerHour * multiplier;
+
+            // 6. Записываем share
+            const shareId = crypto.randomUUID();
+            const shareRecord = await (tx as unknown as { nftStoryShare: { create: Function } }).nftStoryShare.create({
+                data: {
+                    id: shareId,
+                    walletId,
+                    tokenId,
+                    userId,
+                    sharedAt: currentTime,
+                    bonusAmount,
+                    streakDay,
+                    createdAt: currentTime,
+                },
+            });
+
+            // 7. Начисляем бонус на баланс (если > 0)
+            let balanceRow = null;
+            let txRecord = null;
+
+            if (bonusAmount > 0n) {
+                await tx.balanceV2.upsert({
+                    where: { walletId_asset: { walletId, asset: NFT_STAKING_REWARD_ASSET } },
+                    update: {
+                        available: { increment: bonusAmount },
+                        updatedAt: currentTime,
+                    },
+                    create: {
+                        walletId,
+                        asset: NFT_STAKING_REWARD_ASSET,
+                        available: bonusAmount,
+                        locked: 0n,
+                        updatedAt: currentTime,
+                    },
+                });
+
+                const txId = crypto.randomUUID();
+                txRecord = await tx.txV2.create({
+                    data: {
+                        id: txId,
+                        walletId,
+                        fromAddress: WALLET_V2_STAKING_REWARD_SOURCE_ADDRESS,
+                        toAddress: walletContext.mainAddress,
+                        asset: NFT_STAKING_REWARD_ASSET,
+                        amount: bonusAmount,
+                        status: 'completed',
+                        meta: {
+                            source: 'nft_story_share_bonus',
+                            tokenId,
+                            streakDay,
+                        },
+                        createdAt: currentTime,
+                        confirmedAt: currentTime,
+                        completedAt: currentTime,
+                    },
+                    select: {
+                        id: true,
+                        status: true,
+                        asset: true,
+                        amount: true,
+                        createdAt: true,
+                        completedAt: true,
+                    },
+                });
+
+                const updatedBalance = await tx.balanceV2.findUnique({
+                    where: { walletId_asset: { walletId, asset: NFT_STAKING_REWARD_ASSET } },
+                    select: { asset: true, available: true, locked: true, updatedAt: true },
+                });
+
+                if (updatedBalance) {
+                    balanceRow = {
+                        asset: updatedBalance.asset,
+                        available: updatedBalance.available.toString(),
+                        locked: updatedBalance.locked.toString(),
+                        updatedAt: updatedBalance.updatedAt.toISOString(),
+                    };
+                }
+            }
+
+            return { shareRecord, bonusAmount, streakDay, balanceRow, txRecord };
+        });
+
+        return res.json({
+            success: true,
+            data: {
+                walletId,
+                tokenId,
+                rewardAsset: NFT_STAKING_REWARD_ASSET,
+                streakDay: result.streakDay,
+                bonusAmount: result.bonusAmount.toString(),
+                sharedAt: result.shareRecord.sharedAt.toISOString(),
+                balance: result.balanceRow,
+                tx: result.txRecord ? {
+                    id: result.txRecord.id,
+                    status: result.txRecord.status,
+                    asset: result.txRecord.asset,
+                    amount: result.txRecord.amount.toString(),
+                    createdAt: result.txRecord.createdAt.toISOString(),
+                    completedAt: result.txRecord.completedAt?.toISOString() || null,
+                } : null,
+            },
+        });
+    } catch (error) {
+        if (error instanceof ApiError) {
+            return sendError(res, error.statusCode, error.code, error.message, error.details);
+        }
+
+        const schemaErrorResponse = handleNftStakingSchemaNotReadyError({
+            res,
+            error,
+            context: 'Wallet v2 nft story share',
+        });
+
+        if (schemaErrorResponse) return schemaErrorResponse;
+
+        console.error('Wallet v2 nft story share error:', error);
+        return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to record story share');
+    }
+});
+
+// ─── GET story-share state для конкретного NFT ────────────────────────────────
+router.get('/wallet/:id/nft-staking/story-share/:tokenId', standardLimit, requireWalletV2Auth, async (req, res) => {
+    try {
+        const walletId = req.params.id;
+        const tokenId = req.params.tokenId?.trim() || '';
+
+        if (walletId !== req.walletV2Auth!.walletId) {
+            return sendError(res, 403, 'FORBIDDEN', 'Wallet access denied');
+        }
+
+        if (!tokenId) {
+            return sendError(res, 400, 'TOKEN_ID_REQUIRED', 'tokenId is required');
+        }
+
+        assertNftStakingPrismaClientReady();
+        assertNftStorySharePrismaClientReady();
+
+        const currentTime = now();
+        const cooldownMs = NFT_STORY_SHARE_COOLDOWN_HOURS * 60 * 60 * 1000;
+        const streakWindowMs = NFT_STORY_SHARE_STREAK_WINDOW_HOURS * 60 * 60 * 1000;
+
+        const lastShare = await (prisma as unknown as { nftStoryShare: { findFirst: Function } }).nftStoryShare.findFirst({
+            where: { walletId, tokenId },
+            orderBy: { sharedAt: 'desc' },
+            select: { id: true, sharedAt: true, streakDay: true, bonusAmount: true },
+        });
+
+        const totalShares = await (prisma as unknown as { nftStoryShare: { count: Function } }).nftStoryShare.count({
+            where: { walletId, tokenId },
+        });
+
+        let canShare = true;
+        let nextShareAt: string | null = null;
+        let currentStreak = 1;
+        let streakActive = false;
+
+        if (lastShare) {
+            const msSinceLast = currentTime.getTime() - lastShare.sharedAt.getTime();
+            if (msSinceLast < cooldownMs) {
+                canShare = false;
+                nextShareAt = new Date(lastShare.sharedAt.getTime() + cooldownMs).toISOString();
+            }
+            streakActive = msSinceLast <= streakWindowMs;
+            currentStreak = streakActive ? lastShare.streakDay : 1;
+        }
+
+        const nextStreakDay = streakActive ? Math.min(currentStreak + 1, 99) : 1;
+        const nextMultiplier = Math.min(nextStreakDay, NFT_STORY_SHARE_MAX_STREAK_MULTIPLIER);
+
+        // Проверяем есть ли активная позиция стейкинга
+        const activePosition = await (prisma as unknown as { nftStakingV2: { findFirst: Function } }).nftStakingV2.findFirst({
+            where: { walletId, tokenId, status: 'active' },
+            select: { id: true },
+        });
+
+        const nextBonusAmount = activePosition
+            ? (() => {
+                // Для отображения следующего бонуса нужен rewardPerHour
+                return null; // будет вычислен на фронте из position.rewardPerHour * nextMultiplier
+            })()
+            : null;
+
+        return res.json({
+            success: true,
+            data: {
+                walletId,
+                tokenId,
+                isStaked: Boolean(activePosition),
+                canShare: Boolean(activePosition) && canShare,
+                nextShareAt,
+                currentStreak,
+                streakActive,
+                nextMultiplier,
+                totalShares,
+                lastSharedAt: lastShare ? lastShare.sharedAt.toISOString() : null,
+                cooldownHours: NFT_STORY_SHARE_COOLDOWN_HOURS,
+                streakWindowHours: NFT_STORY_SHARE_STREAK_WINDOW_HOURS,
+                maxStreakMultiplier: NFT_STORY_SHARE_MAX_STREAK_MULTIPLIER,
+            },
+        });
+    } catch (error) {
+        if (error instanceof ApiError) {
+            return sendError(res, error.statusCode, error.code, error.message, error.details);
+        }
+
+        console.error('Wallet v2 nft story share state error:', error);
+        return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch story share state');
+    }
+});
+
 router.post('/wallet/:id/topup-testnet', strictLimit, requireWalletV2Auth, async (req, res) => {
     try {
         const walletId = req.params.id;
@@ -2827,6 +3215,7 @@ router.post('/tx/create', strictLimit, requireWalletV2Auth, async (req, res) => 
                         created: false,
                         tx: existingTx,
                         challenge: existingChallenge,
+                        challengeNonce: null,
                     };
                 }
 
@@ -2853,6 +3242,7 @@ router.post('/tx/create', strictLimit, requireWalletV2Auth, async (req, res) => 
                     created: false,
                     tx: existingTx,
                     challenge,
+                    challengeNonce,
                 };
             }
 
@@ -2872,6 +3262,10 @@ router.post('/tx/create', strictLimit, requireWalletV2Auth, async (req, res) => 
 
             if (!recipientAddress?.walletId || !recipientAddress.address) {
                 throw new ApiError(404, 'RECIPIENT_NOT_FOUND', 'Recipient wallet not found');
+            }
+
+            if (recipientAddress.walletId === walletId) {
+                throw new ApiError(400, 'SELF_TRANSFER', 'Cannot transfer to your own wallet');
             }
 
             const debitResult = await tx.balanceV2.updateMany({
@@ -2955,6 +3349,7 @@ router.post('/tx/create', strictLimit, requireWalletV2Auth, async (req, res) => 
                 created: true,
                 tx: createdTx,
                 challenge,
+                challengeNonce,
             };
         });
 
@@ -2974,6 +3369,7 @@ router.post('/tx/create', strictLimit, requireWalletV2Auth, async (req, res) => 
                     challengeId: txResult.challenge.id,
                     expiresAt: txResult.challenge.expiresAt.toISOString(),
                     methods: ['biometric', 'pin'],
+                    challengeNonce: txResult.challengeNonce ?? null,
                 },
             },
         });
@@ -3041,6 +3437,7 @@ router.post('/tx/confirm', strictLimit, requireWalletV2Auth, async (req, res) =>
                     id: true,
                     txId: true,
                     sessionId: true,
+                    nonceHash: true,
                     status: true,
                     expiresAt: true,
                     attempts: true,
@@ -3133,8 +3530,11 @@ router.post('/tx/confirm', strictLimit, requireWalletV2Auth, async (req, res) =>
                 const signature = typeof (authPayload as { signature?: unknown }).signature === 'string'
                     ? (authPayload as { signature: string }).signature.trim()
                     : '';
+                const receivedNonce = typeof (authPayload as { challengeNonce?: unknown }).challengeNonce === 'string'
+                    ? (authPayload as { challengeNonce: string }).challengeNonce.trim()
+                    : '';
 
-                if (!deviceId || !signature) {
+                if (!deviceId || !signature || !receivedNonce) {
                     throw new ApiError(400, 'INVALID_BIOMETRIC', 'Biometric payload is invalid');
                 }
 
@@ -3146,10 +3546,14 @@ router.post('/tx/confirm', strictLimit, requireWalletV2Auth, async (req, res) =>
                     throw new ApiError(401, 'INVALID_BIOMETRIC', 'Biometric authentication is not configured');
                 }
 
+                if (!challenge.nonceHash || hashChallengeNonce(receivedNonce) !== challenge.nonceHash) {
+                    throw new ApiError(401, 'INVALID_BIOMETRIC', 'Biometric nonce is invalid');
+                }
+
                 authValid = verifyEd25519Signature(
                     session.devicePubkey,
                     signature,
-                    buildChallengeMessage(txId, challengeId),
+                    buildChallengeMessage(txId, challengeId, receivedNonce),
                 );
             }
 

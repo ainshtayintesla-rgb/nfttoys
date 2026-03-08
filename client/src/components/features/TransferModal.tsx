@@ -116,6 +116,19 @@ const truncateCenterValue = (value: string, start: number, end: number): string 
     return `${value.slice(0, start)}...${value.slice(-end)}`;
 };
 
+const formatRecipientCompact = (value: string): string => {
+    const normalized = value.trim();
+    if (!normalized) {
+        return '';
+    }
+
+    if (normalized.length <= 12) {
+        return normalized;
+    }
+
+    return `${normalized.slice(0, 6)}...${normalized.slice(-6)}`;
+};
+
 export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModalProps) => {
     const { authUser, haptic, webApp, user } = useTelegram();
     const { t } = useLanguage();
@@ -480,9 +493,9 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
         closeModal({ reset: true, clearDraft: true });
     };
 
-    const displayRecipient = recipientType === 'username'
-        ? `@${(isExactUsernameMatch && resolvedUsername) ? resolvedUsername : username}`
-        : walletRecipient;
+    const displayRecipientWallet = recipientType === 'username' ? suggestedWallet : walletRecipient;
+    const displayRecipient = formatRecipientCompact(displayRecipientWallet)
+        || `@${(isExactUsernameMatch && resolvedUsername) ? resolvedUsername : username}`;
 
     const suggestionDisplayName = resolvedUsername
         ? `@${resolvedUsername}`
@@ -642,7 +655,7 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                                         usernameValue={usernameInput}
                                         walletValue={walletBody}
                                         usernamePlaceholder="username"
-                                        walletPlaceholder={'X'.repeat(WALLET_BODY_MAX_LENGTH)}
+                                        walletPlaceholder="Адрес"
                                         onUsernameChange={(rawValue) => {
                                             const nextUsername = sanitizeUsernameInput(rawValue);
                                             setUsernameInput(nextUsername);
@@ -669,7 +682,7 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                                             setError('');
                                         }}
                                         usernameAvatarUrl={isExactUsernameMatch ? (resolvedRecipient?.photoUrl || null) : null}
-                                        walletPrefix={WALLET_FRIENDLY_PREFIX}
+                                        walletPrefix=""
                                         walletSuggestion={recipientType === 'wallet' && suggestedWallet
                                             ? {
                                                 displayName: suggestionDisplayName,

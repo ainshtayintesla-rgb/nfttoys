@@ -156,6 +156,7 @@ const MNEMONIC_WORDS_COUNT = 24;
 const MAX_AMOUNT_INPUT_DIGITS = 18;
 const ASSET_REGEX = /^[A-Z0-9_]{2,16}$/;
 const WALLET_V2_BALANCE_CACHE_PREFIX = 'wallet_v2_balance_cache:';
+const WALLET_V2_BALANCE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 function isValidPin(pin: string): boolean {
     return /^[0-9]{4}$/.test(pin);
@@ -324,6 +325,7 @@ function formatHistoryTime(value: string, locale: string): string {
 type WalletV2BalanceCacheEntry = {
     address: string | null;
     balances: WalletV2BalanceRow[];
+    cachedAt?: number;
 };
 
 function readWalletV2BalanceCache(walletId: string | null): WalletV2BalanceCacheEntry | null {
@@ -341,7 +343,15 @@ function readWalletV2BalanceCache(walletId: string | null): WalletV2BalanceCache
         const parsed = JSON.parse(raw) as {
             address?: unknown;
             balances?: unknown;
+            cachedAt?: unknown;
         };
+
+        // Invalidate stale cache entries.
+        const cachedAt = typeof parsed.cachedAt === 'number' ? parsed.cachedAt : 0;
+        if (Date.now() - cachedAt > WALLET_V2_BALANCE_CACHE_TTL_MS) {
+            localStorage.removeItem(`${WALLET_V2_BALANCE_CACHE_PREFIX}${walletId}`);
+            return null;
+        }
         const cachedAddress = typeof parsed.address === 'string' && parsed.address.trim()
             ? parsed.address.trim()
             : null;
@@ -389,7 +399,7 @@ function writeWalletV2BalanceCache(walletId: string | null, payload: WalletV2Bal
     try {
         localStorage.setItem(
             `${WALLET_V2_BALANCE_CACHE_PREFIX}${walletId}`,
-            JSON.stringify(payload),
+            JSON.stringify({ ...payload, cachedAt: Date.now() }),
         );
     } catch {
         // Ignore localStorage quota/runtime errors.
@@ -1231,12 +1241,8 @@ export default function WalletV2Page() {
 
     useEffect(() => {
         if (
-            hasInitialGateResolved
-            || !isAuthenticated
+            !isAuthenticated
             || !walletId
-            || pinAuthFlow !== 'none'
-            || isSubmitting
-            || isDrawerSubmitting
         ) {
             return;
         }
@@ -1293,12 +1299,8 @@ export default function WalletV2Page() {
         };
     }, [
         applyFatalSessionReset,
-        hasInitialGateResolved,
         initialBootstrapStatus,
         isAuthenticated,
-        isDrawerSubmitting,
-        isSubmitting,
-        pinAuthFlow,
         tr,
         walletId,
     ]);
@@ -1309,10 +1311,6 @@ export default function WalletV2Page() {
         }
 
         if (walletId) {
-            if (initialBootstrapStatus !== 'ready') {
-                return;
-            }
-
             const rememberedAuthValid = isWalletV2RememberedAuthValid(walletId);
 
             if (!rememberedAuthValid) {
@@ -1335,7 +1333,6 @@ export default function WalletV2Page() {
         hasInitialGateResolved,
         isAuthenticated,
         isDrawerSubmitting,
-        initialBootstrapStatus,
         isNewUser,
         isSubmitting,
         pinAuthFlow,
@@ -1349,6 +1346,13 @@ export default function WalletV2Page() {
     const closeMnemonicDrawer = useCallback(() => {
         setIsMnemonicDrawerOpen(false);
         setIsMnemonicCopied(false);
+        // Clear mnemonic from localStorage after user closes the drawer.
+        // The phrase must not persist in storage beyond the initial reveal.
+        const currentWalletId = walletId || api.walletV2.session.getWalletId();
+        if (currentWalletId) {
+            setWalletV2MnemonicWords(currentWalletId, []);
+        }
+        setMnemonicWords([]);
     }, []);
 
     const resetSendForm = useCallback(() => {
@@ -2142,9 +2146,9 @@ export default function WalletV2Page() {
                 ? tr('wallet_v2_unlock_subtitle', 'Use biometric or PIN to continue.')
                 : tr('wallet_v2_pin_confirm_subtitle', 'Authorize transfer using biometric or PIN.');
 
-    const isBootstrapGateActive = Boolean(isAuthenticated && walletId && !hasInitialGateResolved);
-    const isBootstrapChecking = initialBootstrapStatus === 'idle' || initialBootstrapStatus === 'checking';
-    const isMainView = Boolean(isAuthenticated && walletId) && !isBootstrapGateActive;
+    const isBootstrapGateActive = Boolean(isAuthenticated && walletId && hasInitialGateResolved && initialBootstrapStatus === 'retry');
+    const isBootstrapChecking = false;
+    const isMainView = Boolean(isAuthenticated && walletId) && hasInitialGateResolved && initialBootstrapStatus !== 'retry';
     const isAuthRequiredView = !isAuthenticated;
 
     return (

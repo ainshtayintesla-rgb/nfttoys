@@ -69,6 +69,19 @@ function safeErrorMessage(error: unknown): string {
     return '';
 }
 
+function formatRecipientCompact(value: string): string {
+    const normalized = value.trim();
+    if (!normalized) {
+        return '';
+    }
+
+    if (normalized.length <= 12) {
+        return normalized;
+    }
+
+    return `${normalized.slice(0, 6)}...${normalized.slice(-6)}`;
+}
+
 function createClientTransactionId(): string {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
         return crypto.randomUUID();
@@ -315,16 +328,8 @@ export function BalanceTopupTab() {
             }
         }
 
-        const confirmRecipientDisplay = recipientType === 'username'
-            ? (() => {
-                const username = sanitizeUsernameInput(nextTarget.user?.username || normalizedUsername);
-                if (username) {
-                    return `@${username}`;
-                }
-
-                return nextTarget.walletFriendly;
-            })()
-            : nextTarget.walletFriendly;
+        const confirmRecipientDisplay = formatRecipientCompact(nextTarget.walletFriendly || '')
+            || (nextTarget.walletFriendly || '—');
 
         setIsConfirmSucceeded(false);
         setConfirmPayload({
@@ -387,7 +392,7 @@ export function BalanceTopupTab() {
                     usernameValue={usernameInput}
                     walletValue={walletBodyInput}
                     usernamePlaceholder={t('wallet_send_username_placeholder') || 'username'}
-                    walletPlaceholder={t('wallet_send_wallet_placeholder') || 'X'.repeat(WALLET_FRIENDLY_BODY_LENGTH)}
+                    walletPlaceholder="Адрес"
                     onUsernameChange={(rawValue) => {
                         const nextUsername = sanitizeUsernameInput(rawValue);
                         setUsernameInput(nextUsername);
@@ -413,7 +418,7 @@ export function BalanceTopupTab() {
                         setError('');
                         setSuccess('');
                     }}
-                    walletPrefix={WALLET_FRIENDLY_PREFIX}
+                    walletPrefix=""
                     usernameAvatarUrl={hasExactUsernameMatch ? (usernameTarget?.user?.photoUrl || null) : null}
                     walletSuggestion={recipientType === 'wallet' && suggestedWallet
                         ? {

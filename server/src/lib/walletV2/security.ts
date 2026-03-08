@@ -239,8 +239,8 @@ function decodeBase64Url(value: string): Buffer | null {
     }
 }
 
-export function buildChallengeMessage(txId: string, challengeId: string): Buffer {
-    return Buffer.from(`${txId}:${challengeId}`, 'utf8');
+export function buildChallengeMessage(txId: string, challengeId: string, challengeNonce: string): Buffer {
+    return Buffer.from(`${txId}:${challengeId}:${challengeNonce}`, 'utf8');
 }
 
 export function hashChallengeNonce(challengeNonce: string): string {

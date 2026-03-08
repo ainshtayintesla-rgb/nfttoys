@@ -234,6 +234,46 @@ export interface WalletV2NftStakingUnstakeData {
     };
 }
 
+
+export interface WalletV2NftStoryShareData {
+    walletId: string;
+    tokenId: string;
+    rewardAsset: string;
+    streakDay: number;
+    bonusAmount: string;
+    sharedAt: string;
+    balance: {
+        asset: string;
+        available: string;
+        locked: string;
+        updatedAt: string;
+    } | null;
+    tx: {
+        id: string;
+        status: string;
+        asset: string;
+        amount: string;
+        createdAt: string;
+        completedAt: string | null;
+    } | null;
+}
+
+export interface WalletV2NftStoryShareStateData {
+    walletId: string;
+    tokenId: string;
+    isStaked: boolean;
+    canShare: boolean;
+    nextShareAt: string | null;
+    currentStreak: number;
+    streakActive: boolean;
+    nextMultiplier: number;
+    totalShares: number;
+    lastSharedAt: string | null;
+    cooldownHours: number;
+    streakWindowHours: number;
+    maxStreakMultiplier: number;
+}
+
 export interface WalletV2TestnetTopupData {
     walletId: string;
     network: 'mainnet' | 'testnet';
@@ -422,6 +462,21 @@ async function requestWalletV2<T>(path: string, options: WalletV2RequestOptions 
     }
 
     if (requiresWalletSession && !headers.has('Authorization')) {
+        // Proactive refresh: if token expires within 30 seconds, refresh before sending request
+        const session = getWalletV2Session();
+        const PROACTIVE_REFRESH_THRESHOLD_MS = 30 * 1000;
+        if (
+            session?.accessToken &&
+            session?.accessTokenExpiresAt &&
+            Date.now() + PROACTIVE_REFRESH_THRESHOLD_MS >= session.accessTokenExpiresAt
+        ) {
+            try {
+                await refreshWalletV2SessionInternal();
+            } catch {
+                // If proactive refresh fails, proceed with current token — 401 handler will retry
+            }
+        }
+
         const accessToken = getWalletV2AccessToken();
 
         if (accessToken) {
@@ -743,6 +798,26 @@ export const walletV2Api = {
 
             setWalletV2WalletId(response.data.walletId);
 
+            return response.data;
+        },
+
+        async storyShare(payload: { walletId?: string; tokenId: string }): Promise<WalletV2NftStoryShareData> {
+            const resolvedWalletId = resolveWalletId(payload.walletId);
+            const response = await walletV2Fetch<WalletV2ApiEnvelope<WalletV2NftStoryShareData>>(
+                `/wallet/${encodeURIComponent(resolvedWalletId)}/nft-staking/story-share`,
+                {
+                    method: 'POST',
+                    body: JSON.stringify({ tokenId: payload.tokenId }),
+                },
+            );
+            return response.data;
+        },
+
+        async storyShareState(payload: { walletId?: string; tokenId: string }): Promise<WalletV2NftStoryShareStateData> {
+            const resolvedWalletId = resolveWalletId(payload.walletId);
+            const response = await walletV2Fetch<WalletV2ApiEnvelope<WalletV2NftStoryShareStateData>>(
+                `/wallet/${encodeURIComponent(resolvedWalletId)}/nft-staking/story-share/${encodeURIComponent(payload.tokenId)}`,
+            );
             return response.data;
         },
     },

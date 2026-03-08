@@ -713,6 +713,12 @@ export default function WalletV2SettingsPage() {
                 open={isMnemonicDrawerOpen}
                 onClose={() => {
                     setIsMnemonicDrawerOpen(false);
+                    // Clear mnemonic from localStorage after user closes the drawer.
+                    const currentWalletId = walletId || api.walletV2.session.getWalletId();
+                    if (currentWalletId) {
+                        setWalletV2MnemonicWords(currentWalletId, []);
+                    }
+                    setMnemonicWords([]);
                 }}
                 title={tr('wallet_v2_settings_recovery_drawer_title', 'Recovery phrase')}
                 overlayClassName={styles.drawerOverlay}
