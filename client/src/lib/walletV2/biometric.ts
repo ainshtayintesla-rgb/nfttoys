@@ -371,6 +371,8 @@ export async function enableWalletV2Biometric(params: {
         const tokenUpdated = await updateBiometricToken(manager, keyPair.privateKey);
 
         if (!tokenUpdated) {
+            // Clear any stale pubKey from localStorage — token and pubKey must stay in sync.
+            localStorage.removeItem(resolveStorageKey(params.walletDeviceId));
             return {
                 biometricSupported: false,
                 devicePubKey: null,

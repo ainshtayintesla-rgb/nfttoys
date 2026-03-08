@@ -236,6 +236,19 @@ function sanitizeSendMemo(value: string): string {
     return value.slice(0, SEND_MEMO_MAX_LENGTH);
 }
 
+function formatRecipientCompact(value: string): string {
+    const normalized = value.trim();
+    if (!normalized) {
+        return '';
+    }
+
+    if (normalized.length <= 12) {
+        return normalized;
+    }
+
+    return `${normalized.slice(0, 6)}...${normalized.slice(-6)}`;
+}
+
 function isMintLikeType(type: string): boolean {
     const normalized = type.trim().toLowerCase();
     return normalized === 'mint' || normalized === 'minted' || normalized === 'activated';
@@ -568,9 +581,11 @@ export default function WalletPage() {
         && hasSendRecipient
         && sendTotalDebit <= (wallet?.balance || 0),
     );
-    const sendRecipientDisplay = recipientType === 'username'
-        ? `@${resolvedLookupUsername || normalizedUsername}`
+    const sendRecipientResolvedWallet = recipientType === 'username'
+        ? suggestedWallet
         : `${WALLET_FRIENDLY_PREFIX}${normalizedWalletBody}`;
+    const sendRecipientDisplay = formatRecipientCompact(sendRecipientResolvedWallet)
+        || `@${resolvedLookupUsername || normalizedUsername}`;
     const sendMemoLength = sendMemoInput.length;
 
     const groupedHistory = useMemo<WalletHistoryGroup[]>(() => {
@@ -1669,7 +1684,7 @@ export default function WalletPage() {
                                         usernameValue={usernameInput}
                                         walletValue={walletBodyInput}
                                         usernamePlaceholder={t('wallet_send_username_placeholder') || 'username'}
-                                        walletPlaceholder={t('wallet_send_wallet_placeholder') || 'X'.repeat(WALLET_FRIENDLY_BODY_LENGTH)}
+                                        walletPlaceholder="Адрес"
                                         onUsernameChange={(rawValue) => {
                                             const nextUsername = sanitizeUsernameInput(rawValue);
                                             setUsernameInput(nextUsername);
@@ -1694,7 +1709,7 @@ export default function WalletPage() {
                                             setWalletBodyInput(nextWalletBody);
                                             setDrawerError('');
                                         }}
-                                        walletPrefix={WALLET_FRIENDLY_PREFIX}
+                                        walletPrefix=""
                                         usernameAvatarUrl={hasExactUsernameMatch ? (recipientLookup?.photoUrl || null) : null}
                                         walletSuggestion={recipientType === 'wallet' && suggestedWallet
                                             ? {

@@ -1,53 +1,43 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 
-// Allowed origins for CORS/CSRF protection
-const getAllowedOrigins = (): string[] => {
-    const origins = [
-        'https://nfttoys.shop',
-        'https://www.nfttoys.shop',
-        'https://web.telegram.org',
-        'https://telegram.org',
-    ];
+const isDev = process.env.NODE_ENV === 'development';
 
-    // In development, allow localhost
-    if (process.env.NODE_ENV === 'development') {
-        origins.push('http://localhost:3000');
-        origins.push('http://127.0.0.1:3000');
+/**
+ * Single source of truth for allowed origins — used by both CORS (app.ts) and CSRF middleware.
+ */
+export function getAllowedOrigins(): string[] {
+    const fromEnv = (process.env.ALLOWED_ORIGINS || '')
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean);
+
+    if (isDev && fromEnv.length === 0) {
+        return ['http://localhost:3000', 'http://127.0.0.1:3000'];
     }
 
-    // Add custom origins from env
-    const customOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
-    origins.push(...customOrigins);
-
-    return origins;
-};
-
-// Check if origin is cloudflared tunnel
-function isCloudflaredOrigin(origin: string): boolean {
-    return origin.endsWith('.trycloudflare.com');
+    return fromEnv;
 }
 
-// Check if origin is ngrok tunnel
-function isNgrokOrigin(origin: string): boolean {
-    return origin.endsWith('.ngrok.io') || origin.endsWith('.ngrok-free.app');
+// Dev-only: allow cloudflare and ngrok tunnels
+function isDevTunnelOrigin(origin: string): boolean {
+    if (!isDev) return false;
+    return origin.endsWith('.trycloudflare.com')
+        || origin.endsWith('.ngrok.io')
+        || origin.endsWith('.ngrok-free.app');
 }
 
 /**
- * Validates Origin header against allowed origins
+ * Validates Origin header against allowed origins.
  */
 export function validateOrigin(req: Request): boolean {
     const origin = req.headers.origin;
 
-    // Allow requests without origin (same-origin, mobile apps)
+    // Allow requests without origin (server-side proxy, mobile apps, curl)
     if (!origin) return true;
 
-    const allowedOrigins = getAllowedOrigins();
-
-    // Check if origin is allowed OR is a dev tunnel
-    return allowedOrigins.some(allowed => origin.startsWith(allowed))
-        || isCloudflaredOrigin(origin)
-        || isNgrokOrigin(origin);
+    return getAllowedOrigins().some((allowed) => origin === allowed)
+        || isDevTunnelOrigin(origin);
 }
 
 /**

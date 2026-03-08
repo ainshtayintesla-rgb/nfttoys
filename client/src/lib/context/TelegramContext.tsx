@@ -317,13 +317,11 @@ export const TelegramProvider = ({ children }: { children: React.ReactNode }) =>
 
             requestAppFullscreen(app);
 
-            // On Android Telegram WebView disabling vertical swipes can break page scrolling.
-            // Keep swipe-to-close disabled only on iOS where this gesture is most disruptive.
+            // Disable vertical swipes on ALL platforms to prevent interference with page scrolling.
+            // On Android, enableVerticalSwipes() activates swipe-to-close which intercepts scroll gestures.
             try {
-                if (app.platform === 'ios' && typeof app.disableVerticalSwipes === 'function') {
+                if (typeof app.disableVerticalSwipes === 'function') {
                     app.disableVerticalSwipes();
-                } else if (typeof app.enableVerticalSwipes === 'function') {
-                    app.enableVerticalSwipes();
                 }
             } catch {
                 console.log('vertical swipe controls not available');

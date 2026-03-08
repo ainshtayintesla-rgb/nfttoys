@@ -22,6 +22,9 @@ import { csrfProtection } from '../middleware/csrfProtection';
 const router = Router();
 
 const TOKEN_SECRET = process.env.TOKEN_SECRET || '';
+if (!TOKEN_SECRET) {
+    throw new Error('TOKEN_SECRET environment variable is required but not set. Server cannot start without it.');
+}
 
 const ZERO_ADDRESS_HASH = ZERO_ADDRESS.slice(3);
 const TREASURY_ADDRESS_HASH = TREASURY_ADDRESS.slice(3);
@@ -156,26 +159,26 @@ router.get('/my', standardLimit, optionalAuth, async (req, res) => {
             ? { ownerWallet: walletAddress }
             : { ownerId: userId };
 
-        const rows = await prisma.nft.findMany({ where });
-        const inventoryRows = await prisma.nft.findMany({
-            select: {
-                status: true,
-                metadata: true,
-            },
-        });
+        const [rows, collectionStatsRows] = await Promise.all([
+            prisma.nft.findMany({ where }),
+            prisma.$queryRaw<{ collection_name: string; minted_count: bigint; active_count: bigint }[]>(
+                Prisma.sql`
+                    SELECT
+                        COALESCE(metadata->>'collectionName', ${DEFAULT_COLLECTION_NAME}) AS collection_name,
+                        COUNT(*) AS minted_count,
+                        COUNT(*) FILTER (WHERE LOWER(status) != 'burned') AS active_count
+                    FROM "Nft"
+                    GROUP BY COALESCE(metadata->>'collectionName', ${DEFAULT_COLLECTION_NAME})
+                `,
+            ),
+        ]);
 
-        const collectionTotals = new Map<string, CollectionTotals>();
-        for (const inventoryRow of inventoryRows) {
-            const collectionName = readCollectionName(inventoryRow.metadata);
-            const previous = collectionTotals.get(collectionName) || { minted: 0, active: 0 };
-            previous.minted += 1;
-
-            if (inventoryRow.status.toLowerCase() !== 'burned') {
-                previous.active += 1;
-            }
-
-            collectionTotals.set(collectionName, previous);
-        }
+        const collectionTotals = new Map<string, CollectionTotals>(
+            collectionStatsRows.map((row) => [
+                row.collection_name,
+                { minted: Number(row.minted_count), active: Number(row.active_count) },
+            ]),
+        );
 
         const nfts = rows.map((row) => ({
             ...(function getCollectionMeta() {
@@ -304,7 +307,6 @@ router.get('/:tokenId', standardLimit, async (req, res) => {
 
         const ownerHistory = nft.history.map((entry) => ({
             wallet: entry.wallet,
-            userId: entry.userId,
             type: entry.type,
             fromWallet: entry.fromWallet,
             friendlyAddress: safeFriendlyAddress(entry.wallet),

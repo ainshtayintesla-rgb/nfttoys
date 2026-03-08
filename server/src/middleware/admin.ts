@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import { NextFunction, Request, Response } from 'express';
 
 function parseAdminIds(raw: string): string[] {
@@ -9,43 +7,11 @@ function parseAdminIds(raw: string): string[] {
         .filter(Boolean);
 }
 
-let cachedEnvPath = '';
-let cachedEnvMtimeMs = -1;
-let cachedClientAdminIds: string[] = [];
-
-function readAdminIdsFromClientEnv(): string[] {
-    try {
-        const envPath = path.resolve(process.cwd(), '../client/.env');
-        const stats = fs.statSync(envPath);
-
-        if (envPath === cachedEnvPath && stats.mtimeMs === cachedEnvMtimeMs) {
-            return cachedClientAdminIds;
-        }
-
-        const content = fs.readFileSync(envPath, 'utf8');
-        const match = content.match(/^NEXT_PUBLIC_ADMIN_IDS=(.+)$/m);
-        const ids = parseAdminIds(match?.[1] || '');
-
-        cachedEnvPath = envPath;
-        cachedEnvMtimeMs = stats.mtimeMs;
-        cachedClientAdminIds = ids;
-
-        return ids;
-    } catch {
-        return [];
-    }
-}
-
 export function getAdminTelegramIds(): string[] {
-    const fromEnv = parseAdminIds(
-        process.env.ADMIN_IDS || process.env.NEXT_PUBLIC_ADMIN_IDS || '',
-    );
-
-    if (fromEnv.length > 0) {
-        return fromEnv;
-    }
-
-    return readAdminIdsFromClientEnv();
+    // Read exclusively from server-side env vars.
+    // ADMIN_IDS is the canonical var; ADMIN_TELEGRAM_IDS is an alias.
+    // NEXT_PUBLIC_ADMIN_IDS must NOT be used here — it is a public frontend var.
+    return parseAdminIds(process.env.ADMIN_IDS || process.env.ADMIN_TELEGRAM_IDS || '');
 }
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {

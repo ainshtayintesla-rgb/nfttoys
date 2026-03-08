@@ -13,12 +13,12 @@ import { csrfProtection } from '../middleware/csrfProtection';
 const router = Router();
 
 const TOKEN_SECRET = process.env.TOKEN_SECRET || '';
+if (!TOKEN_SECRET) {
+    throw new Error('TOKEN_SECRET environment variable is required but not set. Server cannot start without it.');
+}
 const DEFAULT_COLLECTION_NAME = 'Plush pepe';
 
 function verifyToken(token: string): { valid: boolean; nfcId?: string } {
-    if (!TOKEN_SECRET) {
-        console.warn('⚠️ TOKEN_SECRET not set');
-    }
 
     const newFormatResult = verifyTokenNewFormat(token);
     if (newFormatResult.valid) return newFormatResult;

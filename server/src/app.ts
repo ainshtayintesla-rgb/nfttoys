@@ -20,6 +20,7 @@ import walletV2Routes from './routes/walletV2';
 
 // Middleware
 import { errorHandler } from './middleware/errorHandler';
+import { getAllowedOrigins } from './middleware/csrfProtection';
 
 const app = express();
 
@@ -62,13 +63,12 @@ app.use((req, res, next) => {
     next();
 });
 
-// CORS Configuration
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',');
+// CORS Configuration — uses the same origin list as csrfProtection middleware
 app.use(cors({
     origin: (origin, callback) => {
-        // Allow requests with no origin (mobile apps, curl, etc)
+        // Allow requests with no origin (server-side proxy, mobile apps, curl)
         if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin)) {
+        if (getAllowedOrigins().includes(origin)) {
             return callback(null, true);
         }
         return callback(new Error('Not allowed by CORS'), false);

@@ -148,6 +148,11 @@ export interface IWebApp {
   openTelegramLink: (url: string) => void;
   // Request write access (Telegram 6.9+) - ask user for permission to send messages
   requestWriteAccess: (callback?: (allowed: boolean) => void) => void;
+  // Share to Telegram Story (Telegram 7.8+)
+  shareToStory?: (mediaUrl: string, params?: {
+    text?: string;
+    widget_link?: { url: string; name?: string };
+  }) => void;
   // Biometric manager (Telegram 7.2+)
   BiometricManager?: IWebAppBiometricManager;
 }
@@ -319,6 +324,9 @@ const mockWebApp: IWebApp = {
   requestWriteAccess: (cb?: (allowed: boolean) => void) => {
     console.log('[Mock] Request Write Access');
     if (cb) cb(true);
+  },
+  shareToStory: (mediaUrl: string, params?: { text?: string; widget_link?: { url: string; name?: string } }) => {
+    console.log('[Mock] Share to Story:', mediaUrl, params);
   },
 };
 

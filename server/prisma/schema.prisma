@@ -34,6 +34,7 @@ model User {
   walletSessionsV2    WalletSessionV2[]
   auditEventsV2       AuditEventV2[]
   nftStakingV2        NftStakingV2[]
+  nftStoryShares      NftStoryShare[]
 
   @@index([referrerId, referredAt])
 }
@@ -116,6 +117,7 @@ model Nft {
   history         NftHistory[]
   transactions    Transaction[]
   stakingV2       NftStakingV2[]
+  storyShares     NftStoryShare[]
 
   @@index([ownerId])
   @@index([ownerWallet])
@@ -183,6 +185,7 @@ model WalletV2 {
   sessions           WalletSessionV2[]
   auditEvents        AuditEventV2[]
   nftStaking         NftStakingV2[]
+  nftStoryShares     NftStoryShare[]
 
   @@index([userId], map: "idx_wallets_v2_user_id")
   @@index([status], map: "idx_wallets_v2_status")
@@ -318,4 +321,23 @@ model AuditEventV2 {
   @@index([walletId, createdAt], map: "idx_audit_events_v2_wallet_id_created_at")
   @@index([userId, createdAt], map: "idx_audit_events_v2_user_id_created_at")
   @@map("audit_events_v2")
+}
+
+model NftStoryShare {
+  id          String    @id @db.Uuid
+  walletId    String    @map("wallet_id") @db.Uuid
+  tokenId     String    @map("token_id")
+  userId      String?   @map("user_id")
+  sharedAt    DateTime  @default(now()) @map("shared_at") @db.Timestamptz(6)
+  bonusAmount BigInt    @default(0) @map("bonus_amount")
+  streakDay   Int       @default(1) @map("streak_day")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  wallet      WalletV2  @relation(fields: [walletId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  nft         Nft       @relation(fields: [tokenId], references: [tokenId], onDelete: Cascade, onUpdate: Cascade)
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([walletId, sharedAt(sort: Desc)], map: "idx_nft_story_shares_wallet_id_shared_at")
+  @@index([tokenId, sharedAt(sort: Desc)], map: "idx_nft_story_shares_token_id_shared_at")
+  @@index([userId, sharedAt(sort: Desc)], map: "idx_nft_story_shares_user_id_shared_at")
+  @@map("nft_story_shares")
 }

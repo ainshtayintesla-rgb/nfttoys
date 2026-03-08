@@ -17,6 +17,19 @@ const WALLET_V2_DEVICE_ID_KEY = 'nfttoys_wallet_v2_device_id';
 let sessionCache: WalletV2SessionState | null = null;
 let deviceIdCache: string | null = null;
 
+// Sync session across tabs: if another tab clears or updates the session,
+// invalidate the in-memory cache so the next read picks up the latest value.
+if (typeof window !== 'undefined') {
+    window.addEventListener('storage', (event: StorageEvent) => {
+        if (event.key === WALLET_V2_SESSION_KEY) {
+            sessionCache = null;
+        }
+        if (event.key === WALLET_V2_DEVICE_ID_KEY) {
+            deviceIdCache = null;
+        }
+    });
+}
+
 function isBrowser(): boolean {
     return typeof window !== 'undefined';
 }
