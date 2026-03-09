@@ -2,8 +2,14 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { getTelegramWebApp, IWebApp, IWebAppInsets } from '@/lib/utils/telegram';
-import { api } from '@/lib/api';
-import { AuthUser, clearAuthSession, getAuthToken, getAuthUser, setAuthToken, setAuthUser as setStoredAuthUser } from '@/lib/auth';
+import {
+    AuthUser,
+    clearAuthSession,
+    getAuthToken,
+    getAuthUser,
+    refreshAuthSession,
+    toAuthUser,
+} from '@/lib/auth';
 
 const USER_CACHE_KEY = 'user_profile_cache';
 const FULLSCREEN_RETRY_DELAY_MS = 450;
@@ -476,21 +482,13 @@ export const TelegramProvider = ({ children }: { children: React.ReactNode }) =>
             setAuthAttempted(true);
 
             try {
-                const data = await api.auth.telegram(webApp.initData);
+                const data = await refreshAuthSession();
 
                 if (!data?.token || !data?.user?.uid) {
                     throw new Error('Invalid auth response');
                 }
 
-                const nextAuthUser: AuthUser = {
-                    uid: data.user.uid,
-                    telegramId: Number(data.user.telegramId),
-                    firstName: data.user.firstName,
-                    lastName: data.user.lastName,
-                    username: data.user.username,
-                };
-                setAuthToken(data.token);
-                setStoredAuthUser(nextAuthUser);
+                const nextAuthUser: AuthUser = toAuthUser(data.user);
                 setAuthUser(nextAuthUser);
 
                 // Build extended user info with wallet and photo_url

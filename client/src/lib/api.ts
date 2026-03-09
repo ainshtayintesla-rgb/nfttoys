@@ -3,21 +3,45 @@
  * Centralized API endpoint configuration
  */
 import { API_BASE_URL } from './apiBaseUrl';
-import { getAuthToken } from './auth';
+import {
+    attachTelegramInitData,
+    clearAuthSession,
+    getAuthToken,
+    refreshAuthSession,
+} from './auth';
 import { walletV2Api } from './walletV2/api';
+
+export class ApiError extends Error {
+    public readonly status: number;
+
+    public readonly code?: string;
+
+    public readonly details?: unknown;
+
+    constructor(message: string, status: number, code?: string, details?: unknown) {
+        super(message);
+        this.name = 'ApiError';
+        this.status = status;
+        this.code = code;
+        this.details = details;
+    }
+}
+
+type ApiErrorPayload = {
+    error?: string;
+    code?: string;
+    details?: unknown;
+} | null;
 
 /**
  * Make API request
  */
-export async function apiFetch<T = any>(
-    endpoint: string,
-    options: RequestInit = {}
-): Promise<T> {
+async function executeApiRequest(endpoint: string, options: RequestInit): Promise<Response> {
     const url = `${API_BASE_URL}${endpoint}`;
     const headers = new Headers(options.headers || {});
     const token = getAuthToken();
 
-    if (!headers.has('Content-Type')) {
+    if (options.body !== undefined && !headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json');
     }
 
@@ -25,18 +49,55 @@ export async function apiFetch<T = any>(
         headers.set('Authorization', `Bearer ${token}`);
     }
 
-    const response = await fetch(url, {
+    attachTelegramInitData(headers);
+
+    return fetch(url, {
         ...options,
         headers,
         credentials: 'include',
     });
+}
+
+async function parseApiError(response: Response): Promise<ApiErrorPayload> {
+    return response.json().catch(() => null) as Promise<ApiErrorPayload>;
+}
+
+async function apiFetchInternal<T = any>(
+    endpoint: string,
+    options: RequestInit = {},
+    allowAuthRetry = true,
+): Promise<T> {
+    const response = await executeApiRequest(endpoint, options);
 
     if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(error.error || `HTTP ${response.status}`);
+        const payload = await parseApiError(response);
+
+        if (response.status === 401 && allowAuthRetry && endpoint !== '/auth/telegram') {
+            const refreshedSession = await refreshAuthSession();
+
+            if (refreshedSession?.token) {
+                return apiFetchInternal<T>(endpoint, options, false);
+            }
+
+            clearAuthSession();
+        }
+
+        throw new ApiError(
+            payload?.error || `HTTP ${response.status}`,
+            response.status,
+            payload?.code,
+            payload?.details,
+        );
     }
 
     return response.json();
+}
+
+export async function apiFetch<T = any>(
+    endpoint: string,
+    options: RequestInit = {}
+): Promise<T> {
+    return apiFetchInternal<T>(endpoint, options);
 }
 
 export interface AdminUpdateStatusResponse {

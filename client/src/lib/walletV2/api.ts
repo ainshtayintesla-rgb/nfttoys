@@ -1,4 +1,8 @@
-import { getAuthToken } from '../auth';
+import {
+    attachTelegramInitData,
+    getAuthToken,
+    refreshAuthSession,
+} from '../auth';
 import { WalletV2ApiError, normalizeWalletV2Error } from './errors';
 import {
     clearWalletV2Session,
@@ -431,17 +435,37 @@ function shouldRetryViaRefresh(error: WalletV2ApiError): boolean {
     return error.status === SESSION_REFRESH_RETRY_STATUS || error.code === SESSION_REFRESH_RETRY_CODE;
 }
 
-function requireLegacyAuthToken(): string {
+async function createLegacyAuthHeaders(): Promise<Headers> {
+    const headers = new Headers();
     const token = getAuthToken();
 
-    if (!token) {
-        throw new WalletV2ApiError('Login required', {
-            status: 401,
-            code: 'UNAUTHORIZED',
-        });
+    if (token) {
+        headers.set('Authorization', `Bearer ${token}`);
     }
 
-    return token;
+    attachTelegramInitData(headers);
+
+    if (headers.has('Authorization') || headers.has('X-Telegram-Init-Data')) {
+        return headers;
+    }
+
+    await refreshAuthSession();
+
+    const refreshedToken = getAuthToken();
+    if (refreshedToken) {
+        headers.set('Authorization', `Bearer ${refreshedToken}`);
+    }
+
+    attachTelegramInitData(headers);
+
+    if (headers.has('Authorization') || headers.has('X-Telegram-Init-Data')) {
+        return headers;
+    }
+
+    throw new WalletV2ApiError('Login required', {
+        status: 401,
+        code: 'UNAUTHORIZED',
+    });
 }
 
 function resolveWalletId(walletId?: string): string {
@@ -489,6 +513,8 @@ async function requestWalletV2<T>(path: string, options: WalletV2RequestOptions 
     const { requiresWalletSession = true, ...requestInit } = options;
     const url = buildWalletV2Url(path);
     const headers = new Headers(requestInit.headers || {});
+
+    attachTelegramInitData(headers);
 
     if (requestInit.body && !headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json');
@@ -662,25 +688,21 @@ export function onWalletV2SessionRevoked(listener: SessionRevokedListener): () =
 
 export const walletV2Api = {
     async listWallets(): Promise<WalletV2WalletListItem[]> {
-        const legacyToken = requireLegacyAuthToken();
+        const headers = await createLegacyAuthHeaders();
         const response = await walletV2Fetch<WalletV2ApiEnvelope<WalletV2WalletListData>>('/wallets', {
             requiresWalletSession: false,
-            headers: {
-                Authorization: `Bearer ${legacyToken}`,
-            },
+            headers,
         });
 
         return response.data.wallets || [];
     },
 
     async switchWallet(payload: WalletV2SwitchPayload): Promise<WalletV2SwitchData> {
-        const legacyToken = requireLegacyAuthToken();
+        const headers = await createLegacyAuthHeaders();
         const response = await walletV2Fetch<WalletV2ApiEnvelope<WalletV2SwitchData>>('/wallet/switch', {
             method: 'POST',
             requiresWalletSession: false,
-            headers: {
-                Authorization: `Bearer ${legacyToken}`,
-            },
+            headers,
             body: JSON.stringify(payload),
         });
 
@@ -694,13 +716,11 @@ export const walletV2Api = {
     },
 
     async create(payload: WalletV2CreatePayload): Promise<WalletV2CreateData> {
-        const legacyToken = requireLegacyAuthToken();
+        const headers = await createLegacyAuthHeaders();
         const response = await walletV2Fetch<WalletV2ApiEnvelope<WalletV2CreateData>>('/wallet/create', {
             method: 'POST',
             requiresWalletSession: false,
-            headers: {
-                Authorization: `Bearer ${legacyToken}`,
-            },
+            headers,
             body: JSON.stringify(payload),
         });
 
@@ -714,13 +734,11 @@ export const walletV2Api = {
     },
 
     async import(payload: WalletV2ImportPayload): Promise<WalletV2ImportData> {
-        const legacyToken = requireLegacyAuthToken();
+        const headers = await createLegacyAuthHeaders();
         const response = await walletV2Fetch<WalletV2ApiEnvelope<WalletV2ImportData>>('/wallet/import', {
             method: 'POST',
             requiresWalletSession: false,
-            headers: {
-                Authorization: `Bearer ${legacyToken}`,
-            },
+            headers,
             body: JSON.stringify(payload),
         });
 
