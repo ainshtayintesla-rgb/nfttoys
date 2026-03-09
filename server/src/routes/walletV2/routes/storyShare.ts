@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 
 import { Router } from 'express';
+import sharp from 'sharp';
 
 import { prisma } from '../../../lib/db/prisma';
 import { standardLimit } from '../../../middleware/rateLimit';
@@ -22,7 +23,7 @@ import {
     resolveNftStakingRewardPerHour,
     resolveWalletNftStakingContext,
 } from '../helpers/staking';
-import { escapeXml, now, sendError } from '../helpers/utils';
+import { escapeXml, now, readCollectionName, sendError } from '../helpers/utils';
 import { ApiError } from '../types';
 
 const router = Router();
@@ -510,7 +511,6 @@ router.post('/internal/story-verify', async (req, res) => {
 // ─── Static test story card (no DB dependency) ─────────────────────────────
 router.get('/story-card-static.png', standardLimit, async (_req, res) => {
     try {
-        const sharp = (await import('sharp')).default;
         const width = 1080;
         const height = 1920;
         const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
@@ -569,15 +569,13 @@ router.get('/story-card/:shareId.png', standardLimit, async (req, res) => {
 
         const nft = await prisma.nft.findUnique({
             where: { tokenId: share.tokenId },
-            select: { collectionName: true, serialNumber: true, rarity: true },
+            select: { metadata: true, serialNumber: true, rarity: true },
         });
-
-        const sharp = (await import('sharp')).default;
 
         const width = 1080;
         const height = 1920;
         const nftName = nft
-            ? `${nft.collectionName}${nft.serialNumber ? ' #' + nft.serialNumber : ''}`
+            ? `${readCollectionName(nft.metadata)}${nft.serialNumber ? ' #' + nft.serialNumber : ''}`
             : share.tokenId.slice(0, 12);
         const rarity = nft?.rarity || 'common';
         const boostPct = Math.round((share.boostMultiplier - 1) * 100);
