@@ -190,7 +190,7 @@ jobs:
             print("  ✓ userbot /health", payload)
             PY
 
-            kubectl exec deployment/web -n $NS -- sh -lc '! grep -R "http://localhost:4000" /app/.next >/dev/null'
-            echo "  ✓ web bundle uses public API URL"
+            kubectl exec deployment/web -n $NS -- sh -lc 'grep -R "https://api.nfttoys.shop" /app/.next >/dev/null'
+            echo "  ✓ web bundle includes public API URL"
 
             echo "=== Deploy complete: $TAG ==="
