@@ -149,8 +149,8 @@ jobs:
             echo "=== Waiting for rollout ==="
             kubectl rollout status deployment/web -n $NS --timeout=5m
             kubectl rollout status deployment/bot -n $NS --timeout=5m
-            # API waits for postgres — skip blocking check until db migration runs
-            kubectl rollout status deployment/api -n $NS --timeout=10m || \
-              echo "WARNING: api rollout incomplete (postgres migration pending)"
+            # API needs k3s postgres — 1m fast-fail so SSH session doesn't timeout
+            kubectl rollout status deployment/api -n $NS --timeout=1m || \
+              echo "WARNING: api rollout incomplete (k3s postgres migration pending — expected)"
 
             echo "=== k3s update complete: $TAG ==="

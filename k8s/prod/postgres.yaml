@@ -65,7 +65,6 @@ spec:
               command:
                 - pg_isready
                 - -U
-                - -U
                 - nfttoys
                 - -d
                 - nfttoys
