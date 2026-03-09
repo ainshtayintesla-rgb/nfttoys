@@ -99,8 +99,9 @@ jobs:
             set -euo pipefail
             REPO="/root/my-works/nfttoys-pro"
 
-            echo "=== Pulling latest code (main) ==="
-            git -C "$REPO" pull --ff-only origin main
+            echo "=== Syncing to main (hard reset — server is never the source of truth) ==="
+            git -C "$REPO" fetch origin main
+            git -C "$REPO" reset --hard origin/main
 
             echo "=== Rebuilding docker-compose images ==="
             docker compose -f "$REPO/docker-compose.yml" build api web bot
