@@ -4,11 +4,11 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:   # allow manual trigger from GitHub UI or gh CLI
+  workflow_dispatch:
 
 permissions:
   contents: read
-  packages: write    # needed to push images to GHCR
+  packages: write
 
 jobs:
   build-and-push:
@@ -81,45 +81,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── Primary deploy: docker-compose (currently serving live traffic via nginx) ──
-  deploy-compose:
-    name: Deploy docker-compose (live traffic)
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.PROD_SSH_HOST }}
-          username: ${{ secrets.PROD_SSH_USER }}
-          key: ${{ secrets.PROD_SSH_KEY }}
-          script: |
-            set -euo pipefail
-            REPO="/root/my-works/nfttoys-pro"
-
-            echo "=== Syncing to main (hard reset — server is never the source of truth) ==="
-            git -C "$REPO" fetch origin main
-            git -C "$REPO" reset --hard origin/main
-
-            echo "=== Rebuilding docker-compose images ==="
-            docker compose -f "$REPO/docker-compose.yml" build api web bot
-
-            echo "=== Restarting containers (zero-downtime rolling) ==="
-            docker compose -f "$REPO/docker-compose.yml" up -d --no-deps api
-            docker compose -f "$REPO/docker-compose.yml" up -d --no-deps web
-            docker compose -f "$REPO/docker-compose.yml" up -d --no-deps bot
-
-            echo "=== Verifying health ==="
-            sleep 8
-            docker compose -f "$REPO/docker-compose.yml" ps
-
-            echo "=== Deploy complete ==="
-
-  # ── Secondary deploy: k3s (will take over once postgres migration runs) ──
-  deploy-k3s:
-    name: Deploy k3s (staged rollout)
+  deploy:
+    name: Deploy to k3s
     needs: build-and-push
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -138,10 +101,14 @@ jobs:
             NS="nfttoys-prod"
             REPO="/root/my-works/nfttoys-pro"
 
+            echo "=== Syncing manifests ==="
+            git -C "$REPO" fetch origin main
+            git -C "$REPO" reset --hard origin/main
+
             echo "=== Applying k8s manifests ==="
             kubectl apply -f "$REPO/k8s/prod/"
 
-            echo "=== Rolling update images to $TAG ==="
+            echo "=== Rolling update to $TAG ==="
             kubectl set image deployment/api api=ghcr.io/${OWNER}/nfttoys/api:${TAG} -n $NS
             kubectl set image deployment/web web=ghcr.io/${OWNER}/nfttoys/web:${TAG} -n $NS
             kubectl set image deployment/bot bot=ghcr.io/${OWNER}/nfttoys/bot:${TAG} -n $NS
@@ -149,8 +116,6 @@ jobs:
             echo "=== Waiting for rollout ==="
             kubectl rollout status deployment/web -n $NS --timeout=5m
             kubectl rollout status deployment/bot -n $NS --timeout=5m
-            # API needs k3s postgres — 1m fast-fail so SSH session doesn't timeout
-            kubectl rollout status deployment/api -n $NS --timeout=1m || \
-              echo "WARNING: api rollout incomplete (k3s postgres migration pending — expected)"
+            kubectl rollout status deployment/api -n $NS --timeout=5m
 
-            echo "=== k3s update complete: $TAG ==="
+            echo "=== Deploy complete: $TAG ==="

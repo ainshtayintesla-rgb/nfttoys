@@ -24,7 +24,7 @@ RUN npm ci --omit=dev && \
 # All deps for TypeScript build + Prisma codegen
 FROM base AS deps-all
 COPY package*.json ./
-RUN npm ci --include=dev
+RUN npm ci
 
 FROM deps-all AS builder
 COPY tsconfig.json ./
