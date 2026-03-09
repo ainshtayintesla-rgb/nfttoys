@@ -60,7 +60,9 @@ export function validateTelegramInitData(initData: string): ValidatedTelegramDat
             .update(dataCheckString)
             .digest('hex');
 
-        if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(expectedHash))) {
+        const hashBuf = Buffer.from(hash);
+        const expectedBuf = Buffer.from(expectedHash);
+        if (hashBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(hashBuf, expectedBuf)) {
             return { valid: false, error: 'Invalid hash' };
         }
 
