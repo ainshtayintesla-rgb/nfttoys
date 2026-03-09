@@ -1,0 +1,119 @@
+name: Build and Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write    # needed to push images to GHCR
+
+jobs:
+  build-and-push:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      image-tag: ${{ steps.meta.outputs.sha-tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: meta
+        run: echo "sha-tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./server
+          file: ./server/Dockerfile
+          target: runtime
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/nfttoys/api:${{ steps.meta.outputs.sha-tag }}
+            ghcr.io/${{ github.repository_owner }}/nfttoys/api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Web image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./client
+          file: ./client/Dockerfile
+          target: runtime
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_BOT_USERNAME=${{ secrets.NEXT_PUBLIC_BOT_USERNAME }}
+            NEXT_PUBLIC_ADMIN_IDS=${{ secrets.NEXT_PUBLIC_ADMIN_IDS }}
+            NEXT_PUBLIC_TG_GROUP=${{ secrets.NEXT_PUBLIC_TG_GROUP }}
+            NEXT_PUBLIC_TG_CHANNEL=${{ secrets.NEXT_PUBLIC_TG_CHANNEL }}
+            TOKEN_SECRET=${{ secrets.TOKEN_SECRET }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/nfttoys/web:${{ steps.meta.outputs.sha-tag }}
+            ghcr.io/${{ github.repository_owner }}/nfttoys/web:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Bot image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./bot
+          file: ./bot/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/nfttoys/bot:${{ steps.meta.outputs.sha-tag }}
+            ghcr.io/${{ github.repository_owner }}/nfttoys/bot:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to k3s
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_SSH_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            TAG="${{ needs.build-and-push.outputs.image-tag }}"
+            OWNER="${{ github.repository_owner }}"
+            NS="nfttoys-prod"
+            REPO="/root/my-works/nfttoys-pro"
+
+            echo "=== Pulling latest manifests (main) ==="
+            git -C "$REPO" pull --ff-only origin main
+
+            echo "=== Applying k8s manifests ==="
+            kubectl apply -f "$REPO/k8s/prod/"
+
+            echo "=== Rolling update to $TAG ==="
+            kubectl set image deployment/api api=ghcr.io/${OWNER}/nfttoys/api:${TAG} -n $NS
+            kubectl set image deployment/web web=ghcr.io/${OWNER}/nfttoys/web:${TAG} -n $NS
+            kubectl set image deployment/bot bot=ghcr.io/${OWNER}/nfttoys/bot:${TAG} -n $NS
+
+            echo "=== Waiting for rollout (zero-downtime) ==="
+            kubectl rollout status deployment/api -n $NS --timeout=5m
+            kubectl rollout status deployment/web -n $NS --timeout=5m
+            kubectl rollout status deployment/bot -n $NS --timeout=5m
+
+            echo "=== Deploy complete: $TAG ==="

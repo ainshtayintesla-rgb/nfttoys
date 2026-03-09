@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nfttoys-config
+  namespace: nfttoys-prod
+data:
+  # Non-sensitive runtime config. Sensitive values are in the nfttoys-secrets Secret.
+  # DATABASE_URL is set in the Secret (with k3s service hostname) by k8s-create-secrets.sh
+  RUN_MODE: "production"
+  UPDATE_SERVICE_ENABLED: "false"    # k8s handles rolling updates — self-updater is disabled

@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: bot-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual
+  hostPath:
+    path: /var/lib/docker/volumes/nfttoys-prod_bot_data/_data
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bot-pvc
+  namespace: nfttoys-prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bot
+  namespace: nfttoys-prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bot
+  strategy:
+    type: Recreate   # bot must not run two instances at the same time
+  template:
+    metadata:
+      labels:
+        app: bot
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: bot
+          image: ghcr.io/ainshtayintesla-rgb/nfttoys/bot:latest
+          ports:
+            - containerPort: 8090
+          envFrom:
+            - secretRef:
+                name: nfttoys-secrets
+          env:
+            - name: BOT_HOST
+              value: "0.0.0.0"
+            - name: BOT_PORT
+              value: "8090"
+            - name: BOT_LANG_STORE
+              value: /app/data/user_lang.json
+            - name: BOT_PREFS_STORE
+              value: /app/data/user_prefs.json
+            - name: BOT_ENV_FILE
+              value: /dev/null
+          volumeMounts:
+            - name: bot-data
+              mountPath: /app/data
+          readinessProbe:
+            tcpSocket:
+              port: 8090
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: bot-data
+          persistentVolumeClaim:
+            claimName: bot-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bot
+  namespace: nfttoys-prod
+spec:
+  selector:
+    app: bot
+  ports:
+    - port: 8090
+      targetPort: 8090
