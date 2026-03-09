@@ -34,7 +34,7 @@ metadata:
   namespace: nfttoys-prod
 spec:
   serviceName: postgres
-  replicas: 1
+  replicas: 0  # keep at 0 until docker-compose postgres is stopped (migration step)
   selector:
     matchLabels:
       app: postgres
@@ -46,9 +46,14 @@ spec:
       containers:
         - name: postgres
           image: postgres:16-alpine
-          envFrom:
-            - secretRef:
-                name: nfttoys-secrets
+          env:
+            # Credentials must match the existing Docker postgres instance
+            - name: POSTGRES_USER
+              value: nfttoys
+            - name: POSTGRES_PASSWORD
+              value: nfttoys
+            - name: POSTGRES_DB
+              value: nfttoys
           # No PGDATA override — data lives at the volume root, matching the existing Docker volume layout
           ports:
             - containerPort: 5432
@@ -60,9 +65,10 @@ spec:
               command:
                 - pg_isready
                 - -U
-                - $(POSTGRES_USER)
+                - -U
+                - nfttoys
                 - -d
-                - $(POSTGRES_DB)
+                - nfttoys
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 12
