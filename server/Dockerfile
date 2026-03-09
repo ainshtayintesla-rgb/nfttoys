@@ -15,7 +15,11 @@ RUN apt-get update \
 # Production deps only — separate stage avoids npm prune issues with native modules (e.g. sharp)
 FROM base AS deps-prod
 COPY package*.json ./
-RUN npm ci --omit=dev
+# Install prod deps; verify sharp is present after install (GHA layer cache can
+# occasionally serve a stale layer). Force-reinstall sharp if missing.
+RUN npm ci --omit=dev && \
+    node -e "require('sharp')" 2>/dev/null || \
+    (echo "sharp missing after npm ci, force-installing..." && npm install --no-save sharp)
 
 # All deps for TypeScript build + Prisma codegen
 FROM base AS deps-all

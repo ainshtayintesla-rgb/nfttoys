@@ -1,7 +1,14 @@
 import crypto from 'crypto';
 
 import { Router } from 'express';
-import sharp from 'sharp';
+// Lazy require — sharp is a native module; a static top-level import crashes
+// the entire server if the binary is missing. Load on demand so the API stays
+// healthy even when sharp isn't available.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const sharp: typeof import('sharp') | null = (() => {
+    try { return require('sharp'); }
+    catch { console.warn('[storyShare] sharp unavailable – PNG generation disabled'); return null; }
+})();
 
 import { prisma } from '../../../lib/db/prisma';
 import { standardLimit } from '../../../middleware/rateLimit';
@@ -533,6 +540,7 @@ router.get('/story-card-static.png', standardLimit, async (_req, res) => {
   <text x="${width / 2}" y="${height * 0.60}" text-anchor="middle" font-family="Arial,sans-serif" font-size="32" fill="rgba(255,255,255,0.7)">Staking reward boost</text>
   <text x="${width / 2}" y="${height * 0.65}" text-anchor="middle" font-family="Arial,sans-serif" font-size="26" fill="rgba(255,255,255,0.45)">Share a story to earn extra rewards</text>
 </svg>`;
+        if (!sharp) return res.status(503).send('Image generation unavailable');
         const pngBuffer = await sharp(Buffer.from(svg)).png({ quality: 85 }).toBuffer();
         res.setHeader('Content-Type', 'image/png');
         res.setHeader('Cache-Control', 'public, max-age=3600');
@@ -614,6 +622,7 @@ router.get('/story-card/:shareId.png', standardLimit, async (req, res) => {
   <text x="${width / 2}" y="${height * 0.89}" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" fill="rgba(255,255,255,0.35)">${escapeXml(code)}</text>
 </svg>`;
 
+        if (!sharp) return res.status(503).send('Image generation unavailable');
         const pngBuffer = await sharp(Buffer.from(svg)).png({ quality: 85 }).toBuffer();
 
         res.setHeader('Content-Type', 'image/png');

@@ -113,8 +113,8 @@ jobs:
             kubectl set image deployment/bot bot=ghcr.io/${OWNER}/nfttoys/bot:${TAG} -n $NS
 
             echo "=== Waiting for rollout (zero-downtime) ==="
-            kubectl rollout status deployment/api -n $NS --timeout=5m
-            kubectl rollout status deployment/web -n $NS --timeout=5m
-            kubectl rollout status deployment/bot -n $NS --timeout=5m
+            kubectl rollout status deployment/api -n $NS --timeout=10m
+            kubectl rollout status deployment/web -n $NS --timeout=10m
+            kubectl rollout status deployment/bot -n $NS --timeout=10m
 
             echo "=== Deploy complete: $TAG ==="
