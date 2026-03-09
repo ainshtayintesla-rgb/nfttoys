@@ -35,7 +35,7 @@ function getLocaleForDateFormat(locale: string): string {
 export default function ReferralsPage() {
     const router = useRouter();
     const { t, locale } = useLanguage();
-    const { webApp, haptic, isAuthenticated, authUser } = useTelegram();
+    const { webApp, haptic, authReady, isAuthenticated, authUser } = useTelegram();
 
     const [overview, setOverview] = useState<ReferralOverview | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -67,6 +67,10 @@ export default function ReferralsPage() {
     }, [webApp, handleBack]);
 
     useEffect(() => {
+        if (!authReady) {
+            return;
+        }
+
         if (!isAuthenticated || !authUser) {
             setIsLoading(false);
             setOverview(null);
@@ -100,7 +104,7 @@ export default function ReferralsPage() {
         return () => {
             isUnmounted = true;
         };
-    }, [authUser, isAuthenticated]);
+    }, [authReady, authUser, isAuthenticated]);
 
     const referralLink = useMemo(() => {
         const referralCode = overview?.referralCode?.trim();

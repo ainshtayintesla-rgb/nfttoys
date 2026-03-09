@@ -49,12 +49,17 @@ async function executeApiRequest(endpoint: string, options: RequestInit): Promis
         headers.set('Authorization', `Bearer ${token}`);
     }
 
+    if (!headers.has('X-Requested-With')) {
+        headers.set('X-Requested-With', 'XMLHttpRequest');
+    }
+
     attachTelegramInitData(headers);
 
     return fetch(url, {
         ...options,
         headers,
         credentials: 'include',
+        cache: 'no-store',
     });
 }
 
@@ -239,11 +244,15 @@ interface WalletRecipientLookupResponse {
 export const api = {
     // Auth
     auth: {
-        telegram: (initData: string) =>
-            apiFetch('/auth/telegram', {
-                method: 'POST',
-                body: JSON.stringify({ initData }),
-            }),
+        telegram: async (initData: string) => {
+            const session = await refreshAuthSession(initData);
+
+            if (!session) {
+                throw new ApiError('Authentication failed', 401, 'UNAUTHORIZED');
+            }
+
+            return session;
+        },
     },
 
     // QR

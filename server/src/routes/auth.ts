@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 
 import { prisma } from '../lib/db/prisma';
+import { setAuthCookie } from '../lib/auth/cookie';
 import { normalizedUsername } from '../lib/db/utils';
 import { signAuthToken } from '../lib/auth/jwt';
 import { generateWalletAddress, toFriendlyAddress } from '../lib/utils/crypto';
@@ -139,6 +140,7 @@ router.post('/telegram', authLimit, async (req, res) => {
             lastName: user.last_name,
             username: user.username,
         });
+        setAuthCookie(res, accessToken, req);
 
         const now = new Date();
         const username = user.username?.trim() || null;
@@ -271,7 +273,7 @@ router.post('/telegram', authLimit, async (req, res) => {
             success: true,
             token: accessToken,
             tokenType: 'Bearer',
-            expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+            expiresIn: process.env.JWT_EXPIRES_IN || '30d',
             user: {
                 uid,
                 telegramId: user.id,

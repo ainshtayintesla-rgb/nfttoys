@@ -194,7 +194,7 @@ function resolveDisplayKind(item: Pick<TransactionItem, 'type' | 'direction'>): 
 export default function TransactionsPage() {
     const router = useRouter();
     const { locale, t } = useLanguage();
-    const { webApp, haptic } = useTelegram();
+    const { webApp, haptic, authReady, isAuthenticated, authUser } = useTelegram();
 
     const [transactions, setTransactions] = useState<TransactionItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -241,6 +241,19 @@ export default function TransactionsPage() {
     }, [selectedTransaction]);
 
     const loadTransactions = useCallback(async (range: DateRange) => {
+        if (!authReady) {
+            setIsLoading(true);
+            setError(null);
+            return;
+        }
+
+        if (!isAuthenticated || !authUser?.uid) {
+            setTransactions([]);
+            setIsLoading(false);
+            setError(t('login_required') || 'Login required');
+            return;
+        }
+
         setIsLoading(true);
         setError(null);
 
@@ -258,7 +271,7 @@ export default function TransactionsPage() {
         } finally {
             setIsLoading(false);
         }
-    }, [t]);
+    }, [authReady, authUser?.uid, isAuthenticated, t]);
 
     useEffect(() => {
         void loadTransactions(activeRange);

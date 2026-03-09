@@ -4,10 +4,10 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { getTelegramWebApp, IWebApp, IWebAppInsets } from '@/lib/utils/telegram';
 import {
     AuthUser,
+    bootstrapAuthState,
     clearAuthSession,
-    getAuthToken,
-    getAuthUser,
     refreshAuthSession,
+    setTelegramInitData,
     toAuthUser,
 } from '@/lib/auth';
 
@@ -245,22 +245,10 @@ export const TelegramProvider = ({ children }: { children: React.ReactNode }) =>
     const [webApp, setWebApp] = useState<IWebApp | null>(null);
     const [authUser, setAuthUser] = useState<AuthUser | null>(null);
     const [ready, setReady] = useState(false);
-    const [authAttempted, setAuthAttempted] = useState(false);
     const [authReady, setAuthReady] = useState(false);
 
-    // Restore persisted auth state from local storage
     useEffect(() => {
-        const token = getAuthToken();
-        const persistedUser = getAuthUser();
-
-        if (token && persistedUser) {
-            setAuthUser(persistedUser);
-            return;
-        }
-
-        if (token && !persistedUser) {
-            clearAuthSession();
-        }
+        bootstrapAuthState();
     }, []);
 
     // State for extended user info (including wallet and photo_url)
@@ -313,37 +301,32 @@ export const TelegramProvider = ({ children }: { children: React.ReactNode }) =>
         app = getTelegramWebApp();
 
         if (app) {
+            setTelegramInitData(app.initData || null);
+
             try {
                 app.ready();
             } catch {
                 console.log('WebApp ready not available');
             }
 
-            try {
-                app.lockOrientation?.();
-            } catch {
-                console.log('lockOrientation not available');
-            }
-
             requestAppFullscreen(app);
 
-            // Disable vertical swipes on ALL platforms to prevent interference with page scrolling.
-            // On Android, enableVerticalSwipes() activates swipe-to-close which intercepts scroll gestures.
+            // Disable swipe-to-close gesture (wrap in try-catch for older versions)
             try {
                 if (typeof app.disableVerticalSwipes === 'function') {
                     app.disableVerticalSwipes();
                 }
             } catch {
-                console.log('vertical swipe controls not available');
+                console.log('disableVerticalSwipes not available');
             }
 
-            // Keep close confirmation disabled globally.
+            // Enable closing confirmation dialog
             try {
-                if (typeof app.disableClosingConfirmation === 'function') {
-                    app.disableClosingConfirmation();
+                if (typeof app.enableClosingConfirmation === 'function') {
+                    app.enableClosingConfirmation();
                 }
             } catch {
-                console.log('disableClosingConfirmation not available');
+                console.log('enableClosingConfirmation not available');
             }
 
             setWebApp(app);
@@ -421,6 +404,7 @@ export const TelegramProvider = ({ children }: { children: React.ReactNode }) =>
         } else {
             // Browser mode - no Telegram WebApp, but still set ready=true
             console.log('ℹ️ Running in browser mode (no Telegram WebApp)');
+            setTelegramInitData(null);
             updateLayoutVars();
             setReady(true);
         }
@@ -464,31 +448,43 @@ export const TelegramProvider = ({ children }: { children: React.ReactNode }) =>
         };
     }, []);
 
-    // If no Telegram WebApp context, mark auth as ready immediately
-    // (persisted auth from localStorage is the best we have).
     useEffect(() => {
-        if (ready && !webApp?.initData && !authReady) {
-            setAuthReady(true);
-        }
-    }, [ready, webApp, authReady]);
+        let isCancelled = false;
 
-    // Authenticate with backend and store local JWT when Telegram is ready.
-    // Always refresh JWT via initData, even if we have a cached authUser,
-    // to ensure the token is not expired.
-    useEffect(() => {
-        const authenticateWithJwt = async () => {
-            if (!webApp?.initData || authAttempted) return;
+        const bootstrapTelegramAuth = async () => {
+            if (!ready) {
+                return;
+            }
 
-            setAuthAttempted(true);
+            const initData = webApp?.initData?.trim();
+            setTelegramInitData(initData || null);
+
+            if (!webApp || !initData) {
+                clearAuthSession();
+                if (!isCancelled) {
+                    setAuthUser(null);
+                    setAuthReady(true);
+                }
+                return;
+            }
+
+            if (!isCancelled) {
+                setAuthReady(false);
+            }
 
             try {
-                const data = await refreshAuthSession();
+                const data = await refreshAuthSession(initData);
 
-                if (!data?.token || !data?.user?.uid) {
+                if (!data?.user?.uid) {
                     throw new Error('Invalid auth response');
                 }
 
                 const nextAuthUser: AuthUser = toAuthUser(data.user);
+
+                if (isCancelled) {
+                    return;
+                }
+
                 setAuthUser(nextAuthUser);
 
                 // Build extended user info with wallet and photo_url
@@ -526,18 +522,26 @@ export const TelegramProvider = ({ children }: { children: React.ReactNode }) =>
                     }
                 }
 
-                console.log('✅ JWT auth successful');
+                console.log('✅ JWT auth bootstrap successful');
             } catch (error) {
                 clearAuthSession();
-                setAuthUser(null);
-                console.error('JWT auth error:', error);
+                if (!isCancelled) {
+                    setAuthUser(null);
+                }
+                console.error('JWT auth bootstrap error:', error);
             } finally {
-                setAuthReady(true);
+                if (!isCancelled) {
+                    setAuthReady(true);
+                }
             }
         };
 
-        authenticateWithJwt();
-    }, [webApp, authAttempted]);
+        void bootstrapTelegramAuth();
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [ready, webApp]);
 
     // Haptic feedback helpers
     const haptic = React.useMemo(() => ({

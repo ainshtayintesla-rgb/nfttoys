@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import { extractAuthCookieToken } from '../lib/auth/cookie';
 import { JwtAuthPayload, verifyAuthToken } from '../lib/auth/jwt';
 import { ensureAuthUserUpsert } from '../lib/auth/ensureAuthUserUpsert';
 import { validateTelegramInitData } from '../lib/utils/telegramValidation';
@@ -18,6 +19,15 @@ function extractBearerToken(authorization?: string): string | null {
     if (!scheme || !token) return null;
     if (scheme.toLowerCase() !== 'bearer') return null;
     return token;
+}
+
+function extractRequestToken(req: Request): string | null {
+    const bearerToken = extractBearerToken(req.headers.authorization);
+    if (bearerToken) {
+        return bearerToken;
+    }
+
+    return extractAuthCookieToken(req.headers.cookie);
 }
 
 function extractInitData(req: Request): string | null {
@@ -79,7 +89,7 @@ function extractInitDataAuth(req: Request): JwtAuthPayload | null {
 }
 
 function resolveAuthPayload(req: Request): JwtAuthPayload | null {
-    const token = extractBearerToken(req.headers.authorization);
+    const token = extractRequestToken(req);
     if (token) {
         const payload = verifyAuthToken(token);
         if (payload) {

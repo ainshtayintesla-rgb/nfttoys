@@ -60,7 +60,7 @@ const NotificationContext = createContext<NotificationContextType>({
 export const useNotifications = () => useContext(NotificationContext);
 
 export const NotificationProvider = ({ children }: { children: React.ReactNode }) => {
-    const { ready, isAuthenticated, authUser, webApp } = useTelegram();
+    const { ready, authReady, isAuthenticated, authUser, webApp } = useTelegram();
 
     const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -69,6 +69,10 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     const [error, setError] = useState<string | null>(null);
 
     const refresh = useCallback(async () => {
+        if (!authReady) {
+            return;
+        }
+
         if (!isAuthenticated || !authUser) {
             setPreferences(null);
             setIsLoading(false);
@@ -88,15 +92,15 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
         } finally {
             setIsLoading(false);
         }
-    }, [authUser, isAuthenticated]);
+    }, [authReady, authUser, isAuthenticated]);
 
     useEffect(() => {
-        if (!ready) {
+        if (!ready || !authReady) {
             return;
         }
 
         void refresh();
-    }, [ready, refresh]);
+    }, [authReady, ready, refresh]);
 
     const setNotificationsEnabled = useCallback(async (enabled: boolean) => {
         if (!isAuthenticated || !authUser) {

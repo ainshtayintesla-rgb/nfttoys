@@ -8,7 +8,7 @@ export interface JwtAuthPayload {
     username?: string;
 }
 
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d';
 
 function getJwtSecret(): string {
     const secret = process.env.JWT_SECRET || process.env.TOKEN_SECRET || '';
@@ -51,4 +51,3 @@ export function verifyAuthToken(token: string): JwtAuthPayload | null {
         return null;
     }
 }
-

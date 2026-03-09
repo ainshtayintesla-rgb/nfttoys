@@ -33,7 +33,7 @@ export default function ScanResultPage() {
     const params = useParams();
     const router = useRouter();
     const { t } = useLanguage();
-    const { authUser } = useTelegram();
+    const { authReady } = useTelegram();
     const [toy, setToy] = useState<ActivatedToy | null>(null);
     const [nft, setNft] = useState<NFTData | null>(null);
     const [status, setStatus] = useState<'loading' | 'activating' | 'success' | 'already_used' | 'not_found' | 'error'>('loading');
@@ -43,7 +43,9 @@ export default function ScanResultPage() {
     // Activate QR on mount
     useEffect(() => {
         const activateQR = async () => {
-            if (!authUser?.uid) return;
+            if (!authReady) {
+                return;
+            }
 
             // The URL parameter is actually the token (contains HMAC signature)
             // Decode it in case it's URL-encoded
@@ -88,8 +90,8 @@ export default function ScanResultPage() {
             }
         };
 
-        activateQR();
-    }, [params.nfcId, authUser]);
+        void activateQR();
+    }, [authReady, params.nfcId]);
 
     // Confetti celebration effect
     useEffect(() => {

@@ -33,9 +33,30 @@ const AUTH_USER_KEY = 'nfttoys_auth_user';
 let tokenCache: string | null = null;
 let userCache: AuthUser | null = null;
 let authRefreshInFlight: Promise<TelegramAuthResponse | null> | null = null;
+let telegramInitDataCache: string | null = null;
+let legacyStorageCleared = false;
 
 function isBrowser(): boolean {
     return typeof window !== 'undefined';
+}
+
+function trimValue(value: string | null | undefined): string | null {
+    if (typeof value !== 'string') {
+        return null;
+    }
+
+    const normalized = value.trim();
+    return normalized || null;
+}
+
+function clearLegacyStorage() {
+    if (!isBrowser() || legacyStorageCleared) {
+        return;
+    }
+
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_USER_KEY);
+    legacyStorageCleared = true;
 }
 
 function normalizeTelegramId(value: number | string): number {
@@ -64,55 +85,40 @@ function isValidTelegramAuthResponse(payload: unknown): payload is TelegramAuthR
         );
 }
 
-export function getAuthToken(): string | null {
-    if (tokenCache) return tokenCache;
-    if (!isBrowser()) return null;
+export function bootstrapAuthState() {
+    tokenCache = null;
+    userCache = null;
+    clearLegacyStorage();
+}
 
-    tokenCache = localStorage.getItem(AUTH_TOKEN_KEY);
+export function getAuthToken(): string | null {
     return tokenCache;
 }
 
 export function setAuthToken(token: string | null) {
-    tokenCache = token;
-    if (!isBrowser()) return;
+    tokenCache = trimValue(token);
 
-    if (token) {
-        localStorage.setItem(AUTH_TOKEN_KEY, token);
-    } else {
-        localStorage.removeItem(AUTH_TOKEN_KEY);
+    if (!tokenCache) {
+        clearLegacyStorage();
     }
 }
 
 export function getAuthUser(): AuthUser | null {
-    if (userCache) return userCache;
-    if (!isBrowser()) return null;
-
-    const raw = localStorage.getItem(AUTH_USER_KEY);
-    if (!raw) return null;
-
-    try {
-        userCache = JSON.parse(raw) as AuthUser;
-        return userCache;
-    } catch {
-        localStorage.removeItem(AUTH_USER_KEY);
-        return null;
-    }
+    return userCache;
 }
 
 export function setAuthUser(user: AuthUser | null) {
     userCache = user;
-    if (!isBrowser()) return;
 
-    if (user) {
-        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-    } else {
-        localStorage.removeItem(AUTH_USER_KEY);
+    if (!user) {
+        clearLegacyStorage();
     }
 }
 
 export function clearAuthSession() {
-    setAuthToken(null);
-    setAuthUser(null);
+    tokenCache = null;
+    userCache = null;
+    clearLegacyStorage();
 }
 
 export function toAuthUser(user: TelegramAuthResponseUser): AuthUser {
@@ -136,7 +142,15 @@ export function persistTelegramAuthResponse(payload: TelegramAuthResponse): Auth
     return authUser;
 }
 
+export function setTelegramInitData(initData: string | null | undefined) {
+    telegramInitDataCache = trimValue(initData);
+}
+
 export function getTelegramInitData(): string | null {
+    if (telegramInitDataCache) {
+        return telegramInitDataCache;
+    }
+
     if (!isBrowser()) {
         return null;
     }
@@ -159,7 +173,7 @@ export function attachTelegramInitData(headers: Headers): boolean {
     return true;
 }
 
-export async function refreshAuthSession(): Promise<TelegramAuthResponse | null> {
+export async function refreshAuthSession(initDataOverride?: string | null): Promise<TelegramAuthResponse | null> {
     if (!isBrowser()) {
         return null;
     }
@@ -168,10 +182,12 @@ export async function refreshAuthSession(): Promise<TelegramAuthResponse | null>
         return authRefreshInFlight;
     }
 
-    const initData = getTelegramInitData();
+    const initData = trimValue(initDataOverride) || getTelegramInitData();
     if (!initData) {
         return null;
     }
+
+    setTelegramInitData(initData);
 
     authRefreshInFlight = (async () => {
         let response: Response;
@@ -181,10 +197,12 @@ export async function refreshAuthSession(): Promise<TelegramAuthResponse | null>
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
                     'X-Telegram-Init-Data': initData,
                 },
                 body: JSON.stringify({ initData }),
                 credentials: 'include',
+                cache: 'no-store',
             });
         } catch {
             return null;
