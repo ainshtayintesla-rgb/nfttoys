@@ -34,7 +34,7 @@ metadata:
   namespace: nfttoys-prod
 spec:
   serviceName: postgres
-  replicas: 0  # keep at 0 until docker-compose postgres is stopped (migration step)
+  replicas: 1
   selector:
     matchLabels:
       app: postgres
