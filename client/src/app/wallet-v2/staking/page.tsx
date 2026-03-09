@@ -8,6 +8,7 @@ import { BottomDrawer } from '@/components/ui/BottomDrawer';
 import { Button } from '@/components/ui/Button';
 import { TelegramBackButton } from '@/components/ui/TelegramBackButton';
 import { api } from '@/lib/api';
+import { API_BASE_URL } from '@/lib/apiBaseUrl';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
 import type { WalletV2NftStakingStateData, WalletV2NftStoryShareStateData } from '@/lib/walletV2/api';
@@ -271,7 +272,7 @@ export default function WalletV2StakingPage() {
             setStoryDrawerCode(code);
 
             // 2. Build story card image URL — use dynamic card, fallback to static
-            const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
+            const apiBase = API_BASE_URL;
             const dynamicUrl = `${apiBase}/v2/story-card/${encodeURIComponent(result.shareId)}.png`;
             const staticUrl = `${apiBase}/v2/story-card-static.png`;
 

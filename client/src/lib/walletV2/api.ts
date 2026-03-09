@@ -13,7 +13,7 @@ import {
     WalletV2SessionTokens,
 } from './tokenStore';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+import { API_BASE_URL } from '../apiBaseUrl';
 const WALLET_V2_API_PREFIX = '/v2';
 
 const SESSION_REFRESH_RETRY_STATUS = 401;

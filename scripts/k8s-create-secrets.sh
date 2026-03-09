@@ -9,7 +9,7 @@ NS="nfttoys-prod"
 
 [[ ! -f "$REPO/server/.env" ]] && echo "ERROR: $REPO/server/.env not found" && exit 1
 
-echo "Reading secrets from $REPO/{server,client,bot}/.env"
+echo "Reading secrets from $REPO/{server,client,bot,userbot}/.env"
 
 declare -A kv
 declare -a order
@@ -31,6 +31,7 @@ parse_env() {
 parse_env "$REPO/server/.env"
 parse_env "$REPO/client/.env"
 parse_env "$REPO/bot/.env"
+parse_env "$REPO/userbot/.env"
 
 # Override DATABASE_URL to use k3s postgres service hostname instead of 127.0.0.1
 PG_USER="${kv[POSTGRES_USER]:-nfttoys}"

@@ -2,11 +2,9 @@
  * API Configuration
  * Centralized API endpoint configuration
  */
+import { API_BASE_URL } from './apiBaseUrl';
 import { getAuthToken } from './auth';
 import { walletV2Api } from './walletV2/api';
-
-// API base URL - set to server URL in production
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 /**
  * Make API request
