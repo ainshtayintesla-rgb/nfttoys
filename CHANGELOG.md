@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.26] - 2026-03-09
+
+### Fixed
+- Staking story boost no longer applies retroactively. Previously, when a story was shared the boost multiplier was applied to all accumulated hours since the last claim, causing the pending reward to inflate immediately (e.g. 300 UZS → 400+ UZS before any verification). Now the boost only applies to whole hours that elapsed **after** `sharedAt`: hours before the share use the base reward rate, hours from the first full tick after the share use the boosted rate.
+
 ## [0.2.25] - 2026-03-01
 
 ### Changed
