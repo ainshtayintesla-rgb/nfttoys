@@ -16,13 +16,14 @@ import { api } from '@/lib/api';
 import { BalanceTopupTab } from './components/BalanceTopupTab';
 import { AdminCustomSelect } from './components/AdminCustomSelect';
 import { AdminUpdatesTab } from './components/UpdatesTab';
+import { AdminUserbotTab } from './components/UserbotTab';
 import styles from './page.module.css';
 
 // Admin whitelist - Telegram IDs allowed to access admin
 const ADMIN_IDS = process.env.NEXT_PUBLIC_ADMIN_IDS?.split(',') || [];
 const MAX_BULK_GENERATION = 500;
 
-type AdminTab = 'nft' | 'db' | 'topup' | 'updates';
+type AdminTab = 'nft' | 'db' | 'topup' | 'updates' | 'userbot';
 type DbActionType = 'purgeNfts' | 'purgeUsers';
 
 interface QRCodeData {
@@ -461,6 +462,7 @@ export default function AdminPage() {
                         { key: 'db', label: t('admin_tab_db') },
                         { key: 'topup', label: t('admin_tab_topup') },
                         { key: 'updates', label: t('admin_tab_updates') },
+                        { key: 'userbot', label: 'Userbot' },
                     ]}
                     activeKey={activeTab}
                     onChange={setActiveTab}
@@ -811,6 +813,10 @@ export default function AdminPage() {
 
                 {activeTab === 'updates' && (
                     <AdminUpdatesTab />
+                )}
+
+                {activeTab === 'userbot' && (
+                    <AdminUserbotTab />
                 )}
             </main>
 

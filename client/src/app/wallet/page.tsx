@@ -1474,7 +1474,7 @@ export default function WalletPage() {
                     onClose={closeWalletDetails}
                     title={t('transactions_details') || 'Transfer details'}
                     closeAriaLabel={t('transactions_close') || 'Close'}
-                    mode="static"
+                    mode="animated"
                     overlayClassName={styles.walletDetailsOverlay}
                     drawerClassName={styles.walletDetailsDrawer}
                     bodyClassName={styles.drawerBodyPlain}

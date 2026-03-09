@@ -2,14 +2,15 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { IoRefresh, IoSparkles } from 'react-icons/io5';
+import { IoCheckmarkCircle, IoRefresh, IoShareSocial, IoSparkles, IoTime } from 'react-icons/io5';
 
+import { BottomDrawer } from '@/components/ui/BottomDrawer';
 import { Button } from '@/components/ui/Button';
 import { TelegramBackButton } from '@/components/ui/TelegramBackButton';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useTelegram } from '@/lib/context/TelegramContext';
-import type { WalletV2NftStakingStateData } from '@/lib/walletV2/api';
+import type { WalletV2NftStakingStateData, WalletV2NftStoryShareStateData } from '@/lib/walletV2/api';
 import { isWalletV2ApiError } from '@/lib/walletV2/errors';
 import { resetWalletV2ClientAuthState } from '@/lib/walletV2/sessionLifecycle';
 
@@ -111,7 +112,7 @@ function safeErrorMessage(error: unknown): string {
 
 export default function WalletV2StakingPage() {
     const { t, locale } = useLanguage();
-    const { haptic } = useTelegram();
+    const { haptic, webApp } = useTelegram();
     const router = useRouter();
 
     const tr = useCallback((key: string, fallback: string): string => {
@@ -208,6 +209,109 @@ export default function WalletV2StakingPage() {
         }
     }, [haptic, loadNftStakingState, walletId]);
 
+    // ─── Story share state ────────────────────────────────────────────────
+    const [storyShareStates, setStoryShareStates] = useState<Record<string, WalletV2NftStoryShareStateData>>({});
+    const [storyShareLoadingTokenId, setStoryShareLoadingTokenId] = useState<string | null>(null);
+
+    const loadStoryShareState = useCallback(async (tokenId: string) => {
+        if (!walletId) return;
+        try {
+            const state = await api.walletV2.nftStaking.storyShareState({ walletId, tokenId });
+            setStoryShareStates((prev) => ({ ...prev, [tokenId]: state }));
+        } catch {
+            // Silently fail — story share is optional feature
+        }
+    }, [walletId]);
+
+    // Load story share states for all staked positions
+    useEffect(() => {
+        if (!walletId || stakingPositions.length === 0) return;
+        stakingPositions.forEach((pos) => {
+            void loadStoryShareState(pos.tokenId);
+        });
+    }, [loadStoryShareState, stakingPositions, walletId]);
+
+    // ─── Story share drawer ──────────────────────────────────────────────
+    const [storyDrawerOpen, setStoryDrawerOpen] = useState(false);
+    const [storyDrawerTokenId, setStoryDrawerTokenId] = useState<string | null>(null);
+    const [storyDrawerAgreed, setStoryDrawerAgreed] = useState(false);
+    const [storyDrawerStep, setStoryDrawerStep] = useState<'rules' | 'sharing' | 'verifying'>('rules');
+    const [storyDrawerCode, setStoryDrawerCode] = useState('');
+
+    const openStoryDrawer = useCallback((tokenId: string) => {
+        setStoryDrawerTokenId(tokenId);
+        setStoryDrawerAgreed(false);
+        setStoryDrawerStep('rules');
+        setStoryDrawerCode('');
+        setStoryDrawerOpen(true);
+        // Refresh state when opening drawer to get fresh cooldown info
+        void loadStoryShareState(tokenId);
+    }, [loadStoryShareState]);
+
+    const closeStoryDrawer = useCallback(() => {
+        setStoryDrawerOpen(false);
+        setStoryDrawerTokenId(null);
+        setStoryDrawerStep('rules');
+        setStoryDrawerCode('');
+    }, []);
+
+    const handleShareStory = useCallback(async () => {
+        if (!walletId || !webApp?.shareToStory || !storyDrawerTokenId) return;
+
+        const tokenId = storyDrawerTokenId;
+        setStoryDrawerStep('sharing');
+        setStoryShareLoadingTokenId(tokenId);
+        setNftStakingError('');
+        setRequestSuccess('');
+
+        try {
+            // 1. Record the share on server first to get verificationCode + shareId
+            const result = await api.walletV2.nftStaking.storyShare({ walletId, tokenId });
+            const code = result.verificationCode || '';
+            setStoryDrawerCode(code);
+
+            // 2. Build story card image URL — use dynamic card, fallback to static
+            const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
+            const dynamicUrl = `${apiBase}/v2/story-card/${encodeURIComponent(result.shareId)}.png`;
+            const staticUrl = `${apiBase}/v2/story-card-static.png`;
+
+            // Test if dynamic URL works, fallback to static
+            let storyCardUrl = staticUrl;
+            try {
+                const probe = await fetch(dynamicUrl, { method: 'HEAD' });
+                if (probe.ok) storyCardUrl = dynamicUrl;
+            } catch { /* use static */ }
+
+            // 3. Open Telegram story share UI
+            const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
+            webApp.shareToStory(storyCardUrl, {
+                text: `NFTToys Staking Boost | ${code}`,
+                widget_link: appUrl ? { url: appUrl, name: 'NFTToys' } : undefined,
+            });
+
+            // 3. Move to verifying state — bonus only shown after userbot confirms
+            setStoryDrawerStep('verifying');
+            setRequestSuccess('');
+
+            // Refresh states
+            await Promise.all([
+                loadNftStakingState(false),
+                loadStoryShareState(tokenId),
+            ]);
+            haptic.success();
+        } catch (error) {
+            if (isWalletV2ApiError(error) && error.code === 'STORY_ALREADY_SHARED_TODAY') {
+                setNftStakingError('Already shared story for this NFT today. Try again later.');
+            } else {
+                setNftStakingError(safeErrorMessage(error));
+            }
+            haptic.error();
+            closeStoryDrawer();
+        } finally {
+            setStoryShareLoadingTokenId(null);
+        }
+    }, [closeStoryDrawer, haptic, loadNftStakingState, loadStoryShareState, storyDrawerTokenId, walletId, webApp]);
+
     const resolveFatalSessionMessage = useCallback((error?: unknown): string => {
         if (isWalletV2ApiError(error) && error.code === 'WALLET_NOT_FOUND') {
             return tr(
@@ -266,13 +370,7 @@ export default function WalletV2StakingPage() {
             <div className={styles.container}>
                 <main className={styles.main}>
                     <section className={styles.pageHeader}>
-                        <div className={styles.pageTitleWrap}>
-                            <div className={styles.pageBadge}>
-                                <IoSparkles size={14} />
-                                <span>{tr('wallet_v2_nft_staking_title', 'NFT Staking')}</span>
-                            </div>
-                            <h1 className={styles.pageTitle}>{tr('wallet_v2_nft_staking_title', 'NFT Staking')}</h1>
-                        </div>
+                        <h1 className={styles.pageTitle}>{tr('wallet_v2_nft_staking_title', 'NFT Staking')}</h1>
 
                         <button
                             type="button"
@@ -287,8 +385,6 @@ export default function WalletV2StakingPage() {
                         </button>
                     </section>
 
-                    <p className={styles.pageHint}>{stakingWindowHint}</p>
-
                     {requestSuccess && (
                         <p className={styles.statusSuccess}>{requestSuccess}</p>
                     )}
@@ -298,10 +394,8 @@ export default function WalletV2StakingPage() {
                     )}
 
                     {!walletId ? (
-                        <section className={styles.card}>
-                            <p className={styles.emptyText}>
-                                {tr('wallet_v2_error_session_missing', 'Wallet session is missing')}
-                            </p>
+                        <div className={styles.emptyText}>
+                            <p>{tr('wallet_v2_error_session_missing', 'Wallet session is missing')}</p>
                             <Button
                                 variant="primary"
                                 onClick={() => {
@@ -311,9 +405,9 @@ export default function WalletV2StakingPage() {
                             >
                                 {tr('wallet_v2_open_wallet', 'Open Wallet V2')}
                             </Button>
-                        </section>
+                        </div>
                     ) : (
-                        <section className={styles.card}>
+                        <>
                             {isNftStakingLoading && !nftStakingState && (
                                 <p className={styles.hint}>
                                     {tr('wallet_v2_loading', 'Loading...')}
@@ -380,6 +474,26 @@ export default function WalletV2StakingPage() {
                                                                 </p>
                                                             )}
 
+                                                            {/* Story Boost info */}
+                                                            {(() => {
+                                                                const ssState = storyShareStates[position.tokenId];
+                                                                if (ssState?.activeBoost) {
+                                                                    const expires = new Date(ssState.activeBoost.boostExpiresAt);
+                                                                    const hoursLeft = Math.max(0, Math.round((expires.getTime() - Date.now()) / 3600000));
+                                                                    const isPending = ssState.activeBoost.status === 'pending';
+                                                                    return (
+                                                                        <div className={styles.boostBadge}>
+                                                                            {isPending ? <IoTime size={13} /> : <IoCheckmarkCircle size={13} />}
+                                                                            <span>
+                                                                                +{Math.round((ssState.activeBoost.boostMultiplier - 1) * 100)}% boost
+                                                                                {isPending ? ' verifying...' : ` (${hoursLeft}h left)`}
+                                                                            </span>
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                return null;
+                                                            })()}
+
                                                             <div className={styles.actions}>
                                                                 <Button
                                                                     size="sm"
@@ -403,6 +517,36 @@ export default function WalletV2StakingPage() {
                                                                 >
                                                                     {tr('wallet_v2_staking_unstake', 'Unstake')}
                                                                 </Button>
+                                                                {webApp?.shareToStory && position.owned && (() => {
+                                                                    const ss = storyShareStates[position.tokenId];
+                                                                    const isPending = ss?.activeBoost?.status === 'pending';
+                                                                    const isVerified = ss?.activeBoost?.status === 'verified';
+                                                                    if (isPending) {
+                                                                        return (
+                                                                            <Button size="sm" variant="secondary" disabled>
+                                                                                <IoTime size={14} style={{ marginRight: 4 }} />
+                                                                                Verifying...
+                                                                            </Button>
+                                                                        );
+                                                                    }
+                                                                    if (isVerified) {
+                                                                        return null; // boost badge already shown above
+                                                                    }
+                                                                    return (
+                                                                        <Button
+                                                                            size="sm"
+                                                                            variant="primary"
+                                                                            isLoading={storyShareLoadingTokenId === position.tokenId}
+                                                                            disabled={isAnyActionLoading || storyShareLoadingTokenId !== null}
+                                                                            onClick={() => {
+                                                                                openStoryDrawer(position.tokenId);
+                                                                            }}
+                                                                        >
+                                                                            <IoShareSocial size={14} style={{ marginRight: 4 }} />
+                                                                            {tr('wallet_v2_story_share', 'Share Story +40%')}
+                                                                        </Button>
+                                                                    );
+                                                                })()}
                                                             </div>
                                                         </div>
                                                     );
@@ -468,10 +612,111 @@ export default function WalletV2StakingPage() {
                                     )}
                                 </div>
                             )}
-                        </section>
+                        </>
                     )}
                 </main>
             </div>
+
+            {/* Story Share Drawer */}
+            <BottomDrawer
+                open={storyDrawerOpen}
+                onClose={closeStoryDrawer}
+                title={storyDrawerStep === 'verifying' ? 'Verifying Story' : 'Share Story'}
+            >
+                <div className={styles.drawerContent}>
+                    {storyDrawerStep === 'rules' && (() => {
+                        const ssState = storyDrawerTokenId ? storyShareStates[storyDrawerTokenId] : null;
+                        const canShare = ssState?.canShare !== false;
+                        const nextShareAt = ssState?.nextShareAt;
+
+                        return (
+                            <>
+                                <div className={styles.drawerRules}>
+                                    <div className={styles.drawerRule}>
+                                        <IoSparkles size={16} className={styles.drawerRuleIcon} />
+                                        <span>Get +40% staking reward boost for 3 days</span>
+                                    </div>
+                                    <div className={styles.drawerRule}>
+                                        <IoShareSocial size={16} className={styles.drawerRuleIcon} />
+                                        <span>Post a story to your Telegram profile</span>
+                                    </div>
+                                    <div className={styles.drawerRule}>
+                                        <IoCheckmarkCircle size={16} className={styles.drawerRuleIcon} />
+                                        <span>Our system will verify your story automatically</span>
+                                    </div>
+                                    <div className={styles.drawerRule}>
+                                        <IoTime size={16} className={styles.drawerRuleIcon} />
+                                        <span>Keep the story for at least 5 minutes</span>
+                                    </div>
+                                </div>
+
+                                {!canShare && nextShareAt && (
+                                    <p className={styles.drawerCooldown}>
+                                        <IoTime size={14} />
+                                        <span>
+                                            Next share available: {formatDateTime(nextShareAt, locale)}
+                                        </span>
+                                    </p>
+                                )}
+
+                                {canShare && (
+                                    <>
+                                        <label className={styles.drawerCheckbox}>
+                                            <input
+                                                type="checkbox"
+                                                checked={storyDrawerAgreed}
+                                                onChange={(e) => setStoryDrawerAgreed(e.target.checked)}
+                                            />
+                                            <span>I agree to share a story with boost verification</span>
+                                        </label>
+                                        <Button
+                                            variant="primary"
+                                            disabled={!storyDrawerAgreed || storyShareLoadingTokenId !== null}
+                                            isLoading={storyShareLoadingTokenId !== null}
+                                            onClick={() => void handleShareStory()}
+                                        >
+                                            <IoShareSocial size={16} style={{ marginRight: 6 }} />
+                                            Share Story Now
+                                        </Button>
+                                    </>
+                                )}
+
+                                {!canShare && (
+                                    <Button variant="secondary" onClick={closeStoryDrawer}>
+                                        Close
+                                    </Button>
+                                )}
+                            </>
+                        );
+                    })()}
+
+                    {storyDrawerStep === 'sharing' && (
+                        <div className={styles.drawerVerifying}>
+                            <div className={styles.drawerSpinner} />
+                            <p>Preparing story card...</p>
+                        </div>
+                    )}
+
+                    {storyDrawerStep === 'verifying' && (
+                        <div className={styles.drawerVerifying}>
+                            <IoTime size={32} className={styles.drawerVerifyIcon} />
+                            <p className={styles.drawerVerifyTitle}>Story verification in progress</p>
+                            <p className={styles.drawerVerifyHint}>
+                                Our system will check your story shortly. Keep it posted for at least 5 minutes.
+                            </p>
+                            {storyDrawerCode && (
+                                <div className={styles.drawerCodeBox}>
+                                    <span>Verification code</span>
+                                    <strong>{storyDrawerCode}</strong>
+                                </div>
+                            )}
+                            <Button variant="secondary" onClick={closeStoryDrawer}>
+                                Close
+                            </Button>
+                        </div>
+                    )}
+                </div>
+            </BottomDrawer>
         </>
     );
 }

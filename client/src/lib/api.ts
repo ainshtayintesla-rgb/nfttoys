@@ -103,6 +103,29 @@ interface AdminWalletTopupResponse {
     operation: WalletOperationItem;
 }
 
+export interface AdminUserbotSessionData {
+    id: string;
+    phone: string;
+    status: string;
+    errorMessage: string | null;
+    lastActiveAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface AdminUserbotSessionResponse {
+    success: boolean;
+    session: AdminUserbotSessionData | null;
+    schemaReady: boolean;
+}
+
+export interface AdminUserbotVerifyResponse {
+    success: boolean;
+    sessionId?: string;
+    status?: string;
+    requires2fa?: boolean;
+}
+
 interface WalletSummary {
     address: string;
     friendlyAddress: string;
@@ -424,6 +447,30 @@ export const api = {
                 method: 'POST',
                 body: JSON.stringify(data),
             }),
+
+        userbotSession: () =>
+            apiFetch<AdminUserbotSessionResponse>('/admin/userbot/session'),
+
+        userbotInit: (phone: string) =>
+            apiFetch<{ success: boolean; sessionId: string; status: string }>('/admin/userbot/session/init', {
+                method: 'POST',
+                body: JSON.stringify({ phone }),
+            }),
+
+        userbotVerify: (data: { sessionId: string; code?: string; password?: string }) =>
+            apiFetch<AdminUserbotVerifyResponse>('/admin/userbot/session/verify', {
+                method: 'POST',
+                body: JSON.stringify(data),
+            }),
+
+        userbotDisconnect: (sessionId: string) =>
+            apiFetch<{ success: boolean; status: string }>('/admin/userbot/session/disconnect', {
+                method: 'POST',
+                body: JSON.stringify({ sessionId }),
+            }),
+
+        storyBoostStats: () =>
+            apiFetch<{ success: boolean; stats: { totalShares: number; activeBoosts: number; verifiedShares: number } | null; schemaReady: boolean }>('/admin/story-boost/stats'),
     },
 
     // Wallet

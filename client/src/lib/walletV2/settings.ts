@@ -1,5 +1,8 @@
+import { type EncryptedMnemonic, isEncryptedMnemonic } from './mnemonicCrypto';
+
 const WALLET_V2_SETTINGS_STORAGE_PREFIX = 'nfttoys_wallet_v2_settings:';
 const WALLET_V2_AUTH_STATE_STORAGE_KEY = 'nfttoys_wallet_v2_auth_state';
+const WALLET_V2_ENCRYPTED_MNEMONIC_PREFIX = 'nfttoys_wallet_v2_emnem:';
 const MNEMONIC_WORDS_COUNT = 24;
 const MNEMONIC_WORD_REGEX = /^[a-z]+$/;
 const DEFAULT_REMEMBER_TIMEOUT_MINUTES = 5;
@@ -321,6 +324,44 @@ export function isWalletV2RememberedAuthValid(walletId: string | null | undefine
     }
 
     return current.unlockedUntil > Date.now();
+}
+
+// ─── Encrypted mnemonic storage ──────────────────────────────────────────────
+
+export function getWalletV2EncryptedMnemonic(walletId: string | null | undefined): EncryptedMnemonic | null {
+    const nid = normalizeWalletId(walletId);
+    if (!isBrowser() || !nid) return null;
+
+    const raw = localStorage.getItem(`${WALLET_V2_ENCRYPTED_MNEMONIC_PREFIX}${nid}`);
+    if (!raw) return null;
+
+    try {
+        const parsed = JSON.parse(raw);
+        return isEncryptedMnemonic(parsed) ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
+export function setWalletV2EncryptedMnemonic(
+    walletId: string | null | undefined,
+    encrypted: EncryptedMnemonic,
+): void {
+    const nid = normalizeWalletId(walletId);
+    if (!isBrowser() || !nid) return;
+
+    localStorage.setItem(`${WALLET_V2_ENCRYPTED_MNEMONIC_PREFIX}${nid}`, JSON.stringify(encrypted));
+}
+
+export function hasWalletV2EncryptedMnemonic(walletId: string | null | undefined): boolean {
+    return getWalletV2EncryptedMnemonic(walletId) !== null;
+}
+
+export function clearWalletV2EncryptedMnemonic(walletId: string | null | undefined): void {
+    const nid = normalizeWalletId(walletId);
+    if (!isBrowser() || !nid) return;
+
+    localStorage.removeItem(`${WALLET_V2_ENCRYPTED_MNEMONIC_PREFIX}${nid}`);
 }
 
 export function resetWalletV2LocalAuthState(params: {

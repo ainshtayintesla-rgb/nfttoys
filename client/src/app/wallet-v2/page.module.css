@@ -1188,3 +1188,129 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
+
+/* Wallet switcher badge */
+.walletSwitchBadge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-alpha-12);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.walletSwitchBadge:active {
+    background: var(--surface-alpha-20);
+}
+
+/* Wallet list drawer */
+.walletListDrawer {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.walletListItem {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 12px;
+    border: none;
+    background: var(--surface-alpha-06);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+    text-align: left;
+    color: var(--text-primary);
+}
+
+.walletListItem:active:not(:disabled) {
+    background: var(--surface-alpha-12);
+}
+
+.walletListItem:disabled {
+    cursor: default;
+}
+
+.walletListItemActive {
+    background: var(--surface-alpha-12);
+}
+
+.walletListItemLeft {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.walletListItemLeft > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.walletListItemLeft strong {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.walletListAddr {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    font-family: var(--font-mono, monospace);
+}
+
+.walletListItemRight {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.walletListActiveBadge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #22c55e;
+    color: white;
+}
+
+/* Own wallet quick-fill chips in send form */
+.ownWalletsList {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.ownWalletChip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border: 1px solid var(--surface-alpha-12);
+    background: var(--surface-alpha-06);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.ownWalletChip:active {
+    background: var(--surface-alpha-16);
+}

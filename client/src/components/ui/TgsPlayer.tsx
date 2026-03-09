@@ -14,6 +14,7 @@ interface TgsPlayerProps {
     loop?: boolean;
     autoplay?: boolean;
     playOnHover?: boolean;
+    playOnTap?: boolean;
     renderer?: "svg" | "canvas";
 }
 
@@ -100,6 +101,7 @@ export const TgsPlayer = React.memo(
         loop = false,
         autoplay = true,
         playOnHover = false,
+        playOnTap = false,
         renderer = "canvas",
     }: TgsPlayerProps) => {
         const containerRef = useRef<HTMLDivElement>(null);
@@ -310,8 +312,22 @@ export const TgsPlayer = React.memo(
             animationRef.current?.goToAndPlay(0, true);
         };
 
+        const handleTap = () => {
+            if (!playOnTap || !animationsEnabled) {
+                return;
+            }
+
+            if (!shouldLoadRef.current) {
+                shouldLoadRef.current = true;
+                setShouldLoad(true);
+                return;
+            }
+
+            animationRef.current?.goToAndPlay(0, true);
+        };
+
         return (
-            <div className={wrapperClassName} onMouseEnter={handleMouseEnter}>
+            <div className={wrapperClassName} onMouseEnter={handleMouseEnter} onClick={handleTap}>
                 <div
                     ref={containerRef}
                     style={style}

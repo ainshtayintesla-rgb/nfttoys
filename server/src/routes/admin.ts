@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import crypto from 'crypto';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '../lib/db/prisma';
@@ -885,6 +886,333 @@ router.post('/updates/settings', strictLimit, requireAuth, requireAdmin, csrfPro
         });
     } catch (error) {
         return handleUpdateRouteError(res, error, 'UPDATES_SETTINGS_FAILED');
+    }
+});
+
+// ─── Userbot Session Management ─────────────────────────────────────────────
+
+const USERBOT_API_URL = process.env.USERBOT_API_URL || 'http://userbot:8095';
+
+function assertUserbotSessionPrismaReady(): boolean {
+    const delegate = (prisma as unknown as { userbotSession?: unknown }).userbotSession;
+    return delegate !== undefined;
+}
+
+router.get('/userbot/session', requireAuth, requireAdmin, async (_req, res) => {
+    try {
+        if (!assertUserbotSessionPrismaReady()) {
+            return res.json({
+                success: true,
+                session: null,
+                schemaReady: false,
+            });
+        }
+
+        const session = await (prisma as unknown as {
+            userbotSession: { findFirst: Function };
+        }).userbotSession.findFirst({
+            orderBy: { createdAt: 'desc' },
+            select: {
+                id: true,
+                phone: true,
+                status: true,
+                errorMessage: true,
+                lastActiveAt: true,
+                createdAt: true,
+                updatedAt: true,
+            },
+        });
+
+        return res.json({
+            success: true,
+            session: session
+                ? {
+                    ...session,
+                    lastActiveAt: session.lastActiveAt?.toISOString() || null,
+                    createdAt: session.createdAt.toISOString(),
+                    updatedAt: session.updatedAt.toISOString(),
+                }
+                : null,
+            schemaReady: true,
+        });
+    } catch (error) {
+        console.error('Admin userbot session fetch error:', error);
+        return res.status(500).json({
+            error: 'Failed to fetch userbot session',
+            code: 'USERBOT_SESSION_FETCH_FAILED',
+        });
+    }
+});
+
+router.post('/userbot/session/init', strictLimit, requireAuth, requireAdmin, csrfProtection, async (req, res) => {
+    try {
+        if (!assertUserbotSessionPrismaReady()) {
+            return res.status(503).json({
+                error: 'Userbot schema not ready. Run migrations.',
+                code: 'USERBOT_SCHEMA_NOT_READY',
+            });
+        }
+
+        const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
+        if (!phone || !/^\+?\d{7,15}$/.test(phone.replace(/[\s()-]/g, ''))) {
+            return res.status(400).json({
+                error: 'Valid phone number is required',
+                code: 'INVALID_PHONE',
+            });
+        }
+
+        const normalizedPhone = phone.replace(/[\s()-]/g, '');
+
+        // Upsert session record
+        const sessionId = crypto.randomUUID();
+        const session = await (prisma as unknown as {
+            userbotSession: { upsert: Function };
+        }).userbotSession.upsert({
+            where: { phone: normalizedPhone },
+            update: {
+                status: 'awaiting_code',
+                errorMessage: null,
+            },
+            create: {
+                id: sessionId,
+                phone: normalizedPhone,
+                status: 'awaiting_code',
+            },
+        });
+
+        // Send request to userbot service to initiate login
+        try {
+            const response = await fetch(`${USERBOT_API_URL}/auth/send-code`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: normalizedPhone, sessionId: session.id }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({})) as Record<string, unknown>;
+                const errMsg = typeof errorData.error === 'string' ? errorData.error : `Userbot service returned ${response.status}`;
+                await (prisma as unknown as {
+                    userbotSession: { update: Function };
+                }).userbotSession.update({
+                    where: { id: session.id },
+                    data: {
+                        status: 'error',
+                        errorMessage: errMsg,
+                    },
+                });
+
+                return res.status(502).json({
+                    error: errMsg,
+                    code: 'USERBOT_SEND_CODE_FAILED',
+                });
+            }
+        } catch (fetchError) {
+            await (prisma as unknown as {
+                userbotSession: { update: Function };
+            }).userbotSession.update({
+                where: { id: session.id },
+                data: {
+                    status: 'error',
+                    errorMessage: 'Userbot service unreachable',
+                },
+            });
+
+            return res.status(502).json({
+                error: 'Userbot service is not running or unreachable',
+                code: 'USERBOT_UNREACHABLE',
+            });
+        }
+
+        return res.json({
+            success: true,
+            sessionId: session.id,
+            status: 'awaiting_code',
+        });
+    } catch (error) {
+        console.error('Admin userbot session init error:', error);
+        return res.status(500).json({
+            error: 'Failed to initialize userbot session',
+            code: 'USERBOT_INIT_FAILED',
+        });
+    }
+});
+
+router.post('/userbot/session/verify', strictLimit, requireAuth, requireAdmin, csrfProtection, async (req, res) => {
+    try {
+        if (!assertUserbotSessionPrismaReady()) {
+            return res.status(503).json({
+                error: 'Userbot schema not ready',
+                code: 'USERBOT_SCHEMA_NOT_READY',
+            });
+        }
+
+        const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
+        const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+        const password = typeof req.body?.password === 'string' ? req.body.password : undefined;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'sessionId is required', code: 'MISSING_SESSION_ID' });
+        }
+
+        if (!code && !password) {
+            return res.status(400).json({ error: 'code or password is required', code: 'MISSING_CREDENTIALS' });
+        }
+
+        // Forward to userbot service
+        const response = await fetch(`${USERBOT_API_URL}/auth/verify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId, code: code || undefined, password }),
+        });
+
+        const data = await response.json().catch(() => ({ error: 'Invalid response from userbot' })) as Record<string, unknown>;
+        const dataError = typeof data.error === 'string' ? data.error : 'Verification failed';
+        const dataCode = typeof data.code === 'string' ? data.code : '';
+
+        if (!response.ok) {
+            // If 2FA required, update status
+            if (dataCode === 'TWO_FA_REQUIRED') {
+                await (prisma as unknown as {
+                    userbotSession: { update: Function };
+                }).userbotSession.update({
+                    where: { id: sessionId },
+                    data: { status: 'awaiting_2fa' },
+                });
+
+                return res.status(200).json({
+                    success: false,
+                    requires2fa: true,
+                    sessionId,
+                    status: 'awaiting_2fa',
+                });
+            }
+
+            await (prisma as unknown as {
+                userbotSession: { update: Function };
+            }).userbotSession.update({
+                where: { id: sessionId },
+                data: {
+                    status: 'error',
+                    errorMessage: dataError,
+                },
+            });
+
+            return res.status(response.status >= 500 ? 502 : response.status).json({
+                error: dataError,
+                code: dataCode || 'USERBOT_VERIFY_FAILED',
+            });
+        }
+
+        // Success — save session string
+        const sessionString = typeof data.sessionString === 'string' ? data.sessionString : null;
+        await (prisma as unknown as {
+            userbotSession: { update: Function };
+        }).userbotSession.update({
+            where: { id: sessionId },
+            data: {
+                status: 'active',
+                sessionString,
+                errorMessage: null,
+                lastActiveAt: new Date(),
+            },
+        });
+
+        return res.json({
+            success: true,
+            sessionId,
+            status: 'active',
+        });
+    } catch (error) {
+        console.error('Admin userbot session verify error:', error);
+        return res.status(500).json({
+            error: 'Failed to verify userbot session',
+            code: 'USERBOT_VERIFY_FAILED',
+        });
+    }
+});
+
+router.post('/userbot/session/disconnect', strictLimit, requireAuth, requireAdmin, csrfProtection, async (req, res) => {
+    try {
+        if (!assertUserbotSessionPrismaReady()) {
+            return res.status(503).json({
+                error: 'Userbot schema not ready',
+                code: 'USERBOT_SCHEMA_NOT_READY',
+            });
+        }
+
+        const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
+        if (!sessionId) {
+            return res.status(400).json({ error: 'sessionId is required', code: 'MISSING_SESSION_ID' });
+        }
+
+        // Tell userbot to disconnect
+        try {
+            await fetch(`${USERBOT_API_URL}/auth/disconnect`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId }),
+            });
+        } catch {
+            // Userbot service may be down; proceed with DB cleanup
+        }
+
+        await (prisma as unknown as {
+            userbotSession: { update: Function };
+        }).userbotSession.update({
+            where: { id: sessionId },
+            data: {
+                status: 'inactive',
+                sessionString: null,
+                errorMessage: null,
+            },
+        });
+
+        return res.json({
+            success: true,
+            status: 'inactive',
+        });
+    } catch (error) {
+        console.error('Admin userbot session disconnect error:', error);
+        return res.status(500).json({
+            error: 'Failed to disconnect userbot session',
+            code: 'USERBOT_DISCONNECT_FAILED',
+        });
+    }
+});
+
+// ─── Story Boost Admin Stats ────────────────────────────────────────────────
+
+router.get('/story-boost/stats', requireAuth, requireAdmin, async (_req, res) => {
+    try {
+        const nftStoryShareReady = (prisma as unknown as { nftStoryShare?: unknown }).nftStoryShare !== undefined;
+        if (!nftStoryShareReady) {
+            return res.json({ success: true, stats: null, schemaReady: false });
+        }
+
+        const [totalShares, activeBoosts, verifiedShares] = await Promise.all([
+            (prisma as unknown as { nftStoryShare: { count: Function } }).nftStoryShare.count(),
+            (prisma as unknown as { nftStoryShare: { count: Function } }).nftStoryShare.count({
+                where: {
+                    status: 'verified',
+                    boostExpiresAt: { gt: new Date() },
+                },
+            }),
+            (prisma as unknown as { nftStoryShare: { count: Function } }).nftStoryShare.count({
+                where: { status: 'verified' },
+            }),
+        ]);
+
+        return res.json({
+            success: true,
+            stats: { totalShares, activeBoosts, verifiedShares },
+            schemaReady: true,
+        });
+    } catch (error) {
+        console.error('Admin story boost stats error:', error);
+        return res.status(500).json({
+            error: 'Failed to fetch story boost stats',
+            code: 'STORY_BOOST_STATS_FAILED',
+        });
     }
 });
 

@@ -238,9 +238,14 @@ export interface WalletV2NftStakingUnstakeData {
 export interface WalletV2NftStoryShareData {
     walletId: string;
     tokenId: string;
+    shareId: string;
     rewardAsset: string;
     streakDay: number;
     bonusAmount: string;
+    boostMultiplier: number;
+    boostExpiresAt: string | null;
+    status: string;
+    verificationCode: string;
     sharedAt: string;
     balance: {
         asset: string;
@@ -272,6 +277,11 @@ export interface WalletV2NftStoryShareStateData {
     cooldownHours: number;
     streakWindowHours: number;
     maxStreakMultiplier: number;
+    activeBoost: {
+        boostMultiplier: number;
+        boostExpiresAt: string;
+        status: string;
+    } | null;
 }
 
 export interface WalletV2TestnetTopupData {
@@ -288,6 +298,29 @@ export interface WalletV2TestnetTopupData {
         createdAt: string;
         completedAt: string | null;
     };
+}
+
+export interface WalletV2WalletListItem {
+    id: string;
+    address: string | null;
+    status: string;
+    createdAt: string;
+    balances: WalletV2BalanceRow[];
+}
+
+export interface WalletV2WalletListData {
+    wallets: WalletV2WalletListItem[];
+}
+
+export interface WalletV2SwitchPayload {
+    walletId: string;
+    pin: string;
+    device: WalletV2DeviceInput;
+}
+
+export interface WalletV2SwitchData {
+    wallet: WalletV2Wallet;
+    session: WalletV2SessionInfo;
 }
 
 export interface WalletV2CreatePayload {
@@ -628,6 +661,38 @@ export function onWalletV2SessionRevoked(listener: SessionRevokedListener): () =
 }
 
 export const walletV2Api = {
+    async listWallets(): Promise<WalletV2WalletListItem[]> {
+        const legacyToken = requireLegacyAuthToken();
+        const response = await walletV2Fetch<WalletV2ApiEnvelope<WalletV2WalletListData>>('/wallets', {
+            requiresWalletSession: false,
+            headers: {
+                Authorization: `Bearer ${legacyToken}`,
+            },
+        });
+
+        return response.data.wallets || [];
+    },
+
+    async switchWallet(payload: WalletV2SwitchPayload): Promise<WalletV2SwitchData> {
+        const legacyToken = requireLegacyAuthToken();
+        const response = await walletV2Fetch<WalletV2ApiEnvelope<WalletV2SwitchData>>('/wallet/switch', {
+            method: 'POST',
+            requiresWalletSession: false,
+            headers: {
+                Authorization: `Bearer ${legacyToken}`,
+            },
+            body: JSON.stringify(payload),
+        });
+
+        setWalletV2DeviceId(payload.device.deviceId);
+        persistWalletV2Session({
+            walletId: response.data.wallet.id,
+            session: response.data.session,
+        });
+
+        return response.data;
+    },
+
     async create(payload: WalletV2CreatePayload): Promise<WalletV2CreateData> {
         const legacyToken = requireLegacyAuthToken();
         const response = await walletV2Fetch<WalletV2ApiEnvelope<WalletV2CreateData>>('/wallet/create', {

@@ -324,20 +324,42 @@ model AuditEventV2 {
 }
 
 model NftStoryShare {
-  id          String    @id @db.Uuid
-  walletId    String    @map("wallet_id") @db.Uuid
-  tokenId     String    @map("token_id")
-  userId      String?   @map("user_id")
-  sharedAt    DateTime  @default(now()) @map("shared_at") @db.Timestamptz(6)
-  bonusAmount BigInt    @default(0) @map("bonus_amount")
-  streakDay   Int       @default(1) @map("streak_day")
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  wallet      WalletV2  @relation(fields: [walletId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  nft         Nft       @relation(fields: [tokenId], references: [tokenId], onDelete: Cascade, onUpdate: Cascade)
-  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  id              String    @id @db.Uuid
+  walletId        String    @map("wallet_id") @db.Uuid
+  tokenId         String    @map("token_id")
+  userId          String?   @map("user_id")
+  telegramId      String?   @map("telegram_id")
+  sharedAt        DateTime  @default(now()) @map("shared_at") @db.Timestamptz(6)
+  bonusAmount     BigInt    @default(0) @map("bonus_amount")
+  boostMultiplier Float     @default(1.4) @map("boost_multiplier")
+  boostExpiresAt  DateTime? @map("boost_expires_at") @db.Timestamptz(6)
+  streakDay       Int       @default(1) @map("streak_day")
+  status          String    @default("pending") // pending | verified | expired | revoked
+  verificationCode String?  @map("verification_code")
+  telegramStoryId  Int?     @map("telegram_story_id")
+  verifiedAt      DateTime? @map("verified_at") @db.Timestamptz(6)
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  wallet          WalletV2  @relation(fields: [walletId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  nft             Nft       @relation(fields: [tokenId], references: [tokenId], onDelete: Cascade, onUpdate: Cascade)
+  user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([walletId, sharedAt(sort: Desc)], map: "idx_nft_story_shares_wallet_id_shared_at")
   @@index([tokenId, sharedAt(sort: Desc)], map: "idx_nft_story_shares_token_id_shared_at")
   @@index([userId, sharedAt(sort: Desc)], map: "idx_nft_story_shares_user_id_shared_at")
+  @@index([telegramId, status], map: "idx_nft_story_shares_telegram_id_status")
   @@map("nft_story_shares")
+}
+
+model UserbotSession {
+  id            String    @id @db.Uuid
+  phone         String    @unique
+  sessionString String?   @map("session_string") @db.Text
+  status        String    @default("inactive") // inactive | awaiting_code | awaiting_2fa | active | error
+  errorMessage  String?   @map("error_message")
+  lastActiveAt  DateTime? @map("last_active_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("userbot_sessions")
 }

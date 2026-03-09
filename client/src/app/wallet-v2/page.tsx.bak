@@ -50,9 +50,7 @@ import {
     setWalletV2BiometricConfirmationEnabled,
     setWalletV2StoredPinConfigured,
     setWalletV2MnemonicWords,
-    setWalletV2EncryptedMnemonic,
 } from '@/lib/walletV2/settings';
-import { encryptMnemonic } from '@/lib/walletV2/mnemonicCrypto';
 import {
     resolveWalletV2BootstrapFailureKind,
     resetWalletV2ClientAuthState,
@@ -67,14 +65,12 @@ import {
     WALLET_V2_NETWORK,
 } from '@/lib/walletV2/network';
 
-import type { WalletV2WalletListItem } from '@/lib/walletV2/api';
-
 import styles from './page.module.css';
 
 type OnboardingMode = 'create' | 'import';
-type WalletDrawerMode = 'topup' | 'receive' | 'send' | 'switch_wallet' | null;
+type WalletDrawerMode = 'topup' | 'receive' | 'send' | null;
 type SendStep = 'input' | 'confirm' | 'success';
-type PinAuthFlow = 'none' | 'create_setup' | 'import_setup' | 'tx_confirm' | 'entry_auth' | 'switch_wallet';
+type PinAuthFlow = 'none' | 'create_setup' | 'import_setup' | 'tx_confirm' | 'entry_auth';
 type InitialBootstrapStatus = 'idle' | 'checking' | 'ready' | 'retry';
 
 type WalletV2BalanceRow = {
@@ -160,7 +156,6 @@ const MNEMONIC_WORDS_COUNT = 24;
 const MAX_AMOUNT_INPUT_DIGITS = 18;
 const ASSET_REGEX = /^[A-Z0-9_]{2,16}$/;
 const WALLET_V2_BALANCE_CACHE_PREFIX = 'wallet_v2_balance_cache:';
-const WALLET_V2_BALANCE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 function isValidPin(pin: string): boolean {
     return /^[0-9]{4}$/.test(pin);
@@ -329,7 +324,6 @@ function formatHistoryTime(value: string, locale: string): string {
 type WalletV2BalanceCacheEntry = {
     address: string | null;
     balances: WalletV2BalanceRow[];
-    cachedAt?: number;
 };
 
 function readWalletV2BalanceCache(walletId: string | null): WalletV2BalanceCacheEntry | null {
@@ -347,15 +341,7 @@ function readWalletV2BalanceCache(walletId: string | null): WalletV2BalanceCache
         const parsed = JSON.parse(raw) as {
             address?: unknown;
             balances?: unknown;
-            cachedAt?: unknown;
         };
-
-        // Invalidate stale cache entries.
-        const cachedAt = typeof parsed.cachedAt === 'number' ? parsed.cachedAt : 0;
-        if (Date.now() - cachedAt > WALLET_V2_BALANCE_CACHE_TTL_MS) {
-            localStorage.removeItem(`${WALLET_V2_BALANCE_CACHE_PREFIX}${walletId}`);
-            return null;
-        }
         const cachedAddress = typeof parsed.address === 'string' && parsed.address.trim()
             ? parsed.address.trim()
             : null;
@@ -403,7 +389,7 @@ function writeWalletV2BalanceCache(walletId: string | null, payload: WalletV2Bal
     try {
         localStorage.setItem(
             `${WALLET_V2_BALANCE_CACHE_PREFIX}${walletId}`,
-            JSON.stringify({ ...payload, cachedAt: Date.now() }),
+            JSON.stringify(payload),
         );
     } catch {
         // Ignore localStorage quota/runtime errors.
@@ -672,12 +658,6 @@ export default function WalletV2Page() {
     const [isBiometricConfirmationEnabled, setIsBiometricConfirmationEnabled] = useState(true);
     const [isPinAuthBiometricLoading, setIsPinAuthBiometricLoading] = useState(false);
 
-    // Multi-wallet state
-    const [userWallets, setUserWallets] = useState<WalletV2WalletListItem[]>([]);
-    const [isWalletListLoading, setIsWalletListLoading] = useState(false);
-    const [switchWalletTarget, setSwitchWalletTarget] = useState<WalletV2WalletListItem | null>(null);
-    const [isSwitchingWallet, setIsSwitchingWallet] = useState(false);
-
     const isPinAuthOpen = pinAuthFlow !== 'none';
     useBodyScrollLock(
         isMnemonicDrawerOpen
@@ -850,10 +830,6 @@ export default function WalletV2Page() {
     }, [locale, nftTransactions, t]);
 
     const getOperationTitle = useCallback((type: WalletV2HistoryItem['type']) => {
-        if (type === 'staking_reward') {
-            return t('wallet_history_operation_staking') || 'Staking';
-        }
-
         if (type === 'topup') {
             return t('wallet_history_operation_topup') || 'Top up';
         }
@@ -1039,60 +1015,6 @@ export default function WalletV2Page() {
         haptic.selection();
     }, [haptic, walletId]);
 
-    const loadUserWallets = useCallback(async () => {
-        if (!isAuthenticated) return;
-        setIsWalletListLoading(true);
-        try {
-            const wallets = await api.walletV2.listWallets();
-            setUserWallets(wallets);
-        } catch {
-            // Non-fatal: wallet list is supplementary
-        } finally {
-            setIsWalletListLoading(false);
-        }
-    }, [isAuthenticated]);
-
-    const handleSwitchWallet = useCallback(async (target: WalletV2WalletListItem, pin: string) => {
-        if (!target.id || !devicePayload) return;
-
-        setIsSwitchingWallet(true);
-        setPinAuthError('');
-
-        try {
-            const response = await api.walletV2.switchWallet({
-                walletId: target.id,
-                pin,
-                device: devicePayload,
-            });
-
-            // Update local state with new wallet
-            setWalletId(response.wallet.id);
-            setWalletAddress(response.wallet.address ? formatWalletV2Address(response.wallet.address) : null);
-            setHasStoredPin(true);
-            markWalletV2RememberedAuth(response.wallet.id);
-            setIsBiometricConfirmationEnabled(
-                getWalletV2BiometricConfirmationEnabled(response.wallet.id),
-            );
-
-            // Reset view state
-            setBalances([]);
-            setHistoryItems([]);
-            setNftTransactions([]);
-            setWalletDrawerMode(null);
-            setSwitchWalletTarget(null);
-            setPinAuthFlow('none');
-            setRequestError('');
-            setRequestSuccess(tr('wallet_v2_switch_success', 'Wallet switched successfully.'));
-            haptic.success();
-        } catch (error) {
-            const message = error instanceof Error ? error.message : 'Failed to switch wallet';
-            setPinAuthError(message);
-            haptic.error();
-        } finally {
-            setIsSwitchingWallet(false);
-        }
-    }, [devicePayload, haptic, tr]);
-
     const loadWalletBalance = useCallback(async (showLoader = true) => {
         if (!walletId) {
             setWalletAddress(null);
@@ -1193,13 +1115,6 @@ export default function WalletV2Page() {
         setInitialBootstrapError('');
     }, [walletId]);
 
-    // Load user's wallet list on mount (for onboarding wallet selector)
-    useEffect(() => {
-        if (isAuthenticated) {
-            void loadUserWallets();
-        }
-    }, [isAuthenticated, loadUserWallets]);
-
     useEffect(() => {
         if (!walletId) {
             setBalances([]);
@@ -1232,8 +1147,7 @@ export default function WalletV2Page() {
         void loadWalletBalance(true);
         void loadWalletHistory();
         void loadNftTransactions();
-        void loadUserWallets();
-    }, [hasInitialGateResolved, loadNftTransactions, loadUserWallets, loadWalletBalance, loadWalletHistory, walletId]);
+    }, [hasInitialGateResolved, loadNftTransactions, loadWalletBalance, loadWalletHistory, walletId]);
 
     useEffect(() => {
         if (activeHistoryTab !== 'nft') {
@@ -1555,16 +1469,6 @@ export default function WalletV2Page() {
             setWalletV2StoredPinConfigured(true);
             markWalletV2RememberedAuth(response.wallet.id);
 
-            // Encrypt mnemonic with PIN for persistent secure storage
-            if (response.mnemonic && response.mnemonic.length === 24) {
-                try {
-                    const encrypted = await encryptMnemonic(response.mnemonic, pin);
-                    setWalletV2EncryptedMnemonic(response.wallet.id, encrypted);
-                } catch {
-                    // Non-fatal: encrypted storage failed, plaintext is still shown once
-                }
-            }
-
             setWalletId(response.wallet.id);
             setHasStoredPin(true);
             setWalletAddress(response.wallet.address ? formatWalletV2Address(response.wallet.address) : null);
@@ -1628,16 +1532,6 @@ export default function WalletV2Page() {
             setWalletV2MnemonicWords(response.wallet.id, parsedImportWords);
             setWalletV2StoredPinConfigured(true);
             markWalletV2RememberedAuth(response.wallet.id);
-
-            // Encrypt mnemonic with PIN for persistent secure storage
-            if (parsedImportWords.length === 24) {
-                try {
-                    const encrypted = await encryptMnemonic(parsedImportWords, newPin);
-                    setWalletV2EncryptedMnemonic(response.wallet.id, encrypted);
-                } catch {
-                    // Non-fatal
-                }
-            }
 
             setWalletId(response.wallet.id);
             setHasStoredPin(true);
@@ -2097,20 +1991,13 @@ export default function WalletV2Page() {
     }, [handleConfirmSend]);
 
     const handlePinAuthConfirm = useCallback(async (pin: string) => {
-        if (pinAuthFlow === 'switch_wallet') {
-            if (switchWalletTarget) {
-                await handleSwitchWallet(switchWalletTarget, pin);
-            }
-            return;
-        }
-
         if (pinAuthFlow === 'entry_auth') {
             await handleEntryAuthWithPin(pin);
             return;
         }
 
         await handleConfirmSendWithPin(pin);
-    }, [handleConfirmSendWithPin, handleEntryAuthWithPin, handleSwitchWallet, pinAuthFlow, switchWalletTarget]);
+    }, [handleConfirmSendWithPin, handleEntryAuthWithPin, pinAuthFlow]);
 
     const handlePinAuthBiometric = useCallback(async () => {
         if (pinAuthFlow === 'entry_auth') {
@@ -2193,7 +2080,6 @@ export default function WalletV2Page() {
         ? selectedWalletTransaction.direction === 'in'
             || selectedWalletTransaction.type === 'topup'
             || selectedWalletTransaction.type === 'receive'
-            || selectedWalletTransaction.type === 'staking_reward'
         : false;
     const selectedWalletKindClass = selectedWalletIsIncoming ? styles.kindReceived : styles.kindSent;
     const selectedWalletIcon = selectedWalletIsIncoming
@@ -2207,27 +2093,24 @@ export default function WalletV2Page() {
         : '—';
     const selectedWalletDateTimeLine = `${selectedWalletDateLabel}, ${selectedWalletTimeLabel}`;
     const selectedWalletIsTopup = selectedWalletTransaction?.type === 'topup';
-    const selectedWalletIsStaking = selectedWalletTransaction?.type === 'staking_reward';
     const selectedWalletStatus = selectedWalletTransaction
         ? getStatusLabel(selectedWalletTransaction.status)
         : '—';
     const selectedWalletSenderRaw = selectedWalletTransaction?.fromAddress || null;
     const selectedWalletRecipientRaw = selectedWalletTransaction?.toAddress || null;
-    const selectedWalletSenderValue = selectedWalletIsStaking
-        ? (t('wallet_history_operation_staking') || 'Staking')
-        : selectedWalletIsTopup
-            ? (t('system') || 'System')
-            : selectedWalletSenderRaw
-                ? formatWalletShortLabel(selectedWalletSenderRaw)
-                : (
-                    selectedWalletTransaction?.type === 'send'
-                        ? ownWalletLabel
-                        : (t('system') || 'System')
-                );
+    const selectedWalletSenderValue = selectedWalletIsTopup
+        ? (t('system') || 'System')
+        : selectedWalletSenderRaw
+            ? formatWalletShortLabel(selectedWalletSenderRaw)
+            : (
+                selectedWalletTransaction?.type === 'send'
+                    ? ownWalletLabel
+                    : (t('system') || 'System')
+            );
     const selectedWalletRecipientValue = selectedWalletRecipientRaw
         ? formatWalletShortLabel(selectedWalletRecipientRaw)
         : (
-            selectedWalletTransaction?.type === 'receive' || selectedWalletIsTopup || selectedWalletIsStaking
+            selectedWalletTransaction?.type === 'receive' || selectedWalletTransaction?.type === 'topup'
                 ? ownWalletLabel
                 : (t('system') || 'System')
         );
@@ -2235,7 +2118,7 @@ export default function WalletV2Page() {
         ? `${formatIntegerString(selectedWalletTransaction.amount)} ${selectedWalletTransaction.asset || 'UZS'}`
         : '—';
     const selectedWalletAsset = selectedWalletTransaction?.asset || 'UZS';
-    const shouldShowWalletStatus = !selectedWalletIsTopup && !selectedWalletIsStaking;
+    const shouldShowWalletStatus = !selectedWalletIsTopup;
 
     const isPinSetupFlow = pinAuthFlow === 'create_setup' || pinAuthFlow === 'import_setup';
     const isTxConfirmFlow = pinAuthFlow === 'tx_confirm' && Boolean(pendingSend);
@@ -2249,11 +2132,9 @@ export default function WalletV2Page() {
         ? tr('wallet_v2_pin_setup_create_subtitle', 'PIN setup happens before wallet generation.')
         : pinAuthFlow === 'import_setup'
             ? tr('wallet_v2_pin_setup_import_subtitle', 'Set a new PIN for this imported wallet.')
-            : pinAuthFlow === 'switch_wallet'
-                ? tr('wallet_v2_switch_pin_subtitle', 'Enter PIN to switch wallet.')
-                : pinAuthFlow === 'entry_auth'
-                    ? tr('wallet_v2_unlock_subtitle', 'Use biometric or PIN to continue.')
-                    : tr('wallet_v2_pin_confirm_subtitle', 'Authorize transfer using biometric or PIN.');
+            : pinAuthFlow === 'entry_auth'
+                ? tr('wallet_v2_unlock_subtitle', 'Use biometric or PIN to continue.')
+                : tr('wallet_v2_pin_confirm_subtitle', 'Authorize transfer using biometric or PIN.');
 
     const isBootstrapGateActive = Boolean(isAuthenticated && walletId && hasInitialGateResolved && initialBootstrapStatus === 'retry');
     const isBootstrapChecking = false;
@@ -2317,18 +2198,6 @@ export default function WalletV2Page() {
                                                 ? tr('wallet_v2_network_testnet', 'Testnet')
                                                 : tr('wallet_v2_network_mainnet', 'Mainnet')}
                                         </span>
-                                        {userWallets.length > 1 && (
-                                            <button
-                                                type="button"
-                                                className={styles.walletSwitchBadge}
-                                                onClick={() => {
-                                                    setWalletDrawerMode('switch_wallet');
-                                                    haptic.impact('light');
-                                                }}
-                                            >
-                                                {userWallets.findIndex((w) => w.id === walletId) + 1}/{userWallets.length}
-                                            </button>
-                                        )}
                                     </div>
 
                                     <button
@@ -2471,8 +2340,7 @@ export default function WalletV2Page() {
                                                             {group.items.map((item) => {
                                                                 const isIncoming = item.direction === 'in'
                                                                     || item.type === 'topup'
-                                                                    || item.type === 'receive'
-                                                                    || item.type === 'staking_reward';
+                                                                    || item.type === 'receive';
                                                                 const kindClass = isIncoming ? styles.kindReceived : styles.kindSent;
                                                                 const dateTimeLine = `${formatHistoryDate(item.createdAt, locale)}, ${formatHistoryTime(item.createdAt, locale)}`;
                                                                 const amountLine = `${isIncoming ? '+' : '-'}${formatIntegerString(item.amount)} ${item.asset || 'UZS'}`;
@@ -2571,53 +2439,6 @@ export default function WalletV2Page() {
                         </>
                     ) : (
                         <>
-                            {userWallets.length > 0 && (
-                                <Card className={styles.card}>
-                                    <div className={styles.formSection}>
-                                        <p className={styles.sectionTitle}>
-                                            {tr('wallet_v2_existing_wallets_title', 'Your wallets')}
-                                        </p>
-                                        <div className={styles.walletListDrawer}>
-                                            {userWallets.map((w, i) => {
-                                                const shortAddr = w.address
-                                                    ? `${w.address.slice(0, 6)}...${w.address.slice(-4)}`
-                                                    : '—';
-                                                const bal = w.balances.find((b) => b.asset === 'UZS');
-                                                const balValue = bal ? formatIntegerString(bal.available) : '0';
-
-                                                return (
-                                                    <button
-                                                        key={w.id}
-                                                        type="button"
-                                                        className={styles.walletListItem}
-                                                        disabled={isSwitchingWallet}
-                                                        onClick={() => {
-                                                            setSwitchWalletTarget(w);
-                                                            setPinAuthError('');
-                                                            setPinAuthFlow('switch_wallet');
-                                                            haptic.impact('light');
-                                                        }}
-                                                    >
-                                                        <div className={styles.walletListItemLeft}>
-                                                            <IoWallet size={20} />
-                                                            <div>
-                                                                <strong>
-                                                                    {tr('wallet_v2_wallet_label', 'Wallet')} {i + 1}
-                                                                </strong>
-                                                                <span className={styles.walletListAddr}>{shortAddr}</span>
-                                                            </div>
-                                                        </div>
-                                                        <div className={styles.walletListItemRight}>
-                                                            <span>{balValue} UZS</span>
-                                                        </div>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                </Card>
-                            )}
-
                             <Card className={styles.card}>
                                 <div className={styles.headerRow}>
                                     <div className={styles.headerIconWrap}>
@@ -2759,7 +2580,7 @@ export default function WalletV2Page() {
                 onClose={closeWalletDetails}
                 title={t('transactions_details') || 'Transfer details'}
                 closeAriaLabel={t('transactions_close') || 'Close'}
-                mode="animated"
+                mode="static"
                 overlayClassName={styles.walletDetailsOverlay}
                 drawerClassName={styles.walletDetailsDrawer}
                 bodyClassName={styles.drawerBodyPlain}
@@ -3088,29 +2909,6 @@ export default function WalletV2Page() {
                                         setDrawerError('');
                                     }}
                                 />
-                                {userWallets.length > 1 && (
-                                    <div className={styles.ownWalletsList}>
-                                        {userWallets
-                                            .filter((w) => w.id !== walletId && w.address)
-                                            .map((w, i) => (
-                                                <button
-                                                    key={w.id}
-                                                    type="button"
-                                                    className={styles.ownWalletChip}
-                                                    onClick={() => {
-                                                        setSendAddressInput(w.address || '');
-                                                        setDrawerError('');
-                                                        haptic.selection();
-                                                    }}
-                                                >
-                                                    <IoWallet size={12} />
-                                                    <span>
-                                                        {tr('wallet_v2_wallet_label', 'Wallet')} {userWallets.indexOf(w) + 1}
-                                                    </span>
-                                                </button>
-                                            ))}
-                                    </div>
-                                )}
                             </label>
 
                             <label className={styles.field}>
@@ -3207,60 +3005,6 @@ export default function WalletV2Page() {
                             <p>{tr('wallet_v2_transfer_completed', 'Transfer completed.')}</p>
                         </div>
                     )}
-                </div>
-            </BottomDrawer>
-
-            <BottomDrawer
-                open={walletDrawerMode === 'switch_wallet'}
-                onClose={() => {
-                    setWalletDrawerMode(null);
-                    setSwitchWalletTarget(null);
-                }}
-                title={tr('wallet_v2_switch_wallet_title', 'My wallets')}
-            >
-                <div className={styles.walletListDrawer}>
-                    {userWallets.map((w, i) => {
-                        const isActive = w.id === walletId;
-                        const shortAddr = w.address
-                            ? `${w.address.slice(0, 6)}...${w.address.slice(-4)}`
-                            : '—';
-                        const bal = w.balances.find((b) => b.asset === 'UZS');
-                        const balValue = bal ? formatIntegerString(bal.available) : '0';
-
-                        return (
-                            <button
-                                key={w.id}
-                                type="button"
-                                className={`${styles.walletListItem} ${isActive ? styles.walletListItemActive : ''}`}
-                                disabled={isActive || isSwitchingWallet}
-                                onClick={() => {
-                                    setSwitchWalletTarget(w);
-                                    setWalletDrawerMode(null);
-                                    setPinAuthError('');
-                                    setPinAuthFlow('switch_wallet');
-                                    haptic.impact('light');
-                                }}
-                            >
-                                <div className={styles.walletListItemLeft}>
-                                    <IoWallet size={20} />
-                                    <div>
-                                        <strong>
-                                            {tr('wallet_v2_wallet_label', 'Wallet')} {i + 1}
-                                        </strong>
-                                        <span className={styles.walletListAddr}>{shortAddr}</span>
-                                    </div>
-                                </div>
-                                <div className={styles.walletListItemRight}>
-                                    <span>{balValue} UZS</span>
-                                    {isActive && (
-                                        <span className={styles.walletListActiveBadge}>
-                                            <IoCheckmark size={14} />
-                                        </span>
-                                    )}
-                                </div>
-                            </button>
-                        );
-                    })}
                 </div>
             </BottomDrawer>
 

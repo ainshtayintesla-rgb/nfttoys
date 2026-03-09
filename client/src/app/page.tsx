@@ -27,8 +27,10 @@ export default function Home() {
                                 <TgsPlayer
                                     src={`/models/${model.tgsFile}`}
                                     style={{ width: 100, height: 100 }}
-                                    autoplay
-                                    renderer="canvas"
+                                    autoplay={false}
+                                    playOnHover
+                                    playOnTap
+                                    renderer="svg"
                                 />
                             </div>
                             <div className={styles.modelInfo}>

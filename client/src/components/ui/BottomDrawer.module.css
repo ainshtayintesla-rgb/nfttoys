@@ -2,11 +2,16 @@
     position: fixed;
     inset: 0;
     z-index: 140;
-    background: var(--ink-alpha-00);
-    opacity: 0;
+    background: rgba(0, 0, 0, 0);
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
     visibility: hidden;
     pointer-events: none;
-    transition: background 0.2s ease, opacity 0.2s ease, visibility 0s linear 0.2s;
+    transition:
+        background 0.35s ease,
+        backdrop-filter 0.35s ease,
+        -webkit-backdrop-filter 0.35s ease,
+        visibility 0s linear 0.45s;
     display: flex;
     align-items: flex-end;
     justify-content: center;
@@ -17,10 +22,13 @@
     background: var(--ink-alpha-60);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
-    opacity: 1;
     visibility: visible;
     pointer-events: all;
-    transition: background 0.2s ease, opacity 0.2s ease;
+    transition:
+        background 0.35s ease,
+        backdrop-filter 0.35s ease,
+        -webkit-backdrop-filter 0.35s ease,
+        visibility 0s linear 0s;
 }
 
 .drawer {
@@ -37,19 +45,19 @@
 }
 
 .drawerAnimated {
-    transform: translateY(calc(100% + 96px));
-    opacity: 0;
-    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+    transform: translateY(110%);
+    /* Transition lives here (stable class) so it works for both open AND close */
+    transition: transform 0.45s cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform;
 }
 
 .drawerOpen {
     transform: translateY(0);
-    opacity: 1;
+    /* No transition here — removing this class would remove the transition too */
 }
 
 .drawerStatic {
     transform: none;
-    opacity: 1;
 }
 
 .dragHandle {

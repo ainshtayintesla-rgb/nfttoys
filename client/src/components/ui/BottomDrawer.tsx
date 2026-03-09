@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, X } from 'lucide-react';
 
 import styles from './BottomDrawer.module.css';
@@ -38,6 +38,9 @@ function cx(...parts: Array<string | false | null | undefined>): string {
     return parts.filter(Boolean).join(' ');
 }
 
+/** Duration (ms) must match the CSS transition on .drawerAnimated */
+const ANIMATION_DURATION = 450;
+
 export const BottomDrawer = ({
     open,
     onClose,
@@ -68,6 +71,28 @@ export const BottomDrawer = ({
     const { className: bodyPropsClassName, ...restBodyProps } = bodyProps || {};
     const shouldShowBack = showBackButton && typeof onBack === 'function';
     const handleHeaderAction = shouldShowBack ? onBack : onClose;
+
+    // Keep children rendered during close animation so drawer height doesn't collapse
+    const lastChildrenRef = useRef<React.ReactNode>(children);
+    const [rendered, setRendered] = useState(open);
+
+    useEffect(() => {
+        if (open) {
+            // Opening: show immediately
+            setRendered(true);
+        } else {
+            // Closing: keep rendered until animation finishes
+            const timer = setTimeout(() => setRendered(false), ANIMATION_DURATION);
+            return () => clearTimeout(timer);
+        }
+    }, [open]);
+
+    // Snapshot children when drawer is open (so we keep them during close)
+    if (open) {
+        lastChildrenRef.current = children;
+    }
+
+    const displayChildren = open ? children : lastChildrenRef.current;
 
     return (
         <div
@@ -123,7 +148,7 @@ export const BottomDrawer = ({
                 )}
 
                 <div className={cx(styles.body, bodyClassName, bodyPropsClassName)} {...restBodyProps}>
-                    {children}
+                    {rendered ? displayChildren : null}
                 </div>
 
                 {footer}

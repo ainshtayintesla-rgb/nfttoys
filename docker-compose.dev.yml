@@ -142,6 +142,43 @@ services:
       timeout: 5s
       retries: 30
 
+  userbot:
+    image: python:3.12-slim
+    init: true
+    restart: unless-stopped
+    working_dir: /workspace/userbot
+    env_file:
+      - ./userbot/.env.dev
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    command:
+      - sh
+      - -lc
+      - |
+        set -e
+        if ! command -v gcc >/dev/null 2>&1; then
+          apt-get update -qq && apt-get install -y -qq --no-install-recommends gcc libc6-dev >/dev/null 2>&1
+        fi
+        if [ ! -x /opt/venv/bin/python ]; then
+          python3 -m venv /opt/venv
+        fi
+        . /opt/venv/bin/activate
+        pip install --disable-pip-version-check --no-input -r requirements.txt
+        python main.py
+    volumes:
+      - ./userbot:/workspace/userbot
+      - userbot_venv:/opt/venv
+      - userbot_data:/app/data
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 8095), 3); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
   cloudflared-api:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
@@ -164,3 +201,5 @@ volumes:
   web_node_modules:
   bot_venv:
   bot_data:
+  userbot_venv:
+  userbot_data:

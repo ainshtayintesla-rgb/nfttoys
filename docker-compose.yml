@@ -107,6 +107,30 @@ services:
       timeout: 5s
       retries: 10
 
+  userbot:
+    build:
+      context: ./userbot
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./userbot/.env
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      API_BASE_URL: http://api:4000
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://nfttoys:nfttoys@postgres:5432/nfttoys?schema=public}
+    volumes:
+      - userbot_data:/app/data
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 8095), 3); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres_data:
   bot_data:
+  userbot_data:

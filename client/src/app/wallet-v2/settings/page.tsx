@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     IoAddCircle,
@@ -33,20 +33,22 @@ import { isWalletV2ApiError } from '@/lib/walletV2/errors';
 import { resetWalletV2ClientAuthState } from '@/lib/walletV2/sessionLifecycle';
 import {
     getWalletV2BiometricConfirmationEnabled,
-    getWalletV2MnemonicWords,
+    getWalletV2EncryptedMnemonic,
     getWalletV2RememberTimeoutMinutes,
-    isWalletV2RememberedAuthValid,
+    hasWalletV2EncryptedMnemonic,
     markWalletV2RememberedAuth,
     setWalletV2BiometricConfirmationEnabled,
+    setWalletV2EncryptedMnemonic,
     setWalletV2MnemonicWords,
     setWalletV2RememberTimeoutMinutes,
     setWalletV2StoredPinConfigured,
     WALLET_V2_REMEMBER_TIMEOUT_MINUTES_OPTIONS,
 } from '@/lib/walletV2/settings';
+import { decryptMnemonic, encryptMnemonic } from '@/lib/walletV2/mnemonicCrypto';
 
 import styles from './page.module.css';
 
-type SettingsPinFlow = 'none' | 'unlock' | 'create_wallet' | 'change_pin';
+type SettingsPinFlow = 'none' | 'unlock' | 'create_wallet' | 'change_pin_old' | 'change_pin';
 type SettingsSensitiveAction = 'show_mnemonic' | null;
 
 const PIN_MIN_LENGTH = 4;
@@ -133,7 +135,10 @@ export default function WalletV2SettingsPage() {
     }, [t]);
 
     const [walletId, setWalletId] = useState<string | null>(() => api.walletV2.session.getWalletId());
-    const [isBiometricEnabled, setIsBiometricEnabled] = useState(true);
+    const [isBiometricEnabled, setIsBiometricEnabled] = useState(() => {
+        const wid = api.walletV2.session.getWalletId();
+        return wid ? getWalletV2BiometricConfirmationEnabled(wid) : true;
+    });
     const [isBiometricAvailable, setIsBiometricAvailable] = useState(false);
     const [isBiometricChecking, setIsBiometricChecking] = useState(false);
     const [deviceBiometricSupported, setDeviceBiometricSupported] = useState(false);
@@ -153,9 +158,17 @@ export default function WalletV2SettingsPage() {
     const [isPinAuthSubmitting, setIsPinAuthSubmitting] = useState(false);
     const [isPinAuthBiometricLoading, setIsPinAuthBiometricLoading] = useState(false);
     const [pendingSensitiveAction, setPendingSensitiveAction] = useState<SettingsSensitiveAction>(null);
+    // Holds decrypted mnemonic words temporarily during PIN change flow (old PIN → new PIN)
+    const pendingReEncryptWordsRef = useRef<string[] | null>(null);
 
     const [statusError, setStatusError] = useState('');
     const [statusSuccess, setStatusSuccess] = useState('');
+
+    // Prevent SSR→client flash: don't render settings content until mounted
+    const [isMounted, setIsMounted] = useState(false);
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     const isPinAuthOpen = pinFlow !== 'none';
     useBodyScrollLock(isMnemonicDrawerOpen || isPinAuthOpen);
@@ -204,7 +217,7 @@ export default function WalletV2SettingsPage() {
         }
 
         setIsBiometricEnabled(getWalletV2BiometricConfirmationEnabled(currentWalletId));
-        setMnemonicWords(getWalletV2MnemonicWords(currentWalletId));
+        // Mnemonic words are NOT loaded from plaintext — they are decrypted on demand via PIN
     }, []);
 
     useEffect(() => {
@@ -376,17 +389,22 @@ export default function WalletV2SettingsPage() {
 
         clearInlineStatus();
 
-        if (isWalletV2RememberedAuthValid(walletId)) {
-            setIsMnemonicDrawerOpen(true);
-            haptic.impact('light');
+        // Check if encrypted mnemonic exists
+        if (!hasWalletV2EncryptedMnemonic(walletId)) {
+            setStatusError(tr(
+                'wallet_v2_settings_recovery_missing',
+                'Recovery phrase is not available on this device yet. Re-import wallet on this device to store words locally.',
+            ));
+            haptic.error();
             return;
         }
 
+        // Always require PIN to decrypt mnemonic (Tonkeeper-like behavior)
         setPendingSensitiveAction('show_mnemonic');
         setPinAuthError('');
         setPinFlow('unlock');
         haptic.impact('light');
-    }, [clearInlineStatus, haptic, walletId]);
+    }, [clearInlineStatus, haptic, tr, walletId]);
 
     const handleUnlockWithPin = useCallback(async (pin: string) => {
         if (!walletId) {
@@ -408,9 +426,37 @@ export default function WalletV2SettingsPage() {
         clearInlineStatus();
 
         try {
-            await api.walletV2.verifyPin({ walletId, pin });
+            // Decrypt mnemonic locally using PIN (no server call needed)
+            const encrypted = getWalletV2EncryptedMnemonic(walletId);
+
+            if (!encrypted) {
+                const message = tr(
+                    'wallet_v2_settings_recovery_missing',
+                    'Recovery phrase is not available on this device yet. Re-import wallet on this device to store words locally.',
+                );
+                setPinAuthError(message);
+                setStatusError(message);
+                haptic.error();
+                return;
+            }
+
+            const words = await decryptMnemonic(encrypted, pin);
+
+            if (!words) {
+                setPinAuthError('Invalid PIN');
+                haptic.error();
+                return;
+            }
+
+            // PIN is correct — show the decrypted mnemonic
+            setMnemonicWords(words);
             setWalletV2StoredPinConfigured(true);
-            completeSensitiveAuth();
+            markWalletV2RememberedAuth(walletId);
+
+            setPendingSensitiveAction(null);
+            setPinAuthError('');
+            setPinFlow('none');
+            setIsMnemonicDrawerOpen(true);
             haptic.success();
         } catch (error) {
             const message = safeErrorMessage(error);
@@ -420,7 +466,7 @@ export default function WalletV2SettingsPage() {
         } finally {
             setIsPinAuthSubmitting(false);
         }
-    }, [clearInlineStatus, completeSensitiveAuth, haptic, tr, walletId]);
+    }, [clearInlineStatus, haptic, tr, walletId]);
 
     const handleUnlockWithBiometric = useCallback(async () => {
         setIsPinAuthBiometricLoading(true);
@@ -492,6 +538,16 @@ export default function WalletV2SettingsPage() {
             setWalletV2BiometricConfirmationEnabled(response.wallet.id, true);
             setWalletV2MnemonicWords(response.wallet.id, response.mnemonic || []);
 
+            // Encrypt mnemonic with PIN for persistent secure storage
+            if (response.mnemonic && response.mnemonic.length === 24 && nextPin) {
+                try {
+                    const encrypted = await encryptMnemonic(response.mnemonic, nextPin);
+                    setWalletV2EncryptedMnemonic(response.wallet.id, encrypted);
+                } catch {
+                    // Non-fatal
+                }
+            }
+
             setWalletId(response.wallet.id);
             setIsBiometricEnabled(true);
             setMnemonicWords(response.mnemonic || []);
@@ -531,6 +587,56 @@ export default function WalletV2SettingsPage() {
         setPinFlow('create_wallet');
     }, [clearInlineStatus, haptic, handleCreateWallet, walletId]);
 
+    const handleChangePinOld = useCallback(async (oldPin: string) => {
+        if (!walletId) {
+            const message = tr('wallet_v2_error_session_missing', 'Wallet session is missing');
+            setPinAuthError(message);
+            setStatusError(message);
+            return;
+        }
+
+        if (!isValidPin(oldPin)) {
+            setPinAuthError(tr('wallet_v2_error_pin_length', 'PIN must contain 4 digits'));
+            haptic.error();
+            return;
+        }
+
+        setIsPinAuthSubmitting(true);
+        setPinAuthError('');
+
+        try {
+            // Decrypt mnemonic with old PIN to verify it and hold words for re-encryption
+            const encrypted = getWalletV2EncryptedMnemonic(walletId);
+
+            if (encrypted) {
+                const words = await decryptMnemonic(encrypted, oldPin);
+
+                if (!words) {
+                    setPinAuthError('Invalid PIN');
+                    haptic.error();
+                    return;
+                }
+
+                pendingReEncryptWordsRef.current = words;
+            } else {
+                // No encrypted mnemonic — just verify via server
+                await api.walletV2.verifyPin({ walletId, pin: oldPin });
+                pendingReEncryptWordsRef.current = null;
+            }
+
+            // Old PIN verified — move to new PIN setup
+            setPinAuthError('');
+            setPinFlow('change_pin');
+            haptic.success();
+        } catch (error) {
+            const message = safeErrorMessage(error);
+            setPinAuthError(message);
+            haptic.error();
+        } finally {
+            setIsPinAuthSubmitting(false);
+        }
+    }, [haptic, tr, walletId]);
+
     const handleChangePin = useCallback(async (newPin: string) => {
         if (!walletId) {
             const message = tr('wallet_v2_error_session_missing', 'Wallet session is missing');
@@ -554,6 +660,18 @@ export default function WalletV2SettingsPage() {
                 walletId,
                 newPin,
             });
+
+            // Re-encrypt mnemonic with new PIN
+            const wordsToReEncrypt = pendingReEncryptWordsRef.current;
+            if (wordsToReEncrypt && wordsToReEncrypt.length === 24) {
+                try {
+                    const encrypted = await encryptMnemonic(wordsToReEncrypt, newPin);
+                    setWalletV2EncryptedMnemonic(walletId, encrypted);
+                } catch {
+                    // Non-fatal: re-encryption failed
+                }
+            }
+            pendingReEncryptWordsRef.current = null;
 
             setWalletV2StoredPinConfigured(true);
             markWalletV2RememberedAuth(walletId);
@@ -608,8 +726,10 @@ export default function WalletV2SettingsPage() {
     const pinSubtitle = pinFlow === 'create_wallet'
         ? tr('wallet_v2_settings_create_wallet_subtitle', 'Set a PIN for the new wallet before generation.')
         : pinFlow === 'change_pin'
-            ? tr('wallet_v2_settings_change_pin_subtitle', 'Create a new PIN. Old PIN is not required.')
-            : tr('wallet_v2_unlock_subtitle', 'Use biometric or PIN to continue.');
+            ? tr('wallet_v2_settings_change_pin_subtitle', 'Create a new PIN.')
+            : pinFlow === 'change_pin_old'
+                ? tr('wallet_v2_settings_change_pin_old_subtitle', 'Enter your current PIN to continue.')
+                : tr('wallet_v2_unlock_subtitle', 'Enter your PIN to continue.');
 
     const biometricIconKind = useMemo(() => {
         const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
@@ -620,7 +740,13 @@ export default function WalletV2SettingsPage() {
         });
     }, [webApp?.BiometricManager?.biometricType, webApp?.platform]);
 
-    const canUseUnlockBiometric = Boolean(pinFlow === 'unlock' && isBiometricEnabled && deviceBiometricSupported);
+    // Biometric is NOT available for mnemonic viewing — PIN is always required to decrypt
+    const canUseUnlockBiometric = Boolean(
+        pinFlow === 'unlock'
+        && pendingSensitiveAction !== 'show_mnemonic'
+        && isBiometricEnabled
+        && deviceBiometricSupported,
+    );
 
     return (
         <>
@@ -632,6 +758,9 @@ export default function WalletV2SettingsPage() {
                         <h1>{tr('wallet_v2_settings_title', 'Wallet v2 settings')}</h1>
                     </header>
 
+                    {!isMounted ? (
+                        <div className={styles.settingsList} />
+                    ) : (<>
                     {statusError && <p className={styles.statusError}>{statusError}</p>}
                     {statusSuccess && <p className={styles.statusSuccess}>{statusSuccess}</p>}
 
@@ -691,7 +820,8 @@ export default function WalletV2SettingsPage() {
                             onPress={() => {
                                 clearInlineStatus();
                                 setPinAuthError('');
-                                setPinFlow('change_pin');
+                                pendingReEncryptWordsRef.current = null;
+                                setPinFlow('change_pin_old');
                                 haptic.impact('light');
                             }}
                             disabled={!walletId}
@@ -706,6 +836,7 @@ export default function WalletV2SettingsPage() {
                             disabled={!walletId}
                         />
                     </div>
+                    </>)}
                 </main>
             </div>
 
@@ -713,11 +844,7 @@ export default function WalletV2SettingsPage() {
                 open={isMnemonicDrawerOpen}
                 onClose={() => {
                     setIsMnemonicDrawerOpen(false);
-                    // Clear mnemonic from localStorage after user closes the drawer.
-                    const currentWalletId = walletId || api.walletV2.session.getWalletId();
-                    if (currentWalletId) {
-                        setWalletV2MnemonicWords(currentWalletId, []);
-                    }
+                    // Clear decrypted words from memory; encrypted version persists in localStorage
                     setMnemonicWords([]);
                 }}
                 title={tr('wallet_v2_settings_recovery_drawer_title', 'Recovery phrase')}
@@ -782,7 +909,7 @@ export default function WalletV2SettingsPage() {
                 <PinAuthScreen
                     key={pinFlow}
                     open={isPinAuthOpen}
-                    mode={pinFlow === 'unlock' ? 'confirm' : 'setup'}
+                    mode={pinFlow === 'unlock' || pinFlow === 'change_pin_old' ? 'confirm' : 'setup'}
                     subtitle={pinSubtitle}
                     backLabel={tr('back', 'Back')}
                     biometricLabel={tr('wallet_v2_unlock_with_biometric', 'Unlock with biometric')}
@@ -795,7 +922,7 @@ export default function WalletV2SettingsPage() {
                     biometricIconKind={biometricIconKind}
                     autoTriggerBiometric={canUseUnlockBiometric}
                     onSetupComplete={handlePinSetupComplete}
-                    onPinConfirm={handleUnlockWithPin}
+                    onPinConfirm={pinFlow === 'change_pin_old' ? handleChangePinOld : handleUnlockWithPin}
                     onBiometricConfirm={handleUnlockWithBiometric}
                     onSetupMismatch={() => {
                         const mismatchMessage = pinFlow === 'change_pin'

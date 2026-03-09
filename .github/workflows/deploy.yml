@@ -109,13 +109,34 @@ jobs:
             kubectl apply -f "$REPO/k8s/prod/"
 
             echo "=== Rolling update to $TAG ==="
-            kubectl set image deployment/api api=ghcr.io/${OWNER}/nfttoys/api:${TAG} -n $NS
-            kubectl set image deployment/web web=ghcr.io/${OWNER}/nfttoys/web:${TAG} -n $NS
-            kubectl set image deployment/bot bot=ghcr.io/${OWNER}/nfttoys/bot:${TAG} -n $NS
+            # Update main containers
+            kubectl set image deployment/api  api=ghcr.io/${OWNER}/nfttoys/api:${TAG}  -n $NS
+            kubectl set image deployment/web  web=ghcr.io/${OWNER}/nfttoys/web:${TAG}  -n $NS
+            kubectl set image deployment/bot  bot=ghcr.io/${OWNER}/nfttoys/bot:${TAG}  -n $NS
+            # Update initContainer (migrate) to same SHA — prevents schema/code mismatch
+            kubectl set image deployment/api migrate=ghcr.io/${OWNER}/nfttoys/api:${TAG} -n $NS
 
             echo "=== Waiting for rollout ==="
             kubectl rollout status deployment/web -n $NS --timeout=5m
             kubectl rollout status deployment/bot -n $NS --timeout=5m
             kubectl rollout status deployment/api -n $NS --timeout=5m
+
+            echo "=== Smoke check ==="
+            API="http://127.0.0.1:30100"
+            WEB="http://127.0.0.1:30101"
+            check() {
+              local url=$1 expected=$2 label=$3
+              local code
+              code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
+              if [ "$code" = "$expected" ]; then
+                echo "  ✓ $label ($code)"
+              else
+                echo "  ✗ $label — expected $expected, got $code" && exit 1
+              fi
+            }
+            check "$API/health"         200 "api /health"
+            check "$API/v2/wallets"     401 "api /v2/wallets (auth required)"
+            check "$API/wallet/info"    401 "api /wallet/info (auth required)"
+            check "$WEB/"               200 "web /"
 
             echo "=== Deploy complete: $TAG ==="

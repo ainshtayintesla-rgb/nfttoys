@@ -24,7 +24,8 @@ spec:
       imagePullSecrets:
         - name: ghcr-secret
       initContainers:
-        # Run prisma migrate before the server starts
+        # Run prisma migrate before the server starts.
+        # Image tag is updated by deploy.yml (kubectl set image) — same SHA as main container.
         - name: migrate
           image: ghcr.io/ainshtayintesla-rgb/nfttoys/api:latest
           command: ["npm", "run", "prisma:migrate"]
