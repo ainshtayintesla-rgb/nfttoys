@@ -40,6 +40,8 @@ FROM base AS runtime
 ENV NODE_ENV=production
 # Use prod-only node_modules (clean install, no prune artifacts)
 COPY --from=deps-prod /app/node_modules ./node_modules
+# Overlay the Prisma generated client from builder (prisma generate output)
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/dist ./dist
