@@ -48,3 +48,4 @@ Thumbs.db
 
 # Local backup folders
 .backup-*/
+*.bak
