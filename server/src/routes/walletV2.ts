@@ -148,7 +148,7 @@ function classifyWalletV2Tx(params: {
         toAddress: string;
         meta: Prisma.JsonValue | null;
     };
-}): { type: 'send' | 'receive' | 'topup'; direction: 'in' | 'out' } {
+}): { type: 'send' | 'receive' | 'topup' | 'staking_reward'; direction: 'in' | 'out' } {
     const { walletId, ownAddress, tx } = params;
     const meta = tx.meta;
     const metaSource = (
@@ -161,10 +161,15 @@ function classifyWalletV2Tx(params: {
         : '';
 
     if (
-        metaSource === 'testnet_faucet'
-        || metaSource === 'nft_staking_reward'
-        || tx.fromAddress === WALLET_V2_TESTNET_FAUCET_ADDRESS
+        metaSource === 'nft_staking_reward'
         || tx.fromAddress === WALLET_V2_STAKING_REWARD_SOURCE_ADDRESS
+    ) {
+        return { type: 'staking_reward', direction: 'in' };
+    }
+
+    if (
+        metaSource === 'testnet_faucet'
+        || tx.fromAddress === WALLET_V2_TESTNET_FAUCET_ADDRESS
     ) {
         return { type: 'topup', direction: 'in' };
     }
@@ -238,6 +243,7 @@ function computeNftStakingPendingReward(params: {
     lastClaimAt: Date;
     rewardPerHour: bigint;
     currentTime: Date;
+    boost?: { multiplier: number; startedAt: Date };
 }): {
     amount: bigint;
     elapsedWholeHours: number;
@@ -248,8 +254,23 @@ function computeNftStakingPendingReward(params: {
         ? Math.floor(elapsedMs / (60 * 60 * 1000))
         : 0;
 
+    let amount: bigint;
+    const boost = params.boost;
+    if (boost && boost.multiplier > 1 && boost.startedAt > params.lastClaimAt) {
+        // Only apply boost to hours that started AFTER the boost was activated.
+        // Pre-boost hours: whole hours elapsed from lastClaimAt up to boostStartedAt.
+        // Post-boost hours: remainder of total elapsed hours.
+        const preBoostMs = boost.startedAt.getTime() - params.lastClaimAt.getTime();
+        const preBoostHours = preBoostMs > 0 ? Math.floor(preBoostMs / (60 * 60 * 1000)) : 0;
+        const boostedHours = Math.max(0, elapsedWholeHours - preBoostHours);
+        const boostedRewardPerHour = BigInt(Math.floor(Number(params.rewardPerHour) * boost.multiplier));
+        amount = BigInt(preBoostHours) * params.rewardPerHour + BigInt(boostedHours) * boostedRewardPerHour;
+    } else {
+        amount = BigInt(elapsedWholeHours) * params.rewardPerHour;
+    }
+
     return {
-        amount: BigInt(elapsedWholeHours) * params.rewardPerHour,
+        amount,
         elapsedWholeHours,
         nextClaimAt: addHours(params.lastClaimAt, 1),
     };
@@ -832,6 +853,163 @@ async function creditNftStakingReward(
         rewardTx,
     };
 }
+
+// ---------------------------------------------------------------------------
+// List user's wallets (multi-wallet support)
+// ---------------------------------------------------------------------------
+router.get('/wallets', standardLimit, requireAuth, async (req, res) => {
+    try {
+        const userId = req.authUser?.uid;
+
+        if (!userId) {
+            return sendError(res, 401, 'UNAUTHORIZED', 'Authorization token is required');
+        }
+
+        const wallets = await prisma.walletV2.findMany({
+            where: { userId, status: 'active' },
+            select: {
+                id: true,
+                status: true,
+                createdAt: true,
+                addresses: {
+                    where: { type: 'main', status: 'active' },
+                    select: { address: true },
+                    take: 1,
+                },
+                balances: {
+                    select: {
+                        asset: true,
+                        available: true,
+                        locked: true,
+                        updatedAt: true,
+                    },
+                },
+            },
+            orderBy: { createdAt: 'asc' },
+        });
+
+        const items = wallets.map((wallet) => ({
+            id: wallet.id,
+            address: wallet.addresses[0]?.address || null,
+            status: wallet.status,
+            createdAt: wallet.createdAt.toISOString(),
+            balances: wallet.balances.map((b) => ({
+                asset: b.asset,
+                available: b.available.toString(),
+                locked: b.locked.toString(),
+                updatedAt: b.updatedAt.toISOString(),
+            })),
+        }));
+
+        return res.json({
+            success: true,
+            data: { wallets: items },
+        });
+    } catch (error) {
+        console.error('List wallets error:', error);
+        return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to list wallets');
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Switch active wallet session (multi-wallet support)
+// ---------------------------------------------------------------------------
+router.post('/wallet/switch', authLimit, requireAuth, async (req, res) => {
+    try {
+        const userId = req.authUser?.uid;
+
+        if (!userId) {
+            return sendError(res, 401, 'UNAUTHORIZED', 'Authorization token is required');
+        }
+
+        const targetWalletId = typeof req.body?.walletId === 'string' ? req.body.walletId.trim() : '';
+        const pin = typeof req.body?.pin === 'string' ? req.body.pin.trim() : '';
+        const device = parseDeviceInput(req.body?.device);
+
+        if (!targetWalletId) {
+            return sendError(res, 400, 'INVALID_INPUT', 'walletId is required');
+        }
+
+        if (!pin || !isValidPin(pin)) {
+            return sendError(res, 400, 'INVALID_PIN', 'PIN is required');
+        }
+
+        if (!device) {
+            return sendError(res, 400, 'INVALID_DEVICE', 'Device payload is invalid');
+        }
+
+        // Verify wallet belongs to user
+        const wallet = await prisma.walletV2.findFirst({
+            where: { id: targetWalletId, userId, status: 'active' },
+            select: {
+                id: true,
+                pinHash: true,
+                pinSalt: true,
+                addresses: {
+                    where: { type: 'main', status: 'active' },
+                    select: { address: true },
+                    take: 1,
+                },
+            },
+        });
+
+        if (!wallet) {
+            return sendError(res, 404, 'WALLET_NOT_FOUND', 'Wallet not found');
+        }
+
+        // Verify PIN
+        const pinValid = verifySecret(pin, wallet.pinHash, wallet.pinSalt);
+
+        if (!pinValid) {
+            return sendError(res, 403, 'INVALID_PIN', 'Invalid PIN');
+        }
+
+        const ipHash = hashIpAddress(ipFromRequest(req)) || null;
+        const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
+
+        // Issue new session for the target wallet
+        const result = await prisma.$transaction(async (tx) => {
+            return issueWalletSession(tx, {
+                walletId: wallet.id,
+                userId,
+                device,
+                ipHash,
+                userAgent,
+            });
+        });
+
+        await createAuditEvent({
+            walletId: wallet.id,
+            userId,
+            event: 'wallet.switched',
+            ipHash,
+            userAgent,
+            meta: {
+                sessionId: result.session.id,
+                deviceId: device.deviceId,
+            },
+        });
+
+        return res.json({
+            success: true,
+            data: {
+                wallet: {
+                    id: wallet.id,
+                    address: wallet.addresses[0]?.address || '',
+                    status: 'active',
+                },
+                session: {
+                    accessToken: result.accessToken,
+                    refreshToken: result.refreshToken,
+                    expiresInSec: result.expiresInSec,
+                },
+            },
+        });
+    } catch (error) {
+        console.error('Switch wallet error:', error);
+        return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to switch wallet');
+    }
+});
 
 router.post('/wallet/create', authLimit, requireAuth, async (req, res) => {
     try {
@@ -1867,18 +2045,57 @@ router.get('/wallet/:id/nft-staking/state', standardLimit, requireWalletV2Auth, 
                 },
             });
 
+            // Load active story boosts for this wallet
+            type ActiveBoostInfo = { multiplier: number; startedAt: Date };
+            let activeBoostsByToken: Map<string, ActiveBoostInfo> = new Map();
+            try {
+                const nftStoryShareDelegate = (tx as unknown as { nftStoryShare?: { findMany: Function } }).nftStoryShare;
+                if (nftStoryShareDelegate) {
+                    const activeBoosts = await nftStoryShareDelegate.findMany({
+                        where: {
+                            walletId,
+                            status: { in: ['verified', 'pending'] },
+                            boostExpiresAt: { gt: currentTime },
+                        },
+                        select: { tokenId: true, boostMultiplier: true, sharedAt: true },
+                    });
+                    for (const boost of activeBoosts) {
+                        // Use the highest boost if multiple exist; track when boost started
+                        const current = activeBoostsByToken.get(boost.tokenId);
+                        if (!current || boost.boostMultiplier > current.multiplier) {
+                            activeBoostsByToken.set(boost.tokenId, {
+                                multiplier: boost.boostMultiplier,
+                                startedAt: boost.sharedAt,
+                            });
+                        }
+                    }
+                }
+            } catch {
+                // Story share schema may not be ready
+            }
+
             let pendingRewardTotal = 0n;
             let totalClaimed = 0n;
             const positionRows = activePositions.map((position) => {
                 const nft = position.nft;
-                const rewardPerHour = position.rewardPerHour > 0n
+                const baseRewardPerHour = position.rewardPerHour > 0n
                     ? position.rewardPerHour
                     : resolveNftStakingRewardPerHour(nft?.rarity);
+
+                // Apply story boost multiplier only to hours after boost was activated
+                const activeBoost = activeBoostsByToken.get(position.tokenId);
+
                 const pending = computeNftStakingPendingReward({
                     lastClaimAt: position.lastClaimAt,
-                    rewardPerHour,
+                    rewardPerHour: baseRewardPerHour,
                     currentTime,
+                    boost: activeBoost,
                 });
+
+                // Effective rate for display: boosted if boost is active
+                const rewardPerHour = activeBoost && activeBoost.multiplier > 1
+                    ? BigInt(Math.floor(Number(baseRewardPerHour) * activeBoost.multiplier))
+                    : baseRewardPerHour;
                 const canUnstakeAt = addHours(position.stakedAt, NFT_STAKING_UNSTAKE_COOLDOWN_HOURS);
                 const canUnstake = currentTime.getTime() >= canUnstakeAt.getTime();
                 const owned = nft
@@ -2261,9 +2478,37 @@ router.post('/wallet/:id/nft-staking/claim', strictLimit, requireWalletV2Auth, a
                 throw new ApiError(403, 'NFT_NOT_OWNED', 'NFT does not belong to the authenticated wallet');
             }
 
-            const rewardPerHour = position.rewardPerHour > 0n
+            const baseRewardPerHour = position.rewardPerHour > 0n
                 ? position.rewardPerHour
                 : resolveNftStakingRewardPerHour(position.nft.rarity);
+
+            // Apply story boost multiplier if active
+            let claimBoostMultiplier = 1;
+            try {
+                const nftStoryShareDelegate = (tx as unknown as { nftStoryShare?: { findFirst: Function } }).nftStoryShare;
+                if (nftStoryShareDelegate) {
+                    const activeBoost = await nftStoryShareDelegate.findFirst({
+                        where: {
+                            walletId,
+                            tokenId,
+                            status: { in: ['verified', 'pending'] },
+                            boostExpiresAt: { gt: currentTime },
+                        },
+                        orderBy: { boostMultiplier: 'desc' },
+                        select: { boostMultiplier: true },
+                    });
+                    if (activeBoost) {
+                        claimBoostMultiplier = activeBoost.boostMultiplier;
+                    }
+                }
+            } catch {
+                // Story share schema may not be ready
+            }
+
+            const rewardPerHour = claimBoostMultiplier > 1
+                ? BigInt(Math.floor(Number(baseRewardPerHour) * claimBoostMultiplier))
+                : baseRewardPerHour;
+
             const pending = computeNftStakingPendingReward({
                 lastClaimAt: position.lastClaimAt,
                 rewardPerHour,
@@ -2465,9 +2710,37 @@ router.post('/wallet/:id/nft-staking/unstake', strictLimit, requireWalletV2Auth,
                 );
             }
 
-            const rewardPerHour = position.rewardPerHour > 0n
+            const baseRewardPerHourUnstake = position.rewardPerHour > 0n
                 ? position.rewardPerHour
                 : resolveNftStakingRewardPerHour(position.nft?.rarity);
+
+            // Apply story boost for unstake+claim
+            let unstakeBoostMultiplier = 1;
+            try {
+                const nftStoryShareDelegate = (tx as unknown as { nftStoryShare?: { findFirst: Function } }).nftStoryShare;
+                if (nftStoryShareDelegate) {
+                    const activeBoost = await nftStoryShareDelegate.findFirst({
+                        where: {
+                            walletId,
+                            tokenId,
+                            status: { in: ['verified', 'pending'] },
+                            boostExpiresAt: { gt: currentTime },
+                        },
+                        orderBy: { boostMultiplier: 'desc' },
+                        select: { boostMultiplier: true },
+                    });
+                    if (activeBoost) {
+                        unstakeBoostMultiplier = activeBoost.boostMultiplier;
+                    }
+                }
+            } catch {
+                // Story share schema may not be ready
+            }
+
+            const rewardPerHour = unstakeBoostMultiplier > 1
+                ? BigInt(Math.floor(Number(baseRewardPerHourUnstake) * unstakeBoostMultiplier))
+                : baseRewardPerHourUnstake;
+
             let claimedAmount = 0n;
             let claimedBalance: {
                 asset: string;
@@ -2648,6 +2921,7 @@ router.post('/wallet/:id/nft-staking/unstake', strictLimit, requireWalletV2Auth,
 // ─────────────────────────────────────────────────────────────────────────────
 
 const NFT_STORY_SHARE_COOLDOWN_HOURS = 20;   // минимум между шарами (не чаще раз в 20ч)
+const NFT_STORY_SHARE_REVOKED_COOLDOWN_HOURS = 1 / 60; // TEST: 1 минута кулдаун после отказа
 const NFT_STORY_SHARE_STREAK_WINDOW_HOURS = 48; // максимум для продолжения streak
 const NFT_STORY_SHARE_MAX_STREAK_MULTIPLIER = 7; // максимальный множитель
 
@@ -2716,17 +2990,20 @@ router.post('/wallet/:id/nft-staking/story-share', strictLimit, requireWalletV2A
                 }
             }
 
-            // 3. Проверяем cooldown — нельзя шарить чаще раз в 20 часов
+            // 3. Проверяем cooldown — verified: 20ч, revoked: 2ч
             const lastShare = await (tx as unknown as { nftStoryShare: { findFirst: Function } }).nftStoryShare.findFirst({
                 where: { walletId, tokenId },
                 orderBy: { sharedAt: 'desc' },
-                select: { id: true, sharedAt: true, streakDay: true },
+                select: { id: true, sharedAt: true, streakDay: true, status: true },
             });
 
-            const cooldownMs = NFT_STORY_SHARE_COOLDOWN_HOURS * 60 * 60 * 1000;
             const streakWindowMs = NFT_STORY_SHARE_STREAK_WINDOW_HOURS * 60 * 60 * 1000;
 
             if (lastShare) {
+                const effectiveCooldownHours = lastShare.status === 'revoked'
+                    ? NFT_STORY_SHARE_REVOKED_COOLDOWN_HOURS
+                    : NFT_STORY_SHARE_COOLDOWN_HOURS;
+                const cooldownMs = effectiveCooldownHours * 60 * 60 * 1000;
                 const msSinceLast = currentTime.getTime() - lastShare.sharedAt.getTime();
                 if (msSinceLast < cooldownMs) {
                     const nextShareAt = new Date(lastShare.sharedAt.getTime() + cooldownMs);
@@ -2755,22 +3032,40 @@ router.post('/wallet/:id/nft-staking/story-share', strictLimit, requireWalletV2A
             const multiplier = BigInt(Math.min(streakDay, NFT_STORY_SHARE_MAX_STREAK_MULTIPLIER));
             const bonusAmount = rewardPerHour * multiplier;
 
-            // 6. Записываем share
+            // 6. Resolve telegramId from user record
+            let telegramId: string | null = null;
+            if (userId) {
+                const userRecord = await tx.user.findUnique({
+                    where: { id: userId },
+                    select: { telegramId: true },
+                });
+                telegramId = userRecord?.telegramId || null;
+            }
+
+            // 7. Записываем share with boost fields + verification code
+            const BOOST_DURATION_HOURS = 72; // 3 days
+            const boostExpiresAt = new Date(currentTime.getTime() + BOOST_DURATION_HOURS * 60 * 60 * 1000);
             const shareId = crypto.randomUUID();
+            const verificationCode = `NT-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
             const shareRecord = await (tx as unknown as { nftStoryShare: { create: Function } }).nftStoryShare.create({
                 data: {
                     id: shareId,
                     walletId,
                     tokenId,
                     userId,
+                    telegramId,
                     sharedAt: currentTime,
                     bonusAmount,
+                    boostMultiplier: 1.4,
+                    boostExpiresAt,
                     streakDay,
+                    status: 'pending',
+                    verificationCode,
                     createdAt: currentTime,
                 },
             });
 
-            // 7. Начисляем бонус на баланс (если > 0)
+            // 8. Начисляем бонус на баланс (если > 0)
             let balanceRow = null;
             let txRecord = null;
 
@@ -2834,7 +3129,7 @@ router.post('/wallet/:id/nft-staking/story-share', strictLimit, requireWalletV2A
                 }
             }
 
-            return { shareRecord, bonusAmount, streakDay, balanceRow, txRecord };
+            return { shareRecord, shareId, bonusAmount, streakDay, balanceRow, txRecord };
         });
 
         return res.json({
@@ -2842,9 +3137,14 @@ router.post('/wallet/:id/nft-staking/story-share', strictLimit, requireWalletV2A
             data: {
                 walletId,
                 tokenId,
+                shareId: result.shareId,
                 rewardAsset: NFT_STAKING_REWARD_ASSET,
                 streakDay: result.streakDay,
                 bonusAmount: result.bonusAmount.toString(),
+                boostMultiplier: 1.4,
+                boostExpiresAt: result.shareRecord.boostExpiresAt?.toISOString() || null,
+                status: 'pending',
+                verificationCode: result.shareRecord.verificationCode,
                 sharedAt: result.shareRecord.sharedAt.toISOString(),
                 balance: result.balanceRow,
                 tx: result.txRecord ? {
@@ -2893,13 +3193,12 @@ router.get('/wallet/:id/nft-staking/story-share/:tokenId', standardLimit, requir
         assertNftStorySharePrismaClientReady();
 
         const currentTime = now();
-        const cooldownMs = NFT_STORY_SHARE_COOLDOWN_HOURS * 60 * 60 * 1000;
         const streakWindowMs = NFT_STORY_SHARE_STREAK_WINDOW_HOURS * 60 * 60 * 1000;
 
         const lastShare = await (prisma as unknown as { nftStoryShare: { findFirst: Function } }).nftStoryShare.findFirst({
             where: { walletId, tokenId },
             orderBy: { sharedAt: 'desc' },
-            select: { id: true, sharedAt: true, streakDay: true, bonusAmount: true },
+            select: { id: true, sharedAt: true, streakDay: true, bonusAmount: true, status: true },
         });
 
         const totalShares = await (prisma as unknown as { nftStoryShare: { count: Function } }).nftStoryShare.count({
@@ -2912,10 +3211,14 @@ router.get('/wallet/:id/nft-staking/story-share/:tokenId', standardLimit, requir
         let streakActive = false;
 
         if (lastShare) {
+            const effectiveCooldownHours = lastShare.status === 'revoked'
+                ? NFT_STORY_SHARE_REVOKED_COOLDOWN_HOURS
+                : NFT_STORY_SHARE_COOLDOWN_HOURS;
+            const effectiveCooldownMs = effectiveCooldownHours * 60 * 60 * 1000;
             const msSinceLast = currentTime.getTime() - lastShare.sharedAt.getTime();
-            if (msSinceLast < cooldownMs) {
+            if (msSinceLast < effectiveCooldownMs) {
                 canShare = false;
-                nextShareAt = new Date(lastShare.sharedAt.getTime() + cooldownMs).toISOString();
+                nextShareAt = new Date(lastShare.sharedAt.getTime() + effectiveCooldownMs).toISOString();
             }
             streakActive = msSinceLast <= streakWindowMs;
             currentStreak = streakActive ? lastShare.streakDay : 1;
@@ -2937,6 +3240,27 @@ router.get('/wallet/:id/nft-staking/story-share/:tokenId', standardLimit, requir
             })()
             : null;
 
+        // Check active boost
+        let activeBoost: { boostMultiplier: number; boostExpiresAt: string; status: string } | null = null;
+        const boostRecord = await (prisma as unknown as { nftStoryShare: { findFirst: Function } }).nftStoryShare.findFirst({
+            where: {
+                walletId,
+                tokenId,
+                status: { in: ['verified', 'pending'] },
+                boostExpiresAt: { gt: currentTime },
+            },
+            orderBy: { sharedAt: 'desc' },
+            select: { boostMultiplier: true, boostExpiresAt: true, status: true },
+        });
+
+        if (boostRecord) {
+            activeBoost = {
+                boostMultiplier: boostRecord.boostMultiplier,
+                boostExpiresAt: boostRecord.boostExpiresAt.toISOString(),
+                status: boostRecord.status,
+            };
+        }
+
         return res.json({
             success: true,
             data: {
@@ -2950,9 +3274,12 @@ router.get('/wallet/:id/nft-staking/story-share/:tokenId', standardLimit, requir
                 nextMultiplier,
                 totalShares,
                 lastSharedAt: lastShare ? lastShare.sharedAt.toISOString() : null,
-                cooldownHours: NFT_STORY_SHARE_COOLDOWN_HOURS,
+                cooldownHours: lastShare?.status === 'revoked'
+                    ? NFT_STORY_SHARE_REVOKED_COOLDOWN_HOURS
+                    : NFT_STORY_SHARE_COOLDOWN_HOURS,
                 streakWindowHours: NFT_STORY_SHARE_STREAK_WINDOW_HOURS,
                 maxStreakMultiplier: NFT_STORY_SHARE_MAX_STREAK_MULTIPLIER,
+                activeBoost,
             },
         });
     } catch (error) {
@@ -2964,6 +3291,273 @@ router.get('/wallet/:id/nft-staking/story-share/:tokenId', standardLimit, requir
         return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch story share state');
     }
 });
+
+// ─── Internal: Get pending story shares for userbot verification ────────────
+router.get('/internal/pending-story-shares', async (req, res) => {
+    try {
+        assertNftStorySharePrismaClientReady();
+
+        const internalSecret = process.env.USERBOT_INTERNAL_SECRET || '';
+        const authHeader = req.headers['x-internal-secret'];
+        if (!internalSecret || authHeader !== internalSecret) {
+            return sendError(res, 403, 'FORBIDDEN', 'Invalid internal secret');
+        }
+
+        const pendingShares = await (prisma as unknown as { nftStoryShare: { findMany: Function } }).nftStoryShare.findMany({
+            where: {
+                status: 'pending',
+                boostExpiresAt: { gt: new Date() },
+            },
+            select: {
+                id: true,
+                telegramId: true,
+                tokenId: true,
+                walletId: true,
+                sharedAt: true,
+                verificationCode: true,
+            },
+            orderBy: { sharedAt: 'asc' },
+            take: 50,
+        });
+
+        return res.json({
+            success: true,
+            shares: pendingShares.map((s: { id: string; telegramId: string | null; tokenId: string; walletId: string; sharedAt: Date; verificationCode: string | null }) => ({
+                id: s.id,
+                telegramId: s.telegramId,
+                tokenId: s.tokenId,
+                walletId: s.walletId,
+                sharedAt: s.sharedAt.toISOString(),
+                verificationCode: s.verificationCode,
+            })),
+        });
+    } catch (error) {
+        console.error('Internal pending story shares error:', error);
+        return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch pending shares');
+    }
+});
+
+// ─── Internal: Active (verified) story shares for re-checking ────────────────
+router.get('/internal/active-story-shares', async (req, res) => {
+    try {
+        assertNftStorySharePrismaClientReady();
+
+        const internalSecret = process.env.USERBOT_INTERNAL_SECRET || '';
+        const authHeader = req.headers['x-internal-secret'];
+        if (!internalSecret || authHeader !== internalSecret) {
+            return sendError(res, 403, 'FORBIDDEN', 'Invalid internal secret');
+        }
+
+        const activeShares = await (prisma as unknown as { nftStoryShare: { findMany: Function } }).nftStoryShare.findMany({
+            where: {
+                status: 'verified',
+                boostExpiresAt: { gt: new Date() },
+            },
+            select: {
+                id: true,
+                telegramId: true,
+                tokenId: true,
+                walletId: true,
+                sharedAt: true,
+                verificationCode: true,
+                telegramStoryId: true,
+                verifiedAt: true,
+            },
+            orderBy: { verifiedAt: 'asc' },
+            take: 100,
+        });
+
+        return res.json({
+            success: true,
+            shares: activeShares.map((s: { id: string; telegramId: string | null; tokenId: string; walletId: string; sharedAt: Date; verificationCode: string | null; telegramStoryId: number | null; verifiedAt: Date | null }) => ({
+                id: s.id,
+                telegramId: s.telegramId,
+                tokenId: s.tokenId,
+                walletId: s.walletId,
+                sharedAt: s.sharedAt.toISOString(),
+                verificationCode: s.verificationCode,
+                telegramStoryId: s.telegramStoryId,
+                verifiedAt: s.verifiedAt?.toISOString() || null,
+            })),
+        });
+    } catch (error) {
+        console.error('Internal active story shares error:', error);
+        return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch active shares');
+    }
+});
+
+// ─── Internal: Userbot story verification callback ──────────────────────────
+router.post('/internal/story-verify', async (req, res) => {
+    try {
+        assertNftStorySharePrismaClientReady();
+
+        const internalSecret = process.env.USERBOT_INTERNAL_SECRET || '';
+        const authHeader = req.headers['x-internal-secret'];
+        if (!internalSecret || authHeader !== internalSecret) {
+            return sendError(res, 403, 'FORBIDDEN', 'Invalid internal secret');
+        }
+
+        const telegramId = typeof req.body?.telegramId === 'string' ? req.body.telegramId : '';
+        const verified = req.body?.verified === true;
+        const shareId = typeof req.body?.shareId === 'string' ? req.body.shareId.trim() : '';
+        const telegramStoryId = typeof req.body?.telegramStoryId === 'number' ? req.body.telegramStoryId : null;
+
+        if (!shareId) {
+            return sendError(res, 400, 'SHARE_ID_REQUIRED', 'shareId is required');
+        }
+
+        const currentTime = new Date();
+        const newStatus = verified ? 'verified' : 'revoked';
+        const updateData: Record<string, unknown> = {
+            status: newStatus,
+        };
+
+        if (verified) {
+            updateData.verifiedAt = currentTime;
+            if (telegramStoryId !== null) {
+                updateData.telegramStoryId = telegramStoryId;
+            }
+        } else {
+            updateData.revokedAt = currentTime;
+        }
+
+        await (prisma as unknown as { nftStoryShare: { update: Function } }).nftStoryShare.update({
+            where: { id: shareId },
+            data: updateData,
+        });
+
+        return res.json({ success: true, status: newStatus });
+    } catch (error) {
+        console.error('Internal story verify error:', error);
+        return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to verify story');
+    }
+});
+
+// ─── Static test story card (no DB dependency) ─────────────────────────────
+router.get('/story-card-static.png', standardLimit, async (_req, res) => {
+    try {
+        const sharp = (await import('sharp')).default;
+        const width = 1080;
+        const height = 1920;
+        const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0f0f1a"/>
+      <stop offset="100%" stop-color="#1a1025"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+  </defs>
+  <rect width="${width}" height="${height}" fill="url(#bg)"/>
+  <circle cx="${width / 2}" cy="${height * 0.35}" r="160" fill="#f59e0b" opacity="0.12"/>
+  <circle cx="${width / 2}" cy="${height * 0.35}" r="100" fill="#f59e0b" opacity="0.2"/>
+  <text x="${width / 2}" y="${height * 0.36 + 15}" text-anchor="middle" font-family="Arial,sans-serif" font-size="80" font-weight="bold" fill="#ffffff">NFTToys</text>
+  <rect x="${width / 2 - 200}" y="${height * 0.48}" width="400" height="90" rx="24" fill="url(#accent)"/>
+  <text x="${width / 2}" y="${height * 0.48 + 60}" text-anchor="middle" font-family="Arial,sans-serif" font-size="44" font-weight="bold" fill="#ffffff">+40% BOOST</text>
+  <text x="${width / 2}" y="${height * 0.60}" text-anchor="middle" font-family="Arial,sans-serif" font-size="32" fill="rgba(255,255,255,0.7)">Staking reward boost</text>
+  <text x="${width / 2}" y="${height * 0.65}" text-anchor="middle" font-family="Arial,sans-serif" font-size="26" fill="rgba(255,255,255,0.45)">Share a story to earn extra rewards</text>
+</svg>`;
+        const pngBuffer = await sharp(Buffer.from(svg)).png({ quality: 85 }).toBuffer();
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        return res.send(pngBuffer);
+    } catch (error) {
+        console.error('Static story card error:', error);
+        return res.status(500).send('Failed to generate story card');
+    }
+});
+
+// ─── Story card image for Telegram story sharing ────────────────────────────
+router.get('/story-card/:shareId.png', standardLimit, async (req, res) => {
+    try {
+        const shareId = req.params.shareId?.trim() || '';
+        if (!shareId) {
+            return res.status(400).send('Missing shareId');
+        }
+
+        assertNftStorySharePrismaClientReady();
+
+        const share = await (prisma as unknown as { nftStoryShare: { findUnique: Function } }).nftStoryShare.findUnique({
+            where: { id: shareId },
+            select: {
+                id: true,
+                verificationCode: true,
+                tokenId: true,
+                boostMultiplier: true,
+            },
+        });
+
+        if (!share) {
+            return res.status(404).send('Share not found');
+        }
+
+        // Fetch NFT info separately
+        const nft = await prisma.nft.findUnique({
+            where: { tokenId: share.tokenId },
+            select: { collectionName: true, serialNumber: true, rarity: true },
+        });
+
+        // Generate a simple branded story card using sharp
+        const sharp = (await import('sharp')).default;
+
+        const width = 1080;
+        const height = 1920;
+        const nftName = nft
+            ? `${nft.collectionName}${nft.serialNumber ? ' #' + nft.serialNumber : ''}`
+            : share.tokenId.slice(0, 12);
+        const rarity = nft?.rarity || 'common';
+        const boostPct = Math.round((share.boostMultiplier - 1) * 100);
+        const code = share.verificationCode || '';
+
+        const rarityColor = rarity === 'legendary' ? '#fbbf24' : rarity === 'rare' ? '#3b82f6' : '#9ca3af';
+        const gradTop = '#0f0f1a';
+        const gradBot = '#1a1025';
+
+        const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${gradTop}"/>
+      <stop offset="100%" stop-color="${gradBot}"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="30" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="${width}" height="${height}" fill="url(#bg)"/>
+  <circle cx="${width / 2}" cy="${height * 0.38}" r="200" fill="${rarityColor}" opacity="0.08" filter="url(#glow)"/>
+  <circle cx="${width / 2}" cy="${height * 0.38}" r="120" fill="${rarityColor}" opacity="0.15"/>
+  <text x="${width / 2}" y="${height * 0.38 + 15}" text-anchor="middle" font-family="Arial,sans-serif" font-size="72" font-weight="bold" fill="#ffffff">NFT</text>
+  <text x="${width / 2}" y="${height * 0.52}" text-anchor="middle" font-family="Arial,sans-serif" font-size="52" font-weight="bold" fill="#ffffff">${escapeXml(nftName)}</text>
+  <rect x="${width / 2 - 100}" y="${height * 0.55}" width="200" height="40" rx="20" fill="${rarityColor}" opacity="0.25"/>
+  <text x="${width / 2}" y="${height * 0.55 + 28}" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="bold" fill="${rarityColor}" text-transform="uppercase">${rarity.toUpperCase()}</text>
+  <rect x="${width / 2 - 180}" y="${height * 0.63}" width="360" height="80" rx="20" fill="url(#accent)"/>
+  <text x="${width / 2}" y="${height * 0.63 + 52}" text-anchor="middle" font-family="Arial,sans-serif" font-size="40" font-weight="bold" fill="#ffffff">+${boostPct}% BOOST</text>
+  <text x="${width / 2}" y="${height * 0.73}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" fill="rgba(255,255,255,0.6)">Staking boost active for 3 days</text>
+  <text x="${width / 2}" y="${height * 0.85}" text-anchor="middle" font-family="Arial,sans-serif" font-size="48" font-weight="bold" fill="url(#accent)">NFTToys</text>
+  <text x="${width / 2}" y="${height * 0.89}" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" fill="rgba(255,255,255,0.35)">${escapeXml(code)}</text>
+</svg>`;
+
+        const pngBuffer = await sharp(Buffer.from(svg)).png({ quality: 85 }).toBuffer();
+
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.send(pngBuffer);
+    } catch (error) {
+        console.error('Story card generation error:', error);
+        return res.status(500).send('Failed to generate story card');
+    }
+});
+
+function escapeXml(str: string): string {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
 
 router.post('/wallet/:id/topup-testnet', strictLimit, requireWalletV2Auth, async (req, res) => {
     try {
