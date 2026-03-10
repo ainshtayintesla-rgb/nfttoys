@@ -128,6 +128,7 @@ export interface WalletV2NftStakingAvailableRow {
     tgsUrl: string | null;
     lastTransferAt: string | null;
     mintedAt: string;
+    rewardPerHour: string;
     stakeWindow: WalletV2NftStakingWindow;
 }
 

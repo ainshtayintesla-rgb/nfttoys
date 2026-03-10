@@ -224,6 +224,7 @@ router.get('/wallet/:id/nft-staking/state', standardLimit, requireWalletV2Auth, 
                     tgsUrl: nft.tgsFile ? `/models/${nft.tgsFile}` : null,
                     lastTransferAt: toIsoDate(nft.lastTransferAt),
                     mintedAt: nft.mintedAt.toISOString(),
+                    rewardPerHour: resolveNftStakingRewardPerHour(nft.rarity).toString(),
                     stakeWindow: {
                         opensAt: stakeWindow.opensAt.toISOString(),
                         closesAt: stakeWindow.closesAt.toISOString(),
