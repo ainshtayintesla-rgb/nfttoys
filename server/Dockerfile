@@ -38,6 +38,13 @@ CMD ["npm", "run", "prisma:migrate"]
 
 FROM base AS runtime
 ENV NODE_ENV=production
+# Build-time commit info — injected by CI so UpdateService shows correct version in k3s
+ARG COMMIT_SHA=""
+ARG COMMIT_DATE=""
+ARG COMMIT_SUBJECT=""
+ENV COMMIT_SHA=$COMMIT_SHA \
+    COMMIT_DATE=$COMMIT_DATE \
+    COMMIT_SUBJECT=$COMMIT_SUBJECT
 # Use prod-only node_modules (clean install, no prune artifacts)
 COPY --from=deps-prod /app/node_modules ./node_modules
 # Overlay the Prisma generated client from builder (prisma generate output)

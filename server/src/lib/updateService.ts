@@ -566,29 +566,51 @@ class UpdateService {
             return this.branch;
         }
 
-        const currentBranch = await runGitCommand(['rev-parse', '--abbrev-ref', 'HEAD'], this.repoRoot);
-        const normalizedBranch = (currentBranch || '').trim();
-        this.branch = (!normalizedBranch || normalizedBranch === 'HEAD' || normalizedBranch === 'master')
-            ? 'main'
-            : normalizedBranch;
+        try {
+            const currentBranch = await runGitCommand(['rev-parse', '--abbrev-ref', 'HEAD'], this.repoRoot);
+            const normalizedBranch = (currentBranch || '').trim();
+            this.branch = (!normalizedBranch || normalizedBranch === 'HEAD' || normalizedBranch === 'master')
+                ? 'main'
+                : normalizedBranch;
+        } catch {
+            // No .git in containerized deployment — default to main
+            this.branch = 'main';
+        }
+
         return this.branch;
     }
 
     private async getCommitSnapshot(ref: string): Promise<CommitSnapshot> {
-        const output = await runGitCommand(
-            ['log', '-1', '--format=%H%n%h%n%cI%n%s', ref],
-            this.repoRoot,
-        );
+        try {
+            const output = await runGitCommand(
+                ['log', '-1', '--format=%H%n%h%n%cI%n%s', ref],
+                this.repoRoot,
+            );
 
-        const [fullRaw, shortRaw, dateRaw, subjectRaw] = output.split('\n');
+            const [fullRaw, shortRaw, dateRaw, subjectRaw] = output.split('\n');
 
-        return {
-            full: fullRaw || null,
-            short: shortRaw || null,
-            date: dateRaw || null,
-            subject: subjectRaw || null,
-            version: null,
-        };
+            return {
+                full: fullRaw || null,
+                short: shortRaw || null,
+                date: dateRaw || null,
+                subject: subjectRaw || null,
+                version: null,
+            };
+        } catch {
+            // No .git in containerized deployment — use build-time env vars (COMMIT_SHA etc.)
+            if (ref !== 'HEAD') {
+                return { full: null, short: null, date: null, subject: null, version: null };
+            }
+
+            const full = process.env.COMMIT_SHA?.trim() || null;
+            return {
+                full,
+                short: full ? full.slice(0, 7) : null,
+                date: process.env.COMMIT_DATE?.trim() || null,
+                subject: process.env.COMMIT_SUBJECT?.trim() || null,
+                version: null,
+            };
+        }
     }
 
     private readLocalVersion(): string | null {

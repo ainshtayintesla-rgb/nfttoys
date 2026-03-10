@@ -42,6 +42,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Set commit metadata
+        id: commit
+        run: |
+          echo "date=$(git log -1 --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
+          echo "subject=$(git log -1 --format=%s HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push API image
         uses: docker/build-push-action@v5
         with:
@@ -52,6 +58,10 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+          build-args: |
+            COMMIT_SHA=${{ github.sha }}
+            COMMIT_DATE=${{ steps.commit.outputs.date }}
+            COMMIT_SUBJECT=${{ steps.commit.outputs.subject }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/nfttoys/api:${{ steps.meta.outputs.sha-tag }}
             ghcr.io/${{ github.repository_owner }}/nfttoys/api:latest
