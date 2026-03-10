@@ -320,15 +320,6 @@ export const TelegramProvider = ({ children }: { children: React.ReactNode }) =>
                 console.log('disableVerticalSwipes not available');
             }
 
-            // Enable closing confirmation dialog
-            try {
-                if (typeof app.enableClosingConfirmation === 'function') {
-                    app.enableClosingConfirmation();
-                }
-            } catch {
-                console.log('enableClosingConfirmation not available');
-            }
-
             setWebApp(app);
             setReady(true);
 

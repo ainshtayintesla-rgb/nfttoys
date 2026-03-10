@@ -1,9 +1,15 @@
-name: Build and Deploy to Production
+name: Deploy App (API + Web)
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'server/**'
+      - 'client/**'
+      - 'k8s/**'
+      - 'scripts/**'
+      - 'prisma/**'
   workflow_dispatch:
 
 permissions:
@@ -12,7 +18,7 @@ permissions:
 
 jobs:
   build-and-push:
-    name: Build Docker Images
+    name: Build API + Web Images
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -77,38 +83,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push Bot image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./bot
-          file: ./bot/Dockerfile
-          push: true
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/nfttoys/bot:${{ steps.meta.outputs.sha-tag }}
-            ghcr.io/${{ github.repository_owner }}/nfttoys/bot:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push Userbot image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./userbot
-          file: ./userbot/Dockerfile
-          push: true
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/nfttoys/userbot:${{ steps.meta.outputs.sha-tag }}
-            ghcr.io/${{ github.repository_owner }}/nfttoys/userbot:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
   deploy:
-    name: Deploy to k3s
+    name: Deploy API + Web to k3s
     needs: build-and-push
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -140,14 +116,10 @@ jobs:
             echo "=== Rolling update to $TAG ==="
             kubectl set image deployment/api api=ghcr.io/${OWNER}/nfttoys/api:${TAG} -n $NS
             kubectl set image deployment/web web=ghcr.io/${OWNER}/nfttoys/web:${TAG} -n $NS
-            kubectl set image deployment/bot bot=ghcr.io/${OWNER}/nfttoys/bot:${TAG} -n $NS
-            kubectl set image deployment/userbot userbot=ghcr.io/${OWNER}/nfttoys/userbot:${TAG} -n $NS
             kubectl set image deployment/api migrate=ghcr.io/${OWNER}/nfttoys/api:${TAG} -n $NS
 
             echo "=== Waiting for rollout ==="
             kubectl rollout status deployment/web -n $NS --timeout=5m
-            kubectl rollout status deployment/bot -n $NS --timeout=5m
-            kubectl rollout status deployment/userbot -n $NS --timeout=5m
             kubectl rollout status deployment/api -n $NS --timeout=5m
 
             echo "=== Smoke check ==="
@@ -284,17 +256,6 @@ jobs:
               [ "$code" = "200" ]
             '
             echo "  ✓ api internal story-share endpoints"
-
-            kubectl exec deployment/userbot -n $NS -- python - <<'PY'
-            import json
-            import urllib.request
-
-            with urllib.request.urlopen("http://127.0.0.1:8095/health", timeout=10) as response:
-                payload = json.load(response)
-
-            assert payload.get("status") == "ok", payload
-            print("  ✓ userbot /health", payload)
-            PY
 
             kubectl exec deployment/web -n $NS -- sh -lc 'grep -R "https://api.nfttoys.shop" /app/.next >/dev/null'
             echo "  ✓ web bundle includes public API URL"
