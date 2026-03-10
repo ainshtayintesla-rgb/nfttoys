@@ -187,67 +187,70 @@ jobs:
 
             echo "=== Auth smoke check ==="
             SMOKE_TELEGRAM_ID="990$(date +%s)"
+            AUTH_SMOKE_SCRIPT=$(mktemp)
+            cat > "$AUTH_SMOKE_SCRIPT" <<'PY'
+            import hashlib
+            import hmac
+            import json
+            import os
+            import time
+            import urllib.parse
+            import urllib.request
+
+            user_id = int(os.environ["SMOKE_TELEGRAM_ID"])
+            bot_token = os.environ.get("TELEGRAM_BOT_TOKEN") or ""
+            api_url = os.environ["API_URL"]
+
+            params = {
+                "auth_date": str(int(time.time())),
+                "query_id": "smoke-check",
+                "user": json.dumps(
+                    {
+                        "id": user_id,
+                        "first_name": "Smoke",
+                        "last_name": "Check",
+                        "username": f"smoke_{user_id}",
+                        "language_code": "en",
+                    },
+                    separators=(",", ":"),
+                ),
+            }
+            data_check = "\n".join(f"{key}={params[key]}" for key in sorted(params))
+            secret = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
+            params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+            request = urllib.request.Request(
+                f"{api_url}/auth/telegram",
+                data=json.dumps({"initData": urllib.parse.urlencode(params)}).encode(),
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                method="POST",
+            )
+
+            try:
+                with urllib.request.urlopen(request, timeout=20) as response:
+                    payload = json.load(response)
+            except urllib.error.HTTPError as error:
+                print(error.read().decode(), end="", file=os.sys.stderr)
+                raise SystemExit(1) from error
+
+            token = payload.get("token")
+            if not token:
+                print("Missing auth token from smoke auth response", end="", file=os.sys.stderr)
+                raise SystemExit(1)
+
+            print(token, end="")
+            PY
             AUTH_TOKEN="$(
               (
                 set -a
                 . "$REPO/server/.env"
                 set +a
-                SMOKE_TELEGRAM_ID="$SMOKE_TELEGRAM_ID" API_URL="$API" python3 - <<'PY'
-                import hashlib
-                import hmac
-                import json
-                import os
-                import time
-                import urllib.parse
-                import urllib.request
-
-                user_id = int(os.environ["SMOKE_TELEGRAM_ID"])
-                bot_token = os.environ.get("TELEGRAM_BOT_TOKEN") or ""
-                api_url = os.environ["API_URL"]
-
-                params = {
-                    "auth_date": str(int(time.time())),
-                    "query_id": "smoke-check",
-                    "user": json.dumps(
-                        {
-                            "id": user_id,
-                            "first_name": "Smoke",
-                            "last_name": "Check",
-                            "username": f"smoke_{user_id}",
-                            "language_code": "en",
-                        },
-                        separators=(",", ":"),
-                    ),
-                }
-                data_check = "\n".join(f"{key}={params[key]}" for key in sorted(params))
-                secret = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
-                params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
-                request = urllib.request.Request(
-                    f"{api_url}/auth/telegram",
-                    data=json.dumps({"initData": urllib.parse.urlencode(params)}).encode(),
-                    headers={
-                        "Content-Type": "application/json",
-                        "X-Requested-With": "XMLHttpRequest",
-                    },
-                    method="POST",
-                )
-
-                try:
-                    with urllib.request.urlopen(request, timeout=20) as response:
-                        payload = json.load(response)
-                except urllib.error.HTTPError as error:
-                    print(error.read().decode(), end="", file=os.sys.stderr)
-                    raise SystemExit(1) from error
-
-                token = payload.get("token")
-                if not token:
-                    print("Missing auth token from smoke auth response", end="", file=os.sys.stderr)
-                    raise SystemExit(1)
-
-                print(token, end="")
-                PY
+                SMOKE_TELEGRAM_ID="$SMOKE_TELEGRAM_ID" API_URL="$API" python3 "$AUTH_SMOKE_SCRIPT"
               )
             )"
+            rm -f "$AUTH_SMOKE_SCRIPT"
             test -n "$AUTH_TOKEN"
             echo "  ✓ api /auth/telegram"
 
