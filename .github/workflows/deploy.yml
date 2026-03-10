@@ -188,62 +188,12 @@ jobs:
             echo "=== Auth smoke check ==="
             SMOKE_TELEGRAM_ID="990$(date +%s)"
             AUTH_TOKEN="$(
-              kubectl exec deployment/api -n $NS -- sh -lc "
-                SMOKE_TELEGRAM_ID='$SMOKE_TELEGRAM_ID' node - <<'NODE'
-                const crypto = require('crypto');
-                (async () => {
-                  const userId = Number(process.env.SMOKE_TELEGRAM_ID);
-                  const params = new URLSearchParams();
-                  params.set('auth_date', String(Math.floor(Date.now() / 1000)));
-                  params.set('query_id', 'smoke-check');
-                  params.set('user', JSON.stringify({
-                    id: userId,
-                    first_name: 'Smoke',
-                    last_name: 'Check',
-                    username: \`smoke_\${userId}\`,
-                    language_code: 'en',
-                  }));
-                  const dataCheck = Array.from(params.entries())
-                    .sort(([a], [b]) => a.localeCompare(b))
-                    .map(([key, value]) => \`\${key}=\${value}\`)
-                    .join('\\n');
-                  const secretKey = crypto
-                    .createHmac('sha256', 'WebAppData')
-                    .update(process.env.TELEGRAM_BOT_TOKEN || '')
-                    .digest();
-                  const hash = crypto
-                    .createHmac('sha256', secretKey)
-                    .update(dataCheck)
-                    .digest('hex');
-                  params.set('hash', hash);
-
-                  const response = await fetch('http://127.0.0.1:4000/auth/telegram', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'X-Requested-With': 'XMLHttpRequest',
-                    },
-                    body: JSON.stringify({ initData: params.toString() }),
-                  });
-
-                  if (!response.ok) {
-                    process.stderr.write(await response.text());
-                    process.exit(1);
-                  }
-
-                  const payload = await response.json();
-                  if (!payload?.token) {
-                    process.stderr.write('Missing auth token from smoke auth response');
-                    process.exit(1);
-                  }
-
-                  process.stdout.write(payload.token);
-                })().catch((error) => {
-                  process.stderr.write(String(error));
-                  process.exit(1);
-                });
-NODE
-              "
+              (
+                set -a
+                . "$REPO/server/.env"
+                set +a
+                SMOKE_TELEGRAM_ID="$SMOKE_TELEGRAM_ID" API_URL="$API" node -e 'const crypto = require("crypto"); (async () => { const userId = Number(process.env.SMOKE_TELEGRAM_ID); const params = new URLSearchParams(); params.set("auth_date", String(Math.floor(Date.now() / 1000))); params.set("query_id", "smoke-check"); params.set("user", JSON.stringify({ id: userId, first_name: "Smoke", last_name: "Check", username: `smoke_${userId}`, language_code: "en" })); const dataCheck = Array.from(params.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key}=${value}`).join("\\n"); const secretKey = crypto.createHmac("sha256", "WebAppData").update(process.env.TELEGRAM_BOT_TOKEN || "").digest(); const hash = crypto.createHmac("sha256", secretKey).update(dataCheck).digest("hex"); params.set("hash", hash); const response = await fetch(`${process.env.API_URL}/auth/telegram`, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" }, body: JSON.stringify({ initData: params.toString() }) }); if (!response.ok) { process.stderr.write(await response.text()); process.exit(1); } const payload = await response.json(); if (!payload?.token) { process.stderr.write("Missing auth token from smoke auth response"); process.exit(1); } process.stdout.write(payload.token); })().catch((error) => { process.stderr.write(String(error)); process.exit(1); });'
+              )
             )"
             test -n "$AUTH_TOKEN"
             echo "  ✓ api /auth/telegram"
@@ -263,22 +213,7 @@ NODE
             check_bearer "$API/v2/wallets" 200 "$AUTH_TOKEN" "api wallet-v2 list with auth"
 
             ADMIN_TOKEN="$(
-              kubectl exec deployment/api -n $NS -- sh -lc "
-                node - <<'NODE'
-                const { signAuthToken } = require('./dist/lib/auth/jwt.js');
-                const adminId = String(process.env.ADMIN_IDS || '').split(',').map(v => v.trim()).find(Boolean);
-                if (!adminId) {
-                  process.exit(1);
-                }
-                process.stdout.write(signAuthToken({
-                  uid: \`telegram_\${adminId}\`,
-                  telegramId: Number(adminId),
-                  firstName: 'Admin',
-                  lastName: 'Smoke',
-                  username: 'admin_smoke',
-                }));
-NODE
-              "
+              kubectl exec deployment/api -n $NS -- sh -lc "node -e 'const { signAuthToken } = require(\"./dist/lib/auth/jwt.js\"); const adminId = String(process.env.ADMIN_IDS || \"\").split(\",\").map(v => v.trim()).find(Boolean); if (!adminId) { process.exit(1); } process.stdout.write(signAuthToken({ uid: `telegram_${adminId}`, telegramId: Number(adminId), firstName: \"Admin\", lastName: \"Smoke\", username: \"admin_smoke\" }));'"
             )"
 
             check_bearer "$API/admin/db/stats" 200 "$ADMIN_TOKEN" "api admin db stats"
