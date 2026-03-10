@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.1] - 2026-03-10
+
+### Fixed
+- Admin panel Updates tab no longer shows `fatal: not a git repository` error in k3s deployment. `UpdateService` now gracefully falls back to `COMMIT_SHA`, `COMMIT_DATE`, and `COMMIT_SUBJECT` env vars (injected at Docker build time) when `.git` is not present inside the container.
+- Correct commit SHA, date, and message are now shown in the admin Updates tab after each deploy.
+
+### Changed
+- Telegram Mini App close confirmation dialog removed — the app now closes immediately without asking for user confirmation.
+- Deploy pipeline split into two independent workflows: `deploy-app.yml` (API + Web, triggered by changes in `server/`, `client/`, `k8s/`) and `deploy-bots.yml` (Bot + Userbot, triggered by changes in `bot/`, `userbot/`). Bot no longer restarts on every frontend push.
+
+### Added
+- `NEXT_PUBLIC_WALLET_NETWORK` and `NEXT_PUBLIC_WALLET_V2_NETWORK` GitHub Actions secrets set to `mainnet`. Previously missing, causing wallet network to be empty string in production bundle.
+
 ## [0.2.26] - 2026-03-09
 
 ### Fixed
