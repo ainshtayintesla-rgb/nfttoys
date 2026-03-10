@@ -462,6 +462,9 @@ export default function WalletV2StakingPage() {
                                                             </div>
 
                                                             <p className={styles.meta}>
+                                                                {position.rarity} · +{formatIntegerString(position.rewardPerHour)} {stakingRewardAsset}/h
+                                                            </p>
+                                                            <p className={styles.meta}>
                                                                 {tr('wallet_v2_staked_at', 'Staked at')}: {formatDateTime(position.stakedAt, locale)}
                                                             </p>
                                                             {!position.canUnstake && (
@@ -581,8 +584,8 @@ export default function WalletV2StakingPage() {
                                                                     {item.collectionName}
                                                                     {item.serialNumber ? ` #${item.serialNumber}` : ''}
                                                                 </p>
-                                                                <p className={styles.meta}>
-                                                                    {item.rarity}
+                                                                <p className={styles.itemValue}>
+                                                                    +{formatIntegerString(item.rewardPerHour)} {stakingRewardAsset}/h
                                                                 </p>
                                                             </div>
                                                             <p className={styles.meta}>{stakeWindowMessage}</p>

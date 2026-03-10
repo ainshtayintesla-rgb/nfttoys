@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2] - 2026-03-10
+
+### Changed
+- NFT staking: reward per hour is now returned for available (unstaked) NFTs in the state endpoint, so users see the earning rate before staking.
+- NFT staking UI: available NFTs now display the reward rate (`+30 UZS/h`, `+60 UZS/h`, `+120 UZS/h`) based on rarity instead of the raw rarity label.
+- NFT staking UI: staked positions now show rarity and reward rate (`common · +30 UZS/h`, etc.) alongside the pending reward.
+
 ## [0.3.1] - 2026-03-10
 
 ### Fixed
