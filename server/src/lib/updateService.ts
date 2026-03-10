@@ -128,6 +128,10 @@ function isGitAuthError(message: string): boolean {
         || lowered.includes('repository not found');
 }
 
+function isNoGitRepoError(message: string): boolean {
+    return message.toLowerCase().includes('not a git repository');
+}
+
 function resolveGitCredentialStorePath(gitConfigPath: string): string | null {
     if (!gitConfigPath || !fs.existsSync(gitConfigPath)) {
         return null;
@@ -614,11 +618,15 @@ class UpdateService {
     }
 
     private readLocalVersion(): string | null {
+        // Bare-metal: read from monorepo client/package.json
         const packagePath = path.resolve(this.repoRoot, 'client', 'package.json');
-        if (!fs.existsSync(packagePath)) return null;
+        if (fs.existsSync(packagePath)) {
+            return parseVersionFromPackage(fs.readFileSync(packagePath, 'utf8'));
+        }
 
-        const content = fs.readFileSync(packagePath, 'utf8');
-        return parseVersionFromPackage(content);
+        // Containerized: use APP_VERSION injected at Docker build time
+        const envVersion = process.env.APP_VERSION?.trim();
+        return envVersion || null;
     }
 
     private async readRemoteVersion(branch: string): Promise<string | null> {
@@ -631,16 +639,16 @@ class UpdateService {
     }
 
     private readLocalChangelog(): ChangelogSummary {
-        const changelogPath = path.resolve(this.repoRoot, 'CHANGELOG.md');
-        if (!fs.existsSync(changelogPath)) {
-            return {
-                latestTitle: null,
-                latestBody: null,
-            };
+        // Try repoRoot first (bare-metal), then serverRoot (containerized — CHANGELOG.md baked into /app/)
+        for (const base of [this.repoRoot, this.serverRoot]) {
+            const changelogPath = path.resolve(base, 'CHANGELOG.md');
+            if (fs.existsSync(changelogPath)) {
+                const content = fs.readFileSync(changelogPath, 'utf8').trim();
+                if (content) return parseChangelog(content);
+            }
         }
 
-        const content = fs.readFileSync(changelogPath, 'utf8');
-        return parseChangelog(content);
+        return { latestTitle: null, latestBody: null };
     }
 
     private async readRemoteChangelog(branch: string): Promise<ChangelogSummary> {
@@ -676,7 +684,23 @@ class UpdateService {
     private async refreshRemoteSnapshot(): Promise<void> {
         const branch = await this.resolveBranch();
 
-        await runGitCommand(['fetch', 'origin', branch], this.repoRoot, CHECK_TIMEOUT_MS);
+        try {
+            await runGitCommand(['fetch', 'origin', branch], this.repoRoot, CHECK_TIMEOUT_MS);
+        } catch (fetchError) {
+            const message = toErrorMessage(fetchError);
+            if (isNoGitRepoError(message)) {
+                // Containerized deployment — no .git present. Updates are managed by CI/CD externally.
+                // Populate local state from build-time env vars so the panel shows current version.
+                const current = await this.getCommitSnapshot('HEAD');
+                current.version = this.readLocalVersion();
+                this.state.current = current;
+                this.state.hasUpdate = false;
+                this.state.changelog = this.readLocalChangelog();
+                // Return without throwing so the UI shows current state instead of an error.
+                return;
+            }
+            throw fetchError;
+        }
 
         const current = await this.getCommitSnapshot('HEAD');
         const remote = await this.getCommitSnapshot(`origin/${branch}`);

@@ -47,6 +47,10 @@ jobs:
         run: |
           echo "date=$(git log -1 --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
           echo "subject=$(git log -1 --format=%s HEAD)" >> "$GITHUB_OUTPUT"
+          echo "app_version=$(node -p "require('./client/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Stage CHANGELOG.md into server build context
+        run: cp CHANGELOG.md server/CHANGELOG.md
 
       - name: Build and push API image
         uses: docker/build-push-action@v5
@@ -62,6 +66,7 @@ jobs:
             COMMIT_SHA=${{ github.sha }}
             COMMIT_DATE=${{ steps.commit.outputs.date }}
             COMMIT_SUBJECT=${{ steps.commit.outputs.subject }}
+            APP_VERSION=${{ steps.commit.outputs.app_version }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/nfttoys/api:${{ steps.meta.outputs.sha-tag }}
             ghcr.io/${{ github.repository_owner }}/nfttoys/api:latest

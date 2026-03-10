@@ -30,6 +30,10 @@ FROM deps-all AS builder
 COPY tsconfig.json ./
 COPY prisma ./prisma
 COPY src ./src
+# CHANGELOG.md is staged from repo root by CI (cp CHANGELOG.md server/CHANGELOG.md before build).
+# Use bind-mount so local dev builds (without staged file) still succeed — falls back to empty.
+RUN --mount=type=bind,source=.,target=/build-ctx \
+    cp /build-ctx/CHANGELOG.md ./CHANGELOG.md 2>/dev/null || echo "" > ./CHANGELOG.md
 RUN npm run prisma:generate && npm run build
 
 FROM deps-all AS migrator
@@ -38,13 +42,15 @@ CMD ["npm", "run", "prisma:migrate"]
 
 FROM base AS runtime
 ENV NODE_ENV=production
-# Build-time commit info — injected by CI so UpdateService shows correct version in k3s
+# Build-time commit + version info — injected by CI so UpdateService shows correct state in k3s
 ARG COMMIT_SHA=""
 ARG COMMIT_DATE=""
 ARG COMMIT_SUBJECT=""
+ARG APP_VERSION=""
 ENV COMMIT_SHA=$COMMIT_SHA \
     COMMIT_DATE=$COMMIT_DATE \
-    COMMIT_SUBJECT=$COMMIT_SUBJECT
+    COMMIT_SUBJECT=$COMMIT_SUBJECT \
+    APP_VERSION=$APP_VERSION
 # Use prod-only node_modules (clean install, no prune artifacts)
 COPY --from=deps-prod /app/node_modules ./node_modules
 # Overlay the Prisma generated client from builder (prisma generate output)
@@ -52,4 +58,5 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/CHANGELOG.md ./CHANGELOG.md
 CMD ["node", "dist/index.js"]
