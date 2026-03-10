@@ -269,7 +269,7 @@ jobs:
             check_bearer "$API/v2/wallets" 200 "$AUTH_TOKEN" "api wallet-v2 list with auth"
 
             ADMIN_TOKEN="$(
-              kubectl exec deployment/api -n $NS -- sh -lc "node -e 'const { signAuthToken } = require(\"./dist/lib/auth/jwt.js\"); const adminId = String(process.env.ADMIN_IDS || \"\").split(\",\").map(v => v.trim()).find(Boolean); if (!adminId) { process.exit(1); } process.stdout.write(signAuthToken({ uid: `telegram_${adminId}`, telegramId: Number(adminId), firstName: \"Admin\", lastName: \"Smoke\", username: \"admin_smoke\" }));'"
+              kubectl exec deployment/api -n $NS -- sh -lc "node -e 'const { signAuthToken } = require(\"./dist/lib/auth/jwt.js\"); const adminId = String(process.env.ADMIN_IDS || \"\").split(\",\").map(v => v.trim()).find(Boolean); if (!adminId) { process.exit(1); } process.stdout.write(signAuthToken({ uid: \"telegram_\" + adminId, telegramId: Number(adminId), firstName: \"Admin\", lastName: \"Smoke\", username: \"admin_smoke\" }));'"
             )"
 
             check_bearer "$API/admin/db/stats" 200 "$ADMIN_TOKEN" "api admin db stats"
