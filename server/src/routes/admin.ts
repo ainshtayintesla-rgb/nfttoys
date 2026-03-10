@@ -19,6 +19,7 @@ import { requireAdmin, getAdminTelegramIds } from '../middleware/admin';
 import { requireAuth } from '../middleware/auth';
 import { csrfProtection } from '../middleware/csrfProtection';
 import { standardLimit, strictLimit } from '../middleware/rateLimit';
+import { isNftStakingSchemaNotReadyError } from './walletV2/helpers/staking';
 
 const router = Router();
 
@@ -1208,6 +1209,19 @@ router.get('/story-boost/stats', requireAuth, requireAdmin, async (_req, res) =>
             schemaReady: true,
         });
     } catch (error) {
+        if (isNftStakingSchemaNotReadyError(error)) {
+            console.warn('Admin story boost stats schema not ready:', {
+                code: error.code,
+                meta: error.meta,
+            });
+
+            return res.json({
+                success: true,
+                stats: null,
+                schemaReady: false,
+            });
+        }
+
         console.error('Admin story boost stats error:', error);
         return res.status(500).json({
             error: 'Failed to fetch story boost stats',

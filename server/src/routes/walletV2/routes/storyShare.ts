@@ -369,6 +369,14 @@ router.get('/wallet/:id/nft-staking/story-share/:tokenId', standardLimit, requir
             return sendError(res, error.statusCode, error.code, error.message, error.details);
         }
 
+        const schemaErrorResponse = handleNftStakingSchemaNotReadyError({
+            res,
+            error,
+            context: 'Wallet v2 nft story share state',
+        });
+
+        if (schemaErrorResponse) return schemaErrorResponse;
+
         console.error('Wallet v2 nft story share state error:', error);
         return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch story share state');
     }
@@ -414,6 +422,18 @@ router.get('/internal/pending-story-shares', async (req, res) => {
             })),
         });
     } catch (error) {
+        if (error instanceof ApiError) {
+            return sendError(res, error.statusCode, error.code, error.message, error.details);
+        }
+
+        const schemaErrorResponse = handleNftStakingSchemaNotReadyError({
+            res,
+            error,
+            context: 'Internal pending story shares',
+        });
+
+        if (schemaErrorResponse) return schemaErrorResponse;
+
         console.error('Internal pending story shares error:', error);
         return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch pending shares');
     }
@@ -463,6 +483,18 @@ router.get('/internal/active-story-shares', async (req, res) => {
             })),
         });
     } catch (error) {
+        if (error instanceof ApiError) {
+            return sendError(res, error.statusCode, error.code, error.message, error.details);
+        }
+
+        const schemaErrorResponse = handleNftStakingSchemaNotReadyError({
+            res,
+            error,
+            context: 'Internal active story shares',
+        });
+
+        if (schemaErrorResponse) return schemaErrorResponse;
+
         console.error('Internal active story shares error:', error);
         return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch active shares');
     }
@@ -510,6 +542,18 @@ router.post('/internal/story-verify', async (req, res) => {
 
         return res.json({ success: true, status: newStatus });
     } catch (error) {
+        if (error instanceof ApiError) {
+            return sendError(res, error.statusCode, error.code, error.message, error.details);
+        }
+
+        const schemaErrorResponse = handleNftStakingSchemaNotReadyError({
+            res,
+            error,
+            context: 'Internal story verify',
+        });
+
+        if (schemaErrorResponse) return schemaErrorResponse;
+
         console.error('Internal story verify error:', error);
         return sendError(res, 500, 'INTERNAL_ERROR', 'Failed to verify story');
     }

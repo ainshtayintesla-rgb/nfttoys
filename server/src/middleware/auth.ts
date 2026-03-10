@@ -21,13 +21,31 @@ function extractBearerToken(authorization?: string): string | null {
     return token;
 }
 
-function extractRequestToken(req: Request): string | null {
+type AuthSource = 'bearer' | 'cookie' | 'init-data';
+
+interface ResolvedAuthPayload {
+    payload: JwtAuthPayload;
+    source: AuthSource;
+}
+
+function extractRequestToken(req: Request): { token: string; source: AuthSource } | null {
     const bearerToken = extractBearerToken(req.headers.authorization);
     if (bearerToken) {
-        return bearerToken;
+        return {
+            token: bearerToken,
+            source: 'bearer',
+        };
     }
 
-    return extractAuthCookieToken(req.headers.cookie);
+    const cookieToken = extractAuthCookieToken(req.headers.cookie);
+    if (cookieToken) {
+        return {
+            token: cookieToken,
+            source: 'cookie',
+        };
+    }
+
+    return null;
 }
 
 function extractInitData(req: Request): string | null {
@@ -88,24 +106,44 @@ function extractInitDataAuth(req: Request): JwtAuthPayload | null {
     };
 }
 
-function resolveAuthPayload(req: Request): JwtAuthPayload | null {
+function resolveAuthPayload(req: Request): ResolvedAuthPayload | null {
     const token = extractRequestToken(req);
     if (token) {
-        const payload = verifyAuthToken(token);
+        const payload = verifyAuthToken(token.token);
         if (payload) {
-            return payload;
+            return {
+                payload,
+                source: token.source,
+            };
         }
     }
 
-    return extractInitDataAuth(req);
+    const initDataPayload = extractInitDataAuth(req);
+    if (!initDataPayload) {
+        return null;
+    }
+
+    return {
+        payload: initDataPayload,
+        source: 'init-data',
+    };
 }
 
 function syncAuthUserAndContinue(
-    authUser: JwtAuthPayload,
+    auth: ResolvedAuthPayload,
     res: Response,
     next: NextFunction,
     required: boolean,
 ) {
+    // JWT/cookie-authenticated requests already passed through /auth/telegram.
+    // Re-upserting the same user on every protected request creates row-lock storms
+    // when the mini app loads multiple screens in parallel.
+    if (auth.source !== 'init-data') {
+        return next();
+    }
+
+    const authUser = auth.payload;
+
     ensureAuthUserUpsert(authUser)
         .then(() => next())
         .catch((error) => {
@@ -123,22 +161,22 @@ function syncAuthUserAndContinue(
 }
 
 export function optionalAuth(req: Request, _res: Response, next: NextFunction) {
-    const payload = resolveAuthPayload(req);
-    req.authUser = payload || undefined;
+    const auth = resolveAuthPayload(req);
+    req.authUser = auth?.payload;
 
-    if (!payload) {
+    if (!auth) {
         return next();
     }
 
-    return syncAuthUserAndContinue(payload, _res, next, false);
+    return syncAuthUserAndContinue(auth, _res, next, false);
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
-    const payload = resolveAuthPayload(req);
+    const auth = resolveAuthPayload(req);
 
-    if (payload) {
-        req.authUser = payload;
-        return syncAuthUserAndContinue(payload, res, next, true);
+    if (auth) {
+        req.authUser = auth.payload;
+        return syncAuthUserAndContinue(auth, res, next, true);
     }
 
     return res.status(401).json({

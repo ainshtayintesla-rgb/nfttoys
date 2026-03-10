@@ -184,6 +184,11 @@ export function assertNftStorySharePrismaClientReady(): void {
     );
 }
 
+export function isNftStakingSchemaNotReadyError(error: unknown): error is Prisma.PrismaClientKnownRequestError {
+    return error instanceof Prisma.PrismaClientKnownRequestError
+        && (error.code === 'P2021' || error.code === 'P2022');
+}
+
 export function handleNftStakingSchemaNotReadyError(params: {
     res: Response;
     error: unknown;
@@ -191,11 +196,7 @@ export function handleNftStakingSchemaNotReadyError(params: {
 }): Response | null {
     const { res, error, context } = params;
 
-    if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
-        return null;
-    }
-
-    if (error.code !== 'P2021' && error.code !== 'P2022') {
+    if (!isNftStakingSchemaNotReadyError(error)) {
         return null;
     }
 

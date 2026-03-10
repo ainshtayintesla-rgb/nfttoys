@@ -131,6 +131,9 @@ jobs:
             git -C "$REPO" fetch origin main
             git -C "$REPO" reset --hard origin/main
 
+            echo "=== Refreshing prod secrets ==="
+            bash "$REPO/scripts/k8s-create-secrets.sh" "$REPO"
+
             echo "=== Applying k8s manifests ==="
             kubectl apply -f "$REPO/k8s/prod/"
 
@@ -176,8 +179,120 @@ jobs:
             check "$WEB/" 200 "web /"
             check "$WEB/profile" 200 "web /profile"
             check "$WEB/wallet" 200 "web /wallet"
+            check "$WEB/wallet-v2" 200 "web /wallet-v2"
+            check "$WEB/transactions" 200 "web /transactions"
+            check "$WEB/admin" 200 "web /admin"
             check_origin "$API/health" "https://nfttoys.shop" 200 "api CORS apex"
             check_origin "$API/health" "https://www.nfttoys.shop" 200 "api CORS www"
+
+            echo "=== Auth smoke check ==="
+            SMOKE_TELEGRAM_ID="990$(date +%s)"
+            AUTH_TOKEN="$(
+              kubectl exec deployment/api -n $NS -- sh -lc "
+                SMOKE_TELEGRAM_ID='$SMOKE_TELEGRAM_ID' node - <<'NODE'
+                const crypto = require('crypto');
+                (async () => {
+                  const userId = Number(process.env.SMOKE_TELEGRAM_ID);
+                  const params = new URLSearchParams();
+                  params.set('auth_date', String(Math.floor(Date.now() / 1000)));
+                  params.set('query_id', 'smoke-check');
+                  params.set('user', JSON.stringify({
+                    id: userId,
+                    first_name: 'Smoke',
+                    last_name: 'Check',
+                    username: \`smoke_\${userId}\`,
+                    language_code: 'en',
+                  }));
+                  const dataCheck = Array.from(params.entries())
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([key, value]) => \`\${key}=\${value}\`)
+                    .join('\\n');
+                  const secretKey = crypto
+                    .createHmac('sha256', 'WebAppData')
+                    .update(process.env.TELEGRAM_BOT_TOKEN || '')
+                    .digest();
+                  const hash = crypto
+                    .createHmac('sha256', secretKey)
+                    .update(dataCheck)
+                    .digest('hex');
+                  params.set('hash', hash);
+
+                  const response = await fetch('http://127.0.0.1:4000/auth/telegram', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: JSON.stringify({ initData: params.toString() }),
+                  });
+
+                  if (!response.ok) {
+                    process.stderr.write(await response.text());
+                    process.exit(1);
+                  }
+
+                  const payload = await response.json();
+                  if (!payload?.token) {
+                    process.stderr.write('Missing auth token from smoke auth response');
+                    process.exit(1);
+                  }
+
+                  process.stdout.write(payload.token);
+                })().catch((error) => {
+                  process.stderr.write(String(error));
+                  process.exit(1);
+                });
+NODE
+              "
+            )"
+            test -n "$AUTH_TOKEN"
+            echo "  ✓ api /auth/telegram"
+
+            check_bearer() {
+              local url=$1 expected=$2 token=$3 label=$4
+              local code
+              code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $token" "$url")
+              if [ "$code" = "$expected" ]; then
+                echo "  ✓ $label ($code)"
+              else
+                echo "  ✗ $label — expected $expected, got $code" && exit 1
+              fi
+            }
+
+            check_bearer "$API/wallet/info" 200 "$AUTH_TOKEN" "api wallet info with auth"
+            check_bearer "$API/v2/wallets" 200 "$AUTH_TOKEN" "api wallet-v2 list with auth"
+
+            ADMIN_TOKEN="$(
+              kubectl exec deployment/api -n $NS -- sh -lc "
+                node - <<'NODE'
+                const { signAuthToken } = require('./dist/lib/auth/jwt.js');
+                const adminId = String(process.env.ADMIN_IDS || '').split(',').map(v => v.trim()).find(Boolean);
+                if (!adminId) {
+                  process.exit(1);
+                }
+                process.stdout.write(signAuthToken({
+                  uid: \`telegram_\${adminId}\`,
+                  telegramId: Number(adminId),
+                  firstName: 'Admin',
+                  lastName: 'Smoke',
+                  username: 'admin_smoke',
+                }));
+NODE
+              "
+            )"
+
+            check_bearer "$API/admin/db/stats" 200 "$ADMIN_TOKEN" "api admin db stats"
+            check_bearer "$API/admin/story-boost/stats" 200 "$ADMIN_TOKEN" "api admin story boost stats"
+            check_bearer "$API/admin/userbot/session" 200 "$ADMIN_TOKEN" "api admin userbot session"
+
+            kubectl exec deployment/api -n $NS -- sh -lc '
+              set -e
+              code=$(curl -s -o /dev/null -w "%{http_code}" -H "x-internal-secret: $USERBOT_INTERNAL_SECRET" http://127.0.0.1:4000/v2/internal/pending-story-shares)
+              [ "$code" = "200" ]
+              code=$(curl -s -o /dev/null -w "%{http_code}" -H "x-internal-secret: $USERBOT_INTERNAL_SECRET" http://127.0.0.1:4000/v2/internal/active-story-shares)
+              [ "$code" = "200" ]
+            '
+            echo "  ✓ api internal story-share endpoints"
 
             kubectl exec deployment/userbot -n $NS -- python - <<'PY'
             import json
