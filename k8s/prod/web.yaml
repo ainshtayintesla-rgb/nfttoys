@@ -35,6 +35,10 @@ spec:
               value: production
             - name: PORT
               value: "3000"
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "10"]
           readinessProbe:
             httpGet:
               path: /

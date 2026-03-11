@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.5] - 2026-03-11
+
+### Fixed
+- k8s: added `preStop: sleep 10` lifecycle hook to web deployment — prevents curl exit-7 race condition where old pod terminates while smoke check is still running
+- deploy: added `sleep 5` after rollout status before smoke check — gives endpoint controller time to drain connections from terminating pods
+
 ## [0.3.4] - 2026-03-11
 
 ### Fixed

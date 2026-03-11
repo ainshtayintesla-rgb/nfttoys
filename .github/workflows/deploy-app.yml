@@ -140,6 +140,8 @@ jobs:
             kubectl rollout status deployment/web -n $NS --timeout=5m
             kubectl rollout status deployment/api -n $NS --timeout=5m
 
+            sleep 5
+
             echo "=== Smoke check ==="
             API="http://127.0.0.1:30100"
             WEB="http://127.0.0.1:30101"
