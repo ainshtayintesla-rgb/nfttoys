@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.4] - 2026-03-11
+
+### Fixed
+- GitHub Actions: added `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` to all workflow files to resolve Node.js 20 deprecation warnings (`actions/checkout@v4`, `actions/setup-node@v4`)
+
 ## [0.3.3] - 2026-03-11
 
 ### Changed
