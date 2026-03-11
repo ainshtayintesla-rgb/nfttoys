@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.3] - 2026-03-11
+
+### Changed
+- NFT staking page: header icon changed from sparkles to `IoTrendingUp` (better reflects earning/growth intent)
+- NFT staking page: removed staking window hint text from header for a cleaner look
+- NFT staking page: summary section redesigned as a hero card — large pending reward value at top, active count and claimed total below a divider
+- NFT staking page: NFT cards (staked and available) now feature a `rewardStrip` — a highlighted green band showing rate/h and accumulated reward side by side
+- NFT staking page: TGS animations no longer autoplay — they play only on tap
+- NFT staking page: added skeleton shimmer loader (3 summary + 3 item placeholders) replacing plain "Loading..." text
+- Added `README.md` with project overview, NFT rarity system, staking mechanics, wallet approaches, tech stack, and roadmap
+- Added project-level Claude skills: `/push`, `/bugfix`, `/audit`, `/review`, `/frontend`
+- Added `CLAUDE.md` with permanent project rules for AI-assisted development
+
 ## [0.3.2] - 2026-03-10
 
 ### Changed

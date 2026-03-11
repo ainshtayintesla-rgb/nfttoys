@@ -2,11 +2,24 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { IoCheckmarkCircle, IoRefresh, IoShareSocial, IoSparkles, IoTime } from 'react-icons/io5';
+import {
+    IoCheckmarkCircle,
+    IoCube,
+    IoFlame,
+    IoLayers,
+    IoRefresh,
+    IoShareSocial,
+    IoSparkles,
+    IoStar,
+    IoTime,
+    IoTrendingUp,
+} from 'react-icons/io5';
 
 import { BottomDrawer } from '@/components/ui/BottomDrawer';
 import { Button } from '@/components/ui/Button';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { TelegramBackButton } from '@/components/ui/TelegramBackButton';
+import { TgsPlayer } from '@/components/ui/TgsPlayer';
 import { api } from '@/lib/api';
 import { API_BASE_URL } from '@/lib/apiBaseUrl';
 import { useLanguage } from '@/lib/context/LanguageContext';
@@ -32,11 +45,7 @@ function localeToIntlCode(locale: string): string {
 
 function formatDateTime(value: string, locale: string): string {
     const date = new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-        return value;
-    }
-
+    if (Number.isNaN(date.getTime())) return value;
     return new Intl.DateTimeFormat(localeToIntlCode(locale), {
         month: 'short',
         day: 'numeric',
@@ -47,68 +56,37 @@ function formatDateTime(value: string, locale: string): string {
 
 function safeErrorMessage(error: unknown): string {
     if (isWalletV2ApiError(error)) {
-        if (error.code === 'TOKEN_ID_REQUIRED') {
-            return 'Token id is required.';
-        }
-
-        if (error.code === 'NFT_NOT_FOUND') {
-            return 'NFT not found.';
-        }
-
-        if (error.code === 'NFT_NOT_OWNED') {
-            return 'This NFT is not linked to the current wallet profile.';
-        }
-
-        if (error.code === 'NFT_ALREADY_STAKED') {
-            return 'NFT is already staked.';
-        }
-
-        if (error.code === 'NFT_UNAVAILABLE') {
-            return 'NFT is not available for staking.';
-        }
-
-        if (error.code === 'STAKE_WINDOW_NOT_OPEN') {
-            return 'Staking window is not open yet for this NFT.';
-        }
-
-        if (error.code === 'STAKE_WINDOW_CLOSED') {
-            return 'Staking window is closed for this NFT.';
-        }
-
-        if (error.code === 'NO_REWARD_AVAILABLE') {
-            return 'No staking reward available yet.';
-        }
-
-        if (error.code === 'STAKE_POSITION_NOT_FOUND') {
-            return 'Staking position not found.';
-        }
-
-        if (error.code === 'UNSTAKE_COOLDOWN_ACTIVE') {
-            return 'NFT is still in unstake cooldown period.';
-        }
-
-        if (error.code === 'WALLET_SESSION_MISSING' || error.code === 'SESSION_REVOKED') {
-            return 'Wallet session is missing. Open Wallet V2 and authenticate again.';
-        }
-
-        if (error.code === 'WALLET_NOT_FOUND') {
-            return 'Wallet was not found on server. Create or import wallet again.';
-        }
-
-        if (error.code === 'NFT_STAKING_SCHEMA_NOT_READY') {
-            return 'NFT staking is not initialized on server. Apply latest migrations, regenerate Prisma client, and restart backend.';
-        }
-
-        if (error.message) {
-            return error.message;
-        }
+        if (error.code === 'TOKEN_ID_REQUIRED') return 'Token id is required.';
+        if (error.code === 'NFT_NOT_FOUND') return 'NFT not found.';
+        if (error.code === 'NFT_NOT_OWNED') return 'This NFT is not linked to the current wallet profile.';
+        if (error.code === 'NFT_ALREADY_STAKED') return 'NFT is already staked.';
+        if (error.code === 'NFT_UNAVAILABLE') return 'NFT is not available for staking.';
+        if (error.code === 'STAKE_WINDOW_NOT_OPEN') return 'Staking window is not open yet for this NFT.';
+        if (error.code === 'STAKE_WINDOW_CLOSED') return 'Staking window is closed for this NFT.';
+        if (error.code === 'NO_REWARD_AVAILABLE') return 'No staking reward available yet.';
+        if (error.code === 'STAKE_POSITION_NOT_FOUND') return 'Staking position not found.';
+        if (error.code === 'UNSTAKE_COOLDOWN_ACTIVE') return 'NFT is still in unstake cooldown period.';
+        if (error.code === 'WALLET_SESSION_MISSING' || error.code === 'SESSION_REVOKED') return 'Wallet session is missing. Open Wallet V2 and authenticate again.';
+        if (error.code === 'WALLET_NOT_FOUND') return 'Wallet was not found on server. Create or import wallet again.';
+        if (error.code === 'NFT_STAKING_SCHEMA_NOT_READY') return 'NFT staking is not initialized on server. Apply latest migrations, regenerate Prisma client, and restart backend.';
+        if (error.message) return error.message;
     }
-
-    if (error instanceof Error && error.message) {
-        return error.message;
-    }
-
+    if (error instanceof Error && error.message) return error.message;
     return 'Request failed';
+}
+
+function getRarityBadgeClass(rarity: string | null, styleMap: Record<string, string>): string | null {
+    const r = (rarity || '').toLowerCase();
+    if (r === 'legendary') return styleMap.itemBadge;
+    if (r === 'rare') return styleMap.itemBadgeBlue;
+    return null;
+}
+
+function getRarityIcon(rarity: string | null, size: number): React.ReactNode {
+    const r = (rarity || '').toLowerCase();
+    if (r === 'legendary') return <IoFlame size={size} />;
+    if (r === 'rare') return <IoStar size={size} />;
+    return <IoCube size={size} />;
 }
 
 export default function WalletV2StakingPage() {
@@ -132,20 +110,18 @@ export default function WalletV2StakingPage() {
     const stakingPositions = nftStakingState?.positions || [];
     const stakingAvailable = nftStakingState?.available || [];
     const stakingRewardAsset = nftStakingState?.rewardAsset || 'UZS';
-    const stakingSummaryPending = useMemo(() => {
-        const raw = nftStakingState?.summary?.pendingReward || '0';
-        return formatIntegerString(raw);
-    }, [nftStakingState?.summary?.pendingReward]);
-    const stakingSummaryClaimed = useMemo(() => {
-        const raw = nftStakingState?.summary?.totalClaimed || '0';
-        return formatIntegerString(raw);
-    }, [nftStakingState?.summary?.totalClaimed]);
-    const stakingWindowHint = useMemo(() => {
-        if (!nftStakingState?.rules) {
-            return 'Stake window: 24-48h after incoming transfer';
-        }
 
-        return `Stake window: ${nftStakingState.rules.windowStartHours}-${nftStakingState.rules.windowEndHours}h after incoming transfer`;
+    const stakingSummaryPending = useMemo(() => {
+        return formatIntegerString(nftStakingState?.summary?.pendingReward || '0');
+    }, [nftStakingState?.summary?.pendingReward]);
+
+    const stakingSummaryClaimed = useMemo(() => {
+        return formatIntegerString(nftStakingState?.summary?.totalClaimed || '0');
+    }, [nftStakingState?.summary?.totalClaimed]);
+
+    const stakingWindowHint = useMemo(() => {
+        if (!nftStakingState?.rules) return 'Stake window: 24–48h after incoming transfer';
+        return `Stake window: ${nftStakingState.rules.windowStartHours}–${nftStakingState.rules.windowEndHours}h after transfer`;
     }, [nftStakingState?.rules]);
 
     const loadNftStakingState = useCallback(async (showLoader = true) => {
@@ -155,38 +131,24 @@ export default function WalletV2StakingPage() {
             setNftStakingError('Wallet session is missing');
             return;
         }
-
-        if (showLoader) {
-            setIsNftStakingLoading(true);
-        }
-
+        if (showLoader) setIsNftStakingLoading(true);
         setNftStakingError('');
-
         try {
             const response = await api.walletV2.nftStaking.state(walletId);
             setNftStakingState(response);
         } catch (error) {
             setNftStakingError(safeErrorMessage(error));
         } finally {
-            if (showLoader) {
-                setIsNftStakingLoading(false);
-            }
+            if (showLoader) setIsNftStakingLoading(false);
         }
     }, [walletId]);
 
-    const runNftStakingAction = useCallback(async (
-        tokenId: string,
-        action: NftStakingActionType,
-    ) => {
-        if (!walletId || !tokenId.trim()) {
-            return;
-        }
-
+    const runNftStakingAction = useCallback(async (tokenId: string, action: NftStakingActionType) => {
+        if (!walletId || !tokenId.trim()) return;
         setNftStakingActionTokenId(tokenId);
         setNftStakingActionType(action);
         setNftStakingError('');
         setRequestSuccess('');
-
         try {
             if (action === 'stake') {
                 await api.walletV2.nftStaking.stake({ walletId, tokenId });
@@ -198,7 +160,6 @@ export default function WalletV2StakingPage() {
                 await api.walletV2.nftStaking.unstake({ walletId, tokenId, claimRewards: true });
                 setRequestSuccess('NFT unstaked successfully.');
             }
-
             await loadNftStakingState(false);
             haptic.success();
         } catch (error) {
@@ -210,7 +171,7 @@ export default function WalletV2StakingPage() {
         }
     }, [haptic, loadNftStakingState, walletId]);
 
-    // ─── Story share state ────────────────────────────────────────────────
+    // ─── Story share state ─────────────────────────────────────────────────
     const [storyShareStates, setStoryShareStates] = useState<Record<string, WalletV2NftStoryShareStateData>>({});
     const [storyShareLoadingTokenId, setStoryShareLoadingTokenId] = useState<string | null>(null);
 
@@ -220,19 +181,16 @@ export default function WalletV2StakingPage() {
             const state = await api.walletV2.nftStaking.storyShareState({ walletId, tokenId });
             setStoryShareStates((prev) => ({ ...prev, [tokenId]: state }));
         } catch {
-            // Silently fail — story share is optional feature
+            // Story share is optional
         }
     }, [walletId]);
 
-    // Load story share states for all staked positions
     useEffect(() => {
         if (!walletId || stakingPositions.length === 0) return;
-        stakingPositions.forEach((pos) => {
-            void loadStoryShareState(pos.tokenId);
-        });
+        stakingPositions.forEach((pos) => { void loadStoryShareState(pos.tokenId); });
     }, [loadStoryShareState, stakingPositions, walletId]);
 
-    // ─── Story share drawer ──────────────────────────────────────────────
+    // ─── Story share drawer ────────────────────────────────────────────────
     const [storyDrawerOpen, setStoryDrawerOpen] = useState(false);
     const [storyDrawerTokenId, setStoryDrawerTokenId] = useState<string | null>(null);
     const [storyDrawerAgreed, setStoryDrawerAgreed] = useState(false);
@@ -245,7 +203,6 @@ export default function WalletV2StakingPage() {
         setStoryDrawerStep('rules');
         setStoryDrawerCode('');
         setStoryDrawerOpen(true);
-        // Refresh state when opening drawer to get fresh cooldown info
         void loadStoryShareState(tokenId);
     }, [loadStoryShareState]);
 
@@ -258,47 +215,31 @@ export default function WalletV2StakingPage() {
 
     const handleShareStory = useCallback(async () => {
         if (!walletId || !webApp?.shareToStory || !storyDrawerTokenId) return;
-
         const tokenId = storyDrawerTokenId;
         setStoryDrawerStep('sharing');
         setStoryShareLoadingTokenId(tokenId);
         setNftStakingError('');
         setRequestSuccess('');
-
         try {
-            // 1. Record the share on server first to get verificationCode + shareId
             const result = await api.walletV2.nftStaking.storyShare({ walletId, tokenId });
             const code = result.verificationCode || '';
             setStoryDrawerCode(code);
-
-            // 2. Build story card image URL — use dynamic card, fallback to static
             const apiBase = API_BASE_URL;
             const dynamicUrl = `${apiBase}/v2/story-card/${encodeURIComponent(result.shareId)}.png`;
             const staticUrl = `${apiBase}/v2/story-card-static.png`;
-
-            // Test if dynamic URL works, fallback to static
             let storyCardUrl = staticUrl;
             try {
                 const probe = await fetch(dynamicUrl, { method: 'HEAD' });
                 if (probe.ok) storyCardUrl = dynamicUrl;
             } catch { /* use static */ }
-
-            // 3. Open Telegram story share UI
             const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
             webApp.shareToStory(storyCardUrl, {
                 text: `NFTToys Staking Boost | ${code}`,
                 widget_link: appUrl ? { url: appUrl, name: 'NFTToys' } : undefined,
             });
-
-            // 3. Move to verifying state — bonus only shown after userbot confirms
             setStoryDrawerStep('verifying');
             setRequestSuccess('');
-
-            // Refresh states
-            await Promise.all([
-                loadNftStakingState(false),
-                loadStoryShareState(tokenId),
-            ]);
+            await Promise.all([loadNftStakingState(false), loadStoryShareState(tokenId)]);
             haptic.success();
         } catch (error) {
             if (isWalletV2ApiError(error) && error.code === 'STORY_ALREADY_SHARED_TODAY') {
@@ -313,30 +254,22 @@ export default function WalletV2StakingPage() {
         }
     }, [closeStoryDrawer, haptic, loadNftStakingState, loadStoryShareState, storyDrawerTokenId, walletId, webApp]);
 
+    // ─── Session management ────────────────────────────────────────────────
     const resolveFatalSessionMessage = useCallback((error?: unknown): string => {
         if (isWalletV2ApiError(error) && error.code === 'WALLET_NOT_FOUND') {
-            return tr(
-                'wallet_v2_wallet_missing_error',
-                'Wallet was not found on server. Create or import wallet again.',
-            );
+            return tr('wallet_v2_wallet_missing_error', 'Wallet was not found on server. Create or import wallet again.');
         }
-
-        return tr(
-            'wallet_v2_session_revoked_error',
-            'Wallet session was revoked. Authenticate and import wallet again.',
-        );
+        return tr('wallet_v2_session_revoked_error', 'Wallet session was revoked. Authenticate and import wallet again.');
     }, [tr]);
 
     const applyFatalSessionReset = useCallback((error?: unknown) => {
         const currentWalletId = walletId || api.walletV2.session.getWalletId();
         const currentDeviceId = api.walletV2.session.getDeviceId();
-
         resetWalletV2ClientAuthState({
             walletId: currentWalletId,
             deviceId: currentDeviceId,
             clearAllWalletSettings: !currentWalletId,
         });
-
         setWalletId(null);
         setNftStakingState(null);
         setIsNftStakingLoading(false);
@@ -348,19 +281,12 @@ export default function WalletV2StakingPage() {
     }, [resolveFatalSessionMessage, router, walletId]);
 
     useEffect(() => {
-        const unsubscribe = api.walletV2.session.onRevoked((error) => {
-            applyFatalSessionReset(error);
-        });
-
+        const unsubscribe = api.walletV2.session.onRevoked((error) => { applyFatalSessionReset(error); });
         return unsubscribe;
     }, [applyFatalSessionReset]);
 
     useEffect(() => {
-        if (!walletId) {
-            setNftStakingState(null);
-            return;
-        }
-
+        if (!walletId) { setNftStakingState(null); return; }
         void loadNftStakingState(true);
     }, [loadNftStakingState, walletId]);
 
@@ -370,15 +296,31 @@ export default function WalletV2StakingPage() {
 
             <div className={styles.container}>
                 <main className={styles.main}>
-                    <section className={styles.pageHeader}>
-                        <h1 className={styles.pageTitle}>{tr('wallet_v2_nft_staking_title', 'NFT Staking')}</h1>
 
+                    {/* ── Page header ──────────────────────────────────────────── */}
+                    <section className={styles.pageHeader}>
+                        <div className={styles.pageLeft}>
+                            <div className={styles.pageIconWrap}>
+                                <IoTrendingUp size={20} />
+                            </div>
+                            <div className={styles.pageTextWrap}>
+                                <div className={styles.pageTitleWrap}>
+                                    {nftStakingState && nftStakingState.summary.activeCount > 0 && (
+                                        <span className={styles.pageBadge}>
+                                            <IoFlame size={10} />
+                                            {nftStakingState.summary.activeCount} active
+                                        </span>
+                                    )}
+                                    <h1 className={styles.pageTitle}>
+                                        {tr('wallet_v2_nft_staking_title', 'NFT Staking')}
+                                    </h1>
+                                </div>
+                            </div>
+                        </div>
                         <button
                             type="button"
                             className={styles.refreshButton}
-                            onClick={() => {
-                                void loadNftStakingState(true);
-                            }}
+                            onClick={() => { void loadNftStakingState(true); }}
                             disabled={isNftStakingLoading || !walletId}
                             aria-label={tr('wallet_v2_refresh', 'Refresh')}
                         >
@@ -386,17 +328,17 @@ export default function WalletV2StakingPage() {
                         </button>
                     </section>
 
-                    {requestSuccess && (
-                        <p className={styles.statusSuccess}>{requestSuccess}</p>
-                    )}
+                    {/* ── Status banners ───────────────────────────────────────── */}
+                    {requestSuccess && <p className={styles.statusSuccess}>{requestSuccess}</p>}
+                    {nftStakingError && <p className={styles.statusError}>{nftStakingError}</p>}
 
-                    {nftStakingError && (
-                        <p className={styles.statusError}>{nftStakingError}</p>
-                    )}
-
+                    {/* ── No wallet ────────────────────────────────────────────── */}
                     {!walletId ? (
-                        <div className={styles.emptyText}>
-                            <p>{tr('wallet_v2_error_session_missing', 'Wallet session is missing')}</p>
+                        <div className={styles.emptyState}>
+                            <IoLayers size={40} className={styles.emptyIcon} />
+                            <p className={styles.emptyText}>
+                                {tr('wallet_v2_error_session_missing', 'Wallet session is missing')}
+                            </p>
                             <Button
                                 variant="primary"
                                 onClick={() => {
@@ -409,29 +351,55 @@ export default function WalletV2StakingPage() {
                         </div>
                     ) : (
                         <>
+                            {/* ── Skeleton loader ──────────────────────────────── */}
                             {isNftStakingLoading && !nftStakingState && (
-                                <p className={styles.hint}>
-                                    {tr('wallet_v2_loading', 'Loading...')}
-                                </p>
+                                <div className={styles.skeletonRow}>
+                                    <div className={styles.summaryGrid}>
+                                        <Skeleton className={styles.skeletonSummary} />
+                                        <Skeleton className={styles.skeletonSummary} />
+                                        <Skeleton className={styles.skeletonSummary} />
+                                    </div>
+                                    <Skeleton className={styles.skeletonItem} />
+                                    <Skeleton className={styles.skeletonItem} />
+                                    <Skeleton className={styles.skeletonItem} />
+                                </div>
                             )}
 
+                            {/* ── Main content ─────────────────────────────────── */}
                             {!isNftStakingLoading && nftStakingState && (
                                 <div className={styles.content}>
-                                    <div className={styles.summaryGrid}>
-                                        <div className={styles.summaryCell}>
-                                            <span>{tr('wallet_v2_staking_active', 'Active')}</span>
-                                            <strong>{nftStakingState.summary.activeCount}</strong>
+
+                                    {/* Summary hero card */}
+                                    <div className={styles.summaryHero}>
+                                        <div>
+                                            <p className={styles.summaryHeroLabel}>
+                                                {tr('wallet_v2_staking_pending', 'Total pending')}
+                                            </p>
+                                            <p className={styles.summaryHeroValue}>
+                                                {stakingSummaryPending} {stakingRewardAsset}
+                                            </p>
                                         </div>
-                                        <div className={styles.summaryCell}>
-                                            <span>{tr('wallet_v2_staking_pending', 'Pending')}</span>
-                                            <strong>{stakingSummaryPending} {stakingRewardAsset}</strong>
-                                        </div>
-                                        <div className={styles.summaryCell}>
-                                            <span>{tr('wallet_v2_staking_claimed', 'Claimed')}</span>
-                                            <strong>{stakingSummaryClaimed} {stakingRewardAsset}</strong>
+                                        <div className={styles.summaryHeroStats}>
+                                            <div className={styles.summaryHeroStat}>
+                                                <span className={styles.summaryCellLabel}>
+                                                    {tr('wallet_v2_staking_active', 'Active')}
+                                                </span>
+                                                <strong className={styles.summaryCellValue}>
+                                                    {nftStakingState.summary.activeCount}
+                                                </strong>
+                                            </div>
+                                            <div className={styles.summaryHeroStat} style={{ textAlign: 'right' }}>
+                                                <span className={styles.summaryCellLabel}>
+                                                    {tr('wallet_v2_staking_claimed', 'Claimed')}
+                                                </span>
+                                                <strong className={styles.summaryCellValue}>
+                                                    {stakingSummaryClaimed} {stakingRewardAsset}
+                                                </strong>
+                                            </div>
                                         </div>
                                     </div>
 
+                                    {/* Staked positions */}
                                     {stakingPositions.length > 0 && (
                                         <div className={styles.block}>
                                             <h4 className={styles.blockTitle}>
@@ -440,62 +408,79 @@ export default function WalletV2StakingPage() {
                                             <div className={styles.list}>
                                                 {stakingPositions.map((position) => {
                                                     const isAnyActionLoading = Boolean(nftStakingActionTokenId);
-                                                    const isClaimLoading = (
-                                                        nftStakingActionTokenId === position.tokenId
-                                                        && nftStakingActionType === 'claim'
-                                                    );
-                                                    const isUnstakeLoading = (
-                                                        nftStakingActionTokenId === position.tokenId
-                                                        && nftStakingActionType === 'unstake'
-                                                    );
+                                                    const isClaimLoading = nftStakingActionTokenId === position.tokenId && nftStakingActionType === 'claim';
+                                                    const isUnstakeLoading = nftStakingActionTokenId === position.tokenId && nftStakingActionType === 'unstake';
+                                                    const rarityBadgeClass = getRarityBadgeClass(position.rarity, styles);
 
                                                     return (
                                                         <div key={position.tokenId} className={styles.item}>
                                                             <div className={styles.itemHead}>
-                                                                <p className={styles.itemTitle}>
-                                                                    {position.collectionName}
-                                                                    {position.serialNumber ? ` #${position.serialNumber}` : ''}
+                                                                <div className={styles.itemIconWrap} style={{ overflow: 'hidden' }}>
+                                                                    {position.tgsUrl ? (
+                                                                        <TgsPlayer
+                                                                            src={position.tgsUrl}
+                                                                            style={{ width: 38, height: 38 }}
+                                                                            autoplay={false}
+                                                                            playOnTap
+                                                                            unstyled
+                                                                            cacheKey={position.tokenId}
+                                                                        />
+                                                                    ) : getRarityIcon(position.rarity, 18)}
+                                                                </div>
+                                                                <div className={styles.itemTextWrap}>
+                                                                    <p className={styles.itemTitle}>
+                                                                        {position.collectionName}
+                                                                        {position.serialNumber ? ` #${position.serialNumber}` : ''}
+                                                                    </p>
+                                                                    {rarityBadgeClass && position.rarity && (
+                                                                        <span className={rarityBadgeClass}>
+                                                                            {position.rarity}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+
+                                                            <div className={styles.rewardStrip}>
+                                                                <p className={styles.rewardStripRate}>
+                                                                    +{formatIntegerString(position.rewardPerHour)} {stakingRewardAsset}/h
                                                                 </p>
-                                                                <p className={styles.itemValue}>
+                                                                <p className={styles.rewardStripPending}>
                                                                     +{formatIntegerString(position.pendingReward)} {stakingRewardAsset}
                                                                 </p>
                                                             </div>
 
-                                                            <p className={styles.meta}>
-                                                                {position.rarity} · +{formatIntegerString(position.rewardPerHour)} {stakingRewardAsset}/h
-                                                            </p>
-                                                            <p className={styles.meta}>
-                                                                {tr('wallet_v2_staked_at', 'Staked at')}: {formatDateTime(position.stakedAt, locale)}
-                                                            </p>
-                                                            {!position.canUnstake && (
+                                                            <div className={styles.itemMeta}>
                                                                 <p className={styles.meta}>
-                                                                    {tr('wallet_v2_unstake_available', 'Unstake available')}: {formatDateTime(position.unstakeAvailableAt, locale)}
+                                                                    {tr('wallet_v2_staked_at', 'Staked at')}: {formatDateTime(position.stakedAt, locale)}
                                                                 </p>
-                                                            )}
-                                                            {!position.owned && (
-                                                                <p className={styles.metaWarning}>
-                                                                    {tr('wallet_v2_staking_ownership_warning', 'NFT ownership changed. Claim is disabled.')}
-                                                                </p>
-                                                            )}
+                                                                {!position.canUnstake && (
+                                                                    <p className={styles.meta}>
+                                                                        {tr('wallet_v2_unstake_available', 'Unstake available')}: {formatDateTime(position.unstakeAvailableAt, locale)}
+                                                                    </p>
+                                                                )}
+                                                                {!position.owned && (
+                                                                    <p className={styles.metaWarning}>
+                                                                        {tr('wallet_v2_staking_ownership_warning', 'NFT ownership changed. Claim is disabled.')}
+                                                                    </p>
+                                                                )}
+                                                            </div>
 
-                                                            {/* Story Boost info */}
+                                                            {/* Story boost badge */}
                                                             {(() => {
                                                                 const ssState = storyShareStates[position.tokenId];
-                                                                if (ssState?.activeBoost) {
-                                                                    const expires = new Date(ssState.activeBoost.boostExpiresAt);
-                                                                    const hoursLeft = Math.max(0, Math.round((expires.getTime() - Date.now()) / 3600000));
-                                                                    const isPending = ssState.activeBoost.status === 'pending';
-                                                                    return (
-                                                                        <div className={styles.boostBadge}>
-                                                                            {isPending ? <IoTime size={13} /> : <IoCheckmarkCircle size={13} />}
-                                                                            <span>
-                                                                                +{Math.round((ssState.activeBoost.boostMultiplier - 1) * 100)}% boost
-                                                                                {isPending ? ' verifying...' : ` (${hoursLeft}h left)`}
-                                                                            </span>
-                                                                        </div>
-                                                                    );
-                                                                }
-                                                                return null;
+                                                                if (!ssState?.activeBoost) return null;
+                                                                const expires = new Date(ssState.activeBoost.boostExpiresAt);
+                                                                const hoursLeft = Math.max(0, Math.round((expires.getTime() - Date.now()) / 3600000));
+                                                                const isPending = ssState.activeBoost.status === 'pending';
+                                                                return (
+                                                                    <div className={styles.boostBadge}>
+                                                                        {isPending ? <IoTime size={13} /> : <IoCheckmarkCircle size={13} />}
+                                                                        <span>
+                                                                            +{Math.round((ssState.activeBoost.boostMultiplier - 1) * 100)}% boost
+                                                                            {isPending ? ' verifying...' : ` (${hoursLeft}h left)`}
+                                                                        </span>
+                                                                    </div>
+                                                                );
                                                             })()}
 
                                                             <div className={styles.actions}>
@@ -504,9 +489,7 @@ export default function WalletV2StakingPage() {
                                                                     variant="secondary"
                                                                     isLoading={isClaimLoading}
                                                                     disabled={!position.canClaim || !position.owned || isAnyActionLoading}
-                                                                    onClick={() => {
-                                                                        void runNftStakingAction(position.tokenId, 'claim');
-                                                                    }}
+                                                                    onClick={() => { void runNftStakingAction(position.tokenId, 'claim'); }}
                                                                 >
                                                                     {tr('wallet_v2_staking_claim', 'Claim')}
                                                                 </Button>
@@ -515,9 +498,7 @@ export default function WalletV2StakingPage() {
                                                                     variant="ghost"
                                                                     isLoading={isUnstakeLoading}
                                                                     disabled={!position.canUnstake || isAnyActionLoading}
-                                                                    onClick={() => {
-                                                                        void runNftStakingAction(position.tokenId, 'unstake');
-                                                                    }}
+                                                                    onClick={() => { void runNftStakingAction(position.tokenId, 'unstake'); }}
                                                                 >
                                                                     {tr('wallet_v2_staking_unstake', 'Unstake')}
                                                                 </Button>
@@ -533,18 +514,14 @@ export default function WalletV2StakingPage() {
                                                                             </Button>
                                                                         );
                                                                     }
-                                                                    if (isVerified) {
-                                                                        return null; // boost badge already shown above
-                                                                    }
+                                                                    if (isVerified) return null;
                                                                     return (
                                                                         <Button
                                                                             size="sm"
                                                                             variant="primary"
                                                                             isLoading={storyShareLoadingTokenId === position.tokenId}
                                                                             disabled={isAnyActionLoading || storyShareLoadingTokenId !== null}
-                                                                            onClick={() => {
-                                                                                openStoryDrawer(position.tokenId);
-                                                                            }}
+                                                                            onClick={() => { openStoryDrawer(position.tokenId); }}
                                                                         >
                                                                             <IoShareSocial size={14} style={{ marginRight: 4 }} />
                                                                             {tr('wallet_v2_story_share', 'Share Story +40%')}
@@ -559,6 +536,7 @@ export default function WalletV2StakingPage() {
                                         </div>
                                     )}
 
+                                    {/* Available to stake */}
                                     {stakingAvailable.length > 0 && (
                                         <div className={styles.block}>
                                             <h4 className={styles.blockTitle}>
@@ -566,38 +544,52 @@ export default function WalletV2StakingPage() {
                                             </h4>
                                             <div className={styles.list}>
                                                 {stakingAvailable.map((item) => {
-                                                    const isStakeLoading = (
-                                                        nftStakingActionTokenId === item.tokenId
-                                                        && nftStakingActionType === 'stake'
-                                                    );
+                                                    const isStakeLoading = nftStakingActionTokenId === item.tokenId && nftStakingActionType === 'stake';
                                                     const stakeDisabled = !item.stakeWindow.canStake || Boolean(nftStakingActionTokenId);
                                                     const stakeWindowMessage = item.stakeWindow.reason === 'not_open'
                                                         ? `${tr('wallet_v2_stake_opens', 'Opens')}: ${formatDateTime(item.stakeWindow.opensAt, locale)}`
                                                         : item.stakeWindow.reason === 'closed'
                                                             ? `${tr('wallet_v2_stake_closed', 'Closed')}: ${formatDateTime(item.stakeWindow.closesAt, locale)}`
                                                             : `${tr('wallet_v2_stake_open_until', 'Open until')}: ${formatDateTime(item.stakeWindow.closesAt, locale)}`;
+                                                    const rarityLower = (item.rarity || '').toLowerCase();
+                                                    const rarityBadgeClass = getRarityBadgeClass(item.rarity, styles);
+                                                    const iconWrapClass = rarityLower === 'legendary'
+                                                        ? styles.itemIconWrap
+                                                        : `${styles.itemIconWrap} ${styles.itemIconWrapAvailable}`;
 
                                                     return (
                                                         <div key={item.tokenId} className={styles.item}>
                                                             <div className={styles.itemHead}>
-                                                                <p className={styles.itemTitle}>
-                                                                    {item.collectionName}
-                                                                    {item.serialNumber ? ` #${item.serialNumber}` : ''}
+                                                                <div className={iconWrapClass}>
+                                                                    {getRarityIcon(item.rarity, 18)}
+                                                                </div>
+                                                                <div className={styles.itemTextWrap}>
+                                                                    <p className={styles.itemTitle}>
+                                                                        {item.collectionName}
+                                                                        {item.serialNumber ? ` #${item.serialNumber}` : ''}
+                                                                    </p>
+                                                                    {rarityBadgeClass && item.rarity && (
+                                                                        <span className={rarityBadgeClass}>
+                                                                            {item.rarity}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div className={styles.rewardStrip}>
+                                                                <p className={styles.rewardStripRate}>
+                                                                    {stakeWindowMessage}
                                                                 </p>
-                                                                <p className={styles.itemValue}>
+                                                                <p className={styles.rewardStripPending}>
                                                                     +{formatIntegerString(item.rewardPerHour)} {stakingRewardAsset}/h
                                                                 </p>
                                                             </div>
-                                                            <p className={styles.meta}>{stakeWindowMessage}</p>
                                                             <div className={styles.actions}>
                                                                 <Button
                                                                     size="sm"
                                                                     variant="primary"
                                                                     isLoading={isStakeLoading}
                                                                     disabled={stakeDisabled}
-                                                                    onClick={() => {
-                                                                        void runNftStakingAction(item.tokenId, 'stake');
-                                                                    }}
+                                                                    onClick={() => { void runNftStakingAction(item.tokenId, 'stake'); }}
                                                                 >
                                                                     {tr('wallet_v2_staking_stake', 'Stake')}
                                                                 </Button>
@@ -609,19 +601,25 @@ export default function WalletV2StakingPage() {
                                         </div>
                                     )}
 
+                                    {/* Empty state */}
                                     {stakingPositions.length === 0 && stakingAvailable.length === 0 && (
-                                        <div className={styles.emptyText}>
-                                            {tr('wallet_v2_staking_empty', 'No NFTs are currently eligible for staking in this wallet.')}
+                                        <div className={styles.emptyState}>
+                                            <IoLayers size={40} className={styles.emptyIcon} />
+                                            <p className={styles.emptyText}>
+                                                {tr('wallet_v2_staking_empty', 'No NFTs are currently eligible for staking in this wallet.')}
+                                            </p>
                                         </div>
                                     )}
+
                                 </div>
                             )}
                         </>
                     )}
+
                 </main>
             </div>
 
-            {/* Story Share Drawer */}
+            {/* ── Story Share Drawer ────────────────────────────────────────── */}
             <BottomDrawer
                 open={storyDrawerOpen}
                 onClose={closeStoryDrawer}
@@ -632,7 +630,6 @@ export default function WalletV2StakingPage() {
                         const ssState = storyDrawerTokenId ? storyShareStates[storyDrawerTokenId] : null;
                         const canShare = ssState?.canShare !== false;
                         const nextShareAt = ssState?.nextShareAt;
-
                         return (
                             <>
                                 <div className={styles.drawerRules}>
@@ -653,16 +650,12 @@ export default function WalletV2StakingPage() {
                                         <span>Keep the story for at least 5 minutes</span>
                                     </div>
                                 </div>
-
                                 {!canShare && nextShareAt && (
                                     <p className={styles.drawerCooldown}>
                                         <IoTime size={14} />
-                                        <span>
-                                            Next share available: {formatDateTime(nextShareAt, locale)}
-                                        </span>
+                                        <span>Next share available: {formatDateTime(nextShareAt, locale)}</span>
                                     </p>
                                 )}
-
                                 {canShare && (
                                     <>
                                         <label className={styles.drawerCheckbox}>
@@ -684,7 +677,6 @@ export default function WalletV2StakingPage() {
                                         </Button>
                                     </>
                                 )}
-
                                 {!canShare && (
                                     <Button variant="secondary" onClick={closeStoryDrawer}>
                                         Close
