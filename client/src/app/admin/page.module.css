@@ -1,5 +1,5 @@
 .container {
-    min-height: 100dvh;
+    min-height: 100vh;
     background: var(--bg-primary);
     padding-bottom: calc(120px + var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px)));
 }
@@ -1609,57 +1609,4 @@
     to {
         transform: rotate(360deg);
     }
-}
-
-/* Admin Login Form */
-.loginCard {
-    background: var(--bg-secondary);
-    border: 1px solid var(--surface-alpha-08);
-    border-radius: 20px;
-    padding: 32px 24px;
-    margin-top: 60px;
-    max-width: 360px;
-    margin-left: auto;
-    margin-right: auto;
-}
-
-.loginTitle {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--text-primary);
-    text-align: center;
-    margin-bottom: 24px;
-}
-
-.loginForm {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.loginInput {
-    width: 100%;
-    background: var(--surface-alpha-05);
-    border: 1px solid var(--surface-alpha-10);
-    border-radius: 10px;
-    padding: 11px 14px;
-    color: var(--text-primary);
-    font-size: 15px;
-    outline: none;
-    transition: border-color 0.15s ease;
-    box-sizing: border-box;
-}
-
-.loginInput:focus {
-    border-color: var(--accent-color);
-}
-
-.loginError {
-    color: #ef4444;
-    font-size: 13px;
-    text-align: center;
-}
-
-.loginBtn {
-    margin-top: 4px;
 }

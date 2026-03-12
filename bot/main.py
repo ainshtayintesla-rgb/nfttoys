@@ -13,7 +13,6 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
-import aiohttp
 from aiohttp import web
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
@@ -174,8 +173,6 @@ class BotConfig:
     default_language: str
     language_file: Path
     prefs_file: Path
-    server_url: str
-    bot_service_token: str
 
     @classmethod
     def from_env(cls) -> 'BotConfig':
@@ -191,8 +188,6 @@ class BotConfig:
         default_language = normalize_lang(os.getenv('DEFAULT_LANGUAGE', 'ru'), 'ru')
         language_file = Path(os.getenv('BOT_LANG_STORE', '/root/nfttoys/bot/data/user_lang.json')).expanduser()
         prefs_file = Path(os.getenv('BOT_PREFS_STORE', '/root/nfttoys/bot/data/user_prefs.json')).expanduser()
-        server_url = os.getenv('SERVER_URL', 'http://127.0.0.1:3000').strip().rstrip('/')
-        bot_service_token = os.getenv('BOT_SERVICE_TOKEN', '').strip()
 
         try:
             port = int(port_raw)
@@ -215,8 +210,6 @@ class BotConfig:
             default_language=default_language,
             language_file=language_file,
             prefs_file=prefs_file,
-            server_url=server_url,
-            bot_service_token=bot_service_token,
         )
 
 
@@ -619,51 +612,6 @@ async def handle_language_callback(update: Update, context: ContextTypes.DEFAULT
     )
 
 
-async def handle_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not update.effective_user or not update.effective_message:
-        return
-
-    config, _, _, _ = get_runtime_objects(context)
-    telegram_id = str(update.effective_user.id)
-
-    if not config.server_url or not config.bot_service_token:
-        await update.effective_message.reply_text('Admin credentials service not configured.')
-        return
-
-    url = f'{config.server_url}/admin/auth/pin'
-    headers = {
-        'Authorization': f'Bearer {config.bot_service_token}',
-        'Content-Type': 'application/json',
-    }
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json={'telegramId': telegram_id}, headers=headers) as resp:
-                data = await resp.json()
-    except Exception:
-        logging.exception('Failed to contact server for /pin (telegramId=%s)', telegram_id)
-        await update.effective_message.reply_text('Failed to contact server. Try again later.')
-        return
-
-    if not data.get('success'):
-        code = data.get('code', '')
-        if code == 'NOT_FOUND':
-            await update.effective_message.reply_text('No admin account linked to your Telegram ID.')
-        else:
-            await update.effective_message.reply_text('Could not generate credentials. Contact the owner.')
-        return
-
-    login = escape(str(data['login']))
-    password = escape(str(data['password']))
-    await update.effective_message.reply_text(
-        f'<b>Admin credentials</b>\n\n'
-        f'Login: <code>{login}</code>\n'
-        f'Password: <code>{password}</code>\n\n'
-        f'<i>Change your password after first login.</i>',
-        parse_mode=ParseMode.HTML,
-    )
-
-
 async def handle_write_access_allowed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.effective_user:
         return
@@ -984,7 +932,6 @@ async def run() -> None:
     telegram_app.add_handler(CommandHandler('start', handle_start))
     telegram_app.add_handler(CommandHandler('help', handle_help))
     telegram_app.add_handler(CommandHandler('language', handle_language))
-    telegram_app.add_handler(CommandHandler('pin', handle_pin))
     telegram_app.add_handler(CallbackQueryHandler(handle_language_callback, pattern=r'^lang:'))
     telegram_app.add_handler(MessageHandler(filters.StatusUpdate.WRITE_ACCESS_ALLOWED, handle_write_access_allowed))
 

@@ -1,6 +1,6 @@
 /* Base Layout */
 .container {
-    min-height: 100dvh;
+    min-height: 100vh;
     background-color: var(--color-dark);
     /* Ensure dark bg */
     color: var(--color-white);

@@ -1,5 +1,5 @@
 .container {
-    min-height: 100dvh;
+    min-height: 100vh;
     background: var(--bg-primary);
     padding-bottom: calc(120px + var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px)));
     position: relative;

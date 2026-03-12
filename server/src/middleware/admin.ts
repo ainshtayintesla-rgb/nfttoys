@@ -1,5 +1,4 @@
 import { NextFunction, Request, Response } from 'express';
-import { extractAdminSessionToken, verifyAdminSessionToken, AdminSessionPayload } from './adminSession';
 
 function parseAdminIds(raw: string): string[] {
     return raw
@@ -16,18 +15,6 @@ export function getAdminTelegramIds(): string[] {
 }
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
-    // Option A: AdminAccount session JWT
-    const sessionToken = extractAdminSessionToken(req);
-    if (sessionToken) {
-        const session = verifyAdminSessionToken(sessionToken);
-        if (session) {
-            (req as Request & { adminSession?: AdminSessionPayload }).adminSession = session;
-            return next();
-        }
-        return res.status(401).json({ error: 'Invalid admin session', code: 'INVALID_SESSION' });
-    }
-
-    // Option B: Telegram-based admin (ADMIN_IDS env var)
     if (!req.authUser) {
         return res.status(401).json({
             error: 'Authorization token is required',
