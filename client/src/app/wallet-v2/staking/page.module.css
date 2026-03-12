@@ -2,7 +2,7 @@
 .container {
     min-height: var(--app-viewport-stable-height, var(--app-viewport-height, 100dvh));
     background: var(--bg-primary);
-    padding-bottom: calc(24px + var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px)));
+    padding-bottom: calc(112px + var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px)));
 }
 
 .main {

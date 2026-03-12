@@ -1,5 +1,5 @@
 .container {
-    min-height: 100vh;
+    min-height: 100dvh;
     padding-bottom: calc(120px + var(--app-safe-bottom-ui, var(--tg-safe-area-bottom, 0px)));
     /* Space for floating nav */
     background: var(--bg-primary);

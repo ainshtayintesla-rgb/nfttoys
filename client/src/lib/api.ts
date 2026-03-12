@@ -33,6 +33,22 @@ type ApiErrorPayload = {
     details?: unknown;
 } | null;
 
+const ADMIN_SESSION_KEY = 'nfttoys_admin_session';
+
+export function getAdminSessionToken(): string | null {
+    if (typeof sessionStorage === 'undefined') return null;
+    return sessionStorage.getItem(ADMIN_SESSION_KEY) || null;
+}
+
+export function setAdminSessionToken(token: string | null): void {
+    if (typeof sessionStorage === 'undefined') return;
+    if (token) {
+        sessionStorage.setItem(ADMIN_SESSION_KEY, token);
+    } else {
+        sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    }
+}
+
 /**
  * Make API request
  */
@@ -40,6 +56,7 @@ async function executeApiRequest(endpoint: string, options: RequestInit): Promis
     const url = `${API_BASE_URL}${endpoint}`;
     const headers = new Headers(options.headers || {});
     const token = getAuthToken();
+    const adminSession = getAdminSessionToken();
 
     if (options.body !== undefined && !headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json');
@@ -47,6 +64,10 @@ async function executeApiRequest(endpoint: string, options: RequestInit): Promis
 
     if (token && !headers.has('Authorization')) {
         headers.set('Authorization', `Bearer ${token}`);
+    }
+
+    if (adminSession && !headers.has('X-Admin-Session')) {
+        headers.set('X-Admin-Session', adminSession);
     }
 
     if (!headers.has('X-Requested-With')) {
@@ -539,6 +560,15 @@ export const api = {
 
         storyBoostStats: () =>
             apiFetch<{ success: boolean; stats: { totalShares: number; activeBoosts: number; verifiedShares: number } | null; schemaReady: boolean }>('/admin/story-boost/stats'),
+
+        login: (login: string, password: string) =>
+            apiFetch<{ success: boolean; token: string; login: string }>('/admin/auth/login', {
+                method: 'POST',
+                body: JSON.stringify({ login, password }),
+            }),
+
+        authMe: () =>
+            apiFetch<{ success: boolean; login: string; adminId: string }>('/admin/auth/me'),
     },
 
     // Wallet

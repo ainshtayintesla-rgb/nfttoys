@@ -249,7 +249,7 @@
         var(--memo-padding-x);
     font-size: 14px;
     line-height: 1.4;
-    resize: none;
+    resize: vertical;
     outline: none;
 }
 

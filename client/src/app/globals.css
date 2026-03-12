@@ -264,7 +264,8 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   transition: background-color 0.3s ease, color 0.3s ease;
   -webkit-font-smoothing: antialiased;
-  touch-action: manipulation;
+  /* pan-x pan-y: allow normal scrolling but block pinch-to-zoom */
+  touch-action: pan-x pan-y;
 }
 
 .app-container {
@@ -282,7 +283,10 @@ a {
 input,
 textarea,
 select {
+  /* 16px prevents iOS auto-zoom on focus */
   font-size: 16px !important;
+  /* manipulation: tap works, double-tap zoom blocked */
+  touch-action: manipulation;
 }
 
 /* Utility Animations */

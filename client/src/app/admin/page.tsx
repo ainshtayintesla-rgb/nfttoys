@@ -12,7 +12,7 @@ import { AlertTriangle, CheckCircle, Clock, Database, Eye, QrCode, Shuffle, Spar
 import { TelegramBackButton } from '@/components/ui/TelegramBackButton';
 import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
 import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
-import { api } from '@/lib/api';
+import { api, getAdminSessionToken, setAdminSessionToken } from '@/lib/api';
 import { BalanceTopupTab } from './components/BalanceTopupTab';
 import { AdminCustomSelect } from './components/AdminCustomSelect';
 import { AdminUpdatesTab } from './components/UpdatesTab';
@@ -94,6 +94,11 @@ export default function AdminPage() {
     const [lastCreatedUrl, setLastCreatedUrl] = useState<string>('');
     const [validationErrors, setValidationErrors] = useState({ rarity: false, model: false, serial: false });
     const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+    const [adminSession, setAdminSession] = useState<string | null>(null);
+    const [loginInput, setLoginInput] = useState('');
+    const [passwordInput, setPasswordInput] = useState('');
+    const [loginLoading, setLoginLoading] = useState(false);
+    const [loginError, setLoginError] = useState('');
     const [bulkCount, setBulkCount] = useState<string>('10');
     const [bulkPreview, setBulkPreview] = useState<GeneratedQRDraft[]>([]);
     const [bulkError, setBulkError] = useState<string>('');
@@ -110,8 +115,9 @@ export default function AdminPage() {
     // Get the Telegram user ID from multiple sources for reliability
     const telegramUserId = user?.id || webApp?.initDataUnsafe?.user?.id;
 
-    // Check admin access
+    // Check admin access — Telegram IDs whitelist OR admin session JWT
     const isAdmin = Boolean(telegramUserId && ADMIN_IDS.includes(String(telegramUserId)));
+    const hasAccess = isAdmin || Boolean(adminSession);
 
     useBodyScrollLock(Boolean(confirmAction));
 
@@ -197,6 +203,12 @@ export default function AdminPage() {
         }
     };
 
+    // Restore admin session from sessionStorage on mount
+    useEffect(() => {
+        const saved = getAdminSessionToken();
+        if (saved) setAdminSession(saved);
+    }, []);
+
     // Wait for auth to complete before checking admin
     useEffect(() => {
         if (ready) {
@@ -213,13 +225,13 @@ export default function AdminPage() {
 
     // Load data on mount (only if admin)
     useEffect(() => {
-        if (!isCheckingAuth && isAdmin) {
+        if (!isCheckingAuth && hasAccess) {
             loadData();
             loadDbStats();
         } else if (!isCheckingAuth) {
             setIsLoadingList(false);
         }
-    }, [isAdmin, isCheckingAuth]);
+    }, [hasAccess, isCheckingAuth]);
 
     const loadData = async () => {
         setIsLoadingList(true);
@@ -444,11 +456,63 @@ export default function AdminPage() {
         );
     }
 
-    if (!isAdmin) {
-        if (typeof window !== 'undefined') {
-            window.location.href = '/404';
+    const handleAdminLogin = async () => {
+        const login = loginInput.trim();
+        const password = passwordInput;
+        if (!login || !password) {
+            setLoginError('Enter login and password');
+            return;
         }
-        return null;
+        setLoginLoading(true);
+        setLoginError('');
+        try {
+            const data = await api.admin.login(login, password);
+            setAdminSessionToken(data.token);
+            setAdminSession(data.token);
+            setLoginInput('');
+            setPasswordInput('');
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Invalid credentials';
+            setLoginError(msg);
+        } finally {
+            setLoginLoading(false);
+        }
+    };
+
+    if (!hasAccess) {
+        return (
+            <div className={styles.container}>
+                <main className={styles.main}>
+                    <div className={styles.loginCard}>
+                        <div className={styles.loginTitle}>Admin Login</div>
+                        <div className={styles.loginForm}>
+                            <input
+                                className={styles.loginInput}
+                                type="text"
+                                placeholder="Login"
+                                autoComplete="username"
+                                value={loginInput}
+                                onChange={(e) => { setLoginInput(e.target.value); setLoginError(''); }}
+                                onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()}
+                            />
+                            <input
+                                className={styles.loginInput}
+                                type="password"
+                                placeholder="Password"
+                                autoComplete="current-password"
+                                value={passwordInput}
+                                onChange={(e) => { setPasswordInput(e.target.value); setLoginError(''); }}
+                                onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()}
+                            />
+                            {loginError && <div className={styles.loginError}>{loginError}</div>}
+                            <Button onClick={handleAdminLogin} disabled={loginLoading} className={styles.loginBtn}>
+                                {loginLoading ? 'Signing in...' : 'Sign in'}
+                            </Button>
+                        </div>
+                    </div>
+                </main>
+            </div>
+        );
     }
 
     return (

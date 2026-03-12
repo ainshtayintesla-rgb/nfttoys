@@ -682,6 +682,7 @@ export const TransferModal = ({ isOpen, onClose, nft, onSuccess }: TransferModal
                                             setError('');
                                         }}
                                         usernameAvatarUrl={isExactUsernameMatch ? (resolvedRecipient?.photoUrl || null) : null}
+                                        usernameIsResolved={isExactUsernameMatch}
                                         walletPrefix=""
                                         walletSuggestion={recipientType === 'wallet' && suggestedWallet
                                             ? {

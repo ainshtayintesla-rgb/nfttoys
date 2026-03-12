@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.6] - 2026-03-12
+
+### Added
+- Owner Panel (`/owner`): new standalone page for the owner — tabs: Admins, Health, Users, Info. Authenticated via `NEXT_PUBLIC_OWNER_TELEGRAM_ID`. No bottom navigation.
+- Server: `GET/POST/DELETE /owner/admins`, `POST /owner/admins/:id/reset`, `GET /owner/health`, `GET /owner/users`, `GET /owner/info` routes secured by `requireAuth + requireOwner` middleware.
+- Server: `AdminAccount` Prisma model (`admin_accounts` table) — stores login/passwordHash/telegramId for web-based admin accounts. Migration applied.
+- Server: `POST /admin/auth/login`, `POST /admin/auth/change-password`, `GET /admin/auth/me`, `POST /admin/auth/pin` routes for admin session JWT auth.
+- Server: `adminSession.ts` middleware — signs/verifies `{ type: 'admin_session' }` JWT, extracts token from `X-Admin-Session` header or `Authorization: AdminBearer`.
+- Server: `admin.ts` middleware updated to accept admin session JWT (Option A) OR existing Telegram ADMIN_IDS check (Option B) — fully backward compatible.
+- Bot: `/pin` command — calls server `POST /admin/auth/pin` and replies with admin login+password credentials.
+- Admin Panel: login form fallback for non-Telegram admins (login+password form, stores JWT in sessionStorage, attaches `X-Admin-Session` header on all API calls).
+
+### Fixed
+- Mobile: changed `touch-action: manipulation` on body to `touch-action: pan-x pan-y` — truly disables pinch-to-zoom while preserving scroll.
+- Mobile: `touch-action: manipulation` added to `input, textarea, select` — prevents double-tap zoom on form fields.
+- Mobile: input auto-zoom prevention kept via `font-size: 16px !important` on inputs.
+
 ## [0.3.5] - 2026-03-11
 
 ### Fixed

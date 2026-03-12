@@ -23,6 +23,7 @@ interface RecipientLookupFieldProps {
     onUsernameChange: (value: string) => void;
     onWalletChange: (value: string) => void;
     usernameAvatarUrl?: string | null;
+    usernameIsResolved?: boolean;
     walletPrefix?: string;
     walletSuggestion?: WalletSuggestion | null;
     className?: string;
@@ -43,12 +44,17 @@ export function RecipientLookupField({
     onUsernameChange,
     onWalletChange,
     usernameAvatarUrl,
+    usernameIsResolved,
     walletPrefix = '',
     walletSuggestion,
     className,
 }: RecipientLookupFieldProps) {
     const hasWalletSuggestion = recipientType === 'wallet'
         && Boolean(walletSuggestion?.address);
+
+    const showUsernameChip = recipientType === 'username'
+        && Boolean(usernameValue)
+        && Boolean(usernameIsResolved);
 
     return (
         <div className={cx(styles.root, className)}>
@@ -57,7 +63,7 @@ export function RecipientLookupField({
                 tabClassName={styles.tab}
                 activeTabClassName={styles.tabActive}
                 items={[
-                    { key: 'username' as const, label: '@username' },
+                    { key: 'username' as const, label: 'Username' },
                     { key: 'wallet' as const, label: walletTabLabel },
                 ]}
                 activeKey={recipientType}
@@ -91,38 +97,64 @@ export function RecipientLookupField({
                     </button>
                 )}
 
-                <div className={cx(styles.inputWrap, hasWalletSuggestion && styles.inputWrapConnected)}>
-                    {recipientType === 'username' ? (
-                        <span className={styles.inputPrefixSlot}>
-                            {usernameAvatarUrl ? (
+                <div className={cx(
+                    styles.inputWrap,
+                    hasWalletSuggestion && styles.inputWrapConnected,
+                    showUsernameChip && styles.inputWrapChip,
+                )}>
+                    {showUsernameChip ? (
+                        <button
+                            type="button"
+                            className={styles.recipientChip}
+                            onClick={() => onUsernameChange('')}
+                        >
+                            {usernameAvatarUrl && (
                                 <img
                                     src={usernameAvatarUrl}
                                     alt=""
-                                    className={styles.inputPrefixAvatar}
+                                    className={styles.recipientChipAvatar}
                                     loading="lazy"
                                     referrerPolicy="no-referrer"
                                 />
-                            ) : (
-                                <span className={styles.inputPrefix}>@</span>
                             )}
-                        </span>
-                    ) : walletPrefix ? (
-                        <span className={styles.inputPrefix}>{walletPrefix}</span>
-                    ) : null}
-                    <input
-                        type="text"
-                        className={styles.input}
-                        value={recipientType === 'username' ? usernameValue : walletValue}
-                        placeholder={recipientType === 'username' ? usernamePlaceholder : walletPlaceholder}
-                        onChange={(event) => {
-                            if (recipientType === 'username') {
-                                onUsernameChange(event.target.value);
-                                return;
-                            }
+                            <span>@{usernameValue}</span>
+                            <span className={styles.recipientChipRemove}>×</span>
+                        </button>
+                    ) : (
+                        <>
+                            {recipientType === 'username' ? (
+                                <span className={styles.inputPrefixSlot}>
+                                    {usernameAvatarUrl ? (
+                                        <img
+                                            src={usernameAvatarUrl}
+                                            alt=""
+                                            className={styles.inputPrefixAvatar}
+                                            loading="lazy"
+                                            referrerPolicy="no-referrer"
+                                        />
+                                    ) : (
+                                        <span className={styles.inputPrefix}>@</span>
+                                    )}
+                                </span>
+                            ) : walletPrefix ? (
+                                <span className={styles.inputPrefix}>{walletPrefix}</span>
+                            ) : null}
+                            <input
+                                type="text"
+                                className={styles.input}
+                                value={recipientType === 'username' ? usernameValue : walletValue}
+                                placeholder={recipientType === 'username' ? usernamePlaceholder : walletPlaceholder}
+                                onChange={(event) => {
+                                    if (recipientType === 'username') {
+                                        onUsernameChange(event.target.value);
+                                        return;
+                                    }
 
-                            onWalletChange(event.target.value);
-                        }}
-                    />
+                                    onWalletChange(event.target.value);
+                                }}
+                            />
+                        </>
+                    )}
                 </div>
             </div>
         </div>
